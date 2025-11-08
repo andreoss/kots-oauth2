@@ -1,5 +1,6 @@
 package dev.oauth2.core
 
+import cats.Monoid
 import cats.syntax.traverse._
 
 final case class Scope private (value: String)
@@ -21,4 +22,20 @@ object Scopes {
 
   def from(values: Iterable[String]): Either[ParseFailure, Scopes] =
     values.toVector.traverse(Scope.from).map(v => new Scopes(v.toSet))
+
+  def of(values: Iterable[Scope]): Scopes = new Scopes(values.toSet)
+
+  implicit val monoid: Monoid[Scopes] = new Monoid[Scopes] {
+    def empty: Scopes = Scopes.empty
+
+    def combine(x: Scopes, y: Scopes): Scopes = new Scopes(x.value | y.value)
+  }
+
+  def union(a: Scopes, b: Scopes): Scopes = monoid.combine(a, b)
+
+  def intersect(a: Scopes, b: Scopes): Scopes = new Scopes(a.value & b.value)
+
+  def isSubsetOf(a: Scopes, b: Scopes): Boolean = a.value.subsetOf(b.value)
+
+  def contains(a: Scopes, scope: Scope): Boolean = a.value.contains(scope)
 }

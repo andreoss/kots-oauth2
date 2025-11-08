@@ -32,6 +32,7 @@ lazy val testSettings = Seq(
   libraryDependencies ++= Seq(
     "org.scalameta" %% "munit" % "1.3.6" % Test,
     "org.scalameta" %% "munit-scalacheck" % "1.3.1" % Test,
+    "org.typelevel" %% "cats-laws" % "2.12.0" % Test,
     "org.typelevel" %% "discipline-munit" % "2.0.0" % Test,
     "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test
   )
