@@ -16,6 +16,13 @@ object Subject {
     Text.printable("Subject", raw).map(new Subject(_))
 }
 
+final case class GrantId private (value: String)
+
+object GrantId {
+  def from(raw: String): Either[ParseFailure, GrantId] =
+    Text.printable("GrantId", raw).map(new GrantId(_))
+}
+
 final case class State private (value: String)
 
 object State {
