@@ -19,6 +19,8 @@ object Wire {
 
   implicit val clientId: Wire[ClientId] = instance(_.value, ClientId.from)
 
+  implicit val clientSecret: Wire[ClientSecret] = instance(_.value, ClientSecret.from)
+
   implicit val subject: Wire[Subject] = instance(_.value, Subject.from)
 
   implicit val grantId: Wire[GrantId] = instance(_.value, GrantId.from)

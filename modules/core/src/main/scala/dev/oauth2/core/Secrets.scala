@@ -1,0 +1,50 @@
+package dev.oauth2.core
+
+import java.nio.charset.StandardCharsets
+
+import cats.syntax.either._
+
+final case class ClientSecret private (value: String)
+
+object ClientSecret {
+  def from(raw: String): Either[ParseFailure, ClientSecret] =
+    Text.printable("ClientSecret", raw).map(new ClientSecret(_))
+}
+
+final case class ClientSecretHash private (value: String)
+
+object ClientSecretHash {
+
+  def of(secret: ClientSecret): ClientSecretHash = new ClientSecretHash(digest(secret))
+
+  def verify(hash: ClientSecretHash, secret: ClientSecret): Boolean =
+    java.security.MessageDigest.isEqual(
+      digest(secret).getBytes(StandardCharsets.US_ASCII),
+      hash.value.getBytes(StandardCharsets.US_ASCII)
+    )
+
+  private def digest(secret: ClientSecret): String =
+    Entropy.hex(
+      java.security.MessageDigest.getInstance("SHA-256").digest(secret.value.getBytes(StandardCharsets.US_ASCII))
+    )
+}
+
+final case class ClientCredentials(id: ClientId, secret: ClientSecret)
+
+object ClientCredentials {
+
+  def fromBasic(header: String): Either[ParseFailure, ClientCredentials] =
+    Either
+      .catchNonFatal(java.util.Base64.getDecoder.decode(header.trim))
+      .leftMap(_ => ParseFailure("ClientCredentials", "not base64"))
+      .flatMap { raw =>
+        val text = java.net.URLDecoder.decode(new String(raw, StandardCharsets.UTF_8), StandardCharsets.UTF_8)
+        val colon = text.indexOf(':')
+        if (colon < 0) Left(ParseFailure("ClientCredentials", "no separator"))
+        else
+          for {
+            id <- ClientId.from(text.substring(0, colon))
+            secret <- ClientSecret.from(text.substring(colon + 1))
+          } yield ClientCredentials(id, secret)
+      }
+}
