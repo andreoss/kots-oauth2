@@ -16,6 +16,13 @@ object Subject {
     Text.printable("Subject", raw).map(new Subject(_))
 }
 
+final case class State private (value: String)
+
+object State {
+  def from(raw: String): Either[ParseFailure, State] =
+    Text.printable("State", raw).map(new State(_))
+}
+
 final case class Issuer private (value: String)
 
 object Issuer {
