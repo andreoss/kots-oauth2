@@ -5,7 +5,10 @@ import java.time.Instant
 import cats.effect.IO
 import dev.oauth2.core.AuthorizationDetails
 import dev.oauth2.core.AuthorizationRequest
+import dev.oauth2.core.ClientAuthMethod
 import dev.oauth2.core.ClientId
+import dev.oauth2.core.ClientSecret
+import dev.oauth2.core.ClientSecretHash
 import dev.oauth2.core.Clock
 import dev.oauth2.core.CodeChallenge
 import dev.oauth2.core.CodeChallengeMethod
@@ -77,8 +80,18 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     }
   }
 
-  private def client(uris: Set[RedirectUri], scopes: String, confidential: Boolean = true): Client =
-    Client(clientId, uris, unsafe(Scopes.parse(scopes)), confidential)
+  private def client(
+      uris: Set[RedirectUri],
+      scopes: String,
+      method: ClientAuthMethod = ClientAuthMethod.ClientSecretBasic
+  ): Client =
+    Client(
+      clientId,
+      uris,
+      unsafe(Scopes.parse(scopes)),
+      method,
+      if (method == ClientAuthMethod.None) None else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
+    )
 
   test("issuance stores a code bound to the client, redirect, subject and challenge") {
     val registered = client(Set(callback), "read write")
@@ -189,7 +202,7 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
   }
 
   test("issuance refuses a public client without a code challenge") {
-    val registered = client(Set(callback), "read", confidential = false)
+    val registered = client(Set(callback), "read", ClientAuthMethod.None)
     for {
       triple <- serviceOf()
       (service, _, _) = triple

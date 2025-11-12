@@ -5,7 +5,10 @@ import java.time.Instant
 import cats.effect.IO
 import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.AuthorizationDetails
+import dev.oauth2.core.ClientAuthMethod
 import dev.oauth2.core.ClientId
+import dev.oauth2.core.ClientSecret
+import dev.oauth2.core.ClientSecretHash
 import dev.oauth2.core.Clock
 import dev.oauth2.core.CodeChallenge
 import dev.oauth2.core.CodeChallengeMethod
@@ -104,8 +107,14 @@ class TokenServiceSpec extends CatsEffectSuite {
     } yield (new TokenService[IO](codes, tokens, grants, clock, entropy, policy), tokens, grants)
   }
 
-  private def client(id: ClientId = clientId, confidential: Boolean = true): Client =
-    Client(id, Set(callback), unsafe(Scopes.parse("read")), confidential)
+  private def client(id: ClientId = clientId, method: ClientAuthMethod = ClientAuthMethod.ClientSecretBasic): Client =
+    Client(
+      id,
+      Set(callback),
+      unsafe(Scopes.parse("read")),
+      method,
+      if (method == ClientAuthMethod.None) None else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
+    )
 
   test("exchange issues an access and a refresh token for a valid code") {
     for {
@@ -222,7 +231,7 @@ class TokenServiceSpec extends CatsEffectSuite {
     for {
       triple <- setup(record("code-1"))
       (service, _, _) = triple
-      result <- service.authorizationCode(request("code-1", verifier), client(confidential = false))
+      result <- service.authorizationCode(request("code-1", verifier), client(method = ClientAuthMethod.None))
     } yield {
       assert(result.isRight)
       assertEquals(result.toOption.map(_.refreshToken), Some(None))

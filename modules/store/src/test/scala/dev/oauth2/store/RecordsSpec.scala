@@ -5,7 +5,10 @@ import java.time.Instant
 import dev.oauth2.core.AccessToken
 import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.AuthorizationDetails
+import dev.oauth2.core.ClientAuthMethod
 import dev.oauth2.core.ClientId
+import dev.oauth2.core.ClientSecret
+import dev.oauth2.core.ClientSecretHash
 import dev.oauth2.core.CodeChallenge
 import dev.oauth2.core.CodeChallengeMethod
 import dev.oauth2.core.CodeVerifier
@@ -32,7 +35,8 @@ class RecordsSpec extends ScalaCheckSuite {
     id = unsafe(ClientId.from("client-1")),
     redirectUris = registered,
     scopes = unsafe(Scopes.parse("openid read")),
-    confidential = true
+    authMethod = ClientAuthMethod.ClientSecretBasic,
+    secretHash = Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
   )
 
   private val expiresAt: Instant = Instant.parse("2025-01-01T00:00:00Z")
