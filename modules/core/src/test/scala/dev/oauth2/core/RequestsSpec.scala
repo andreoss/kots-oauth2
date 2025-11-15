@@ -145,13 +145,46 @@ class RequestsSpec extends ScalaCheckSuite {
     assertEquals(errors(decoded).map(_.code), List("invalid_request", "invalid_request", "invalid_request"))
   }
 
+  test("token request decodes a refresh token grant") {
+    val decoded = TokenRequest.from(
+      Map("grant_type" -> "refresh_token", "refresh_token" -> "rt-1", "client_id" -> Client)
+    )
+    valid(decoded) match {
+      case TokenRequest.Refresh(refreshToken, scope, clientId) =>
+        assertEquals(refreshToken.value, "rt-1")
+        assertEquals(scope, None)
+        assertEquals(clientId.value, Client)
+      case other => fail(s"unexpected request $other")
+    }
+  }
+
+  test("token request decodes a refresh token grant with a narrower scope") {
+    val decoded = TokenRequest.from(
+      Map("grant_type" -> "refresh_token", "refresh_token" -> "rt-1", "scope" -> "read", "client_id" -> Client)
+    )
+    val request = valid(decoded).asInstanceOf[TokenRequest.Refresh]
+    assertEquals(request.scope, Some(Scopes.of(List(Scope.from("read").toOption.get))))
+  }
+
+  test("token request accumulates the missing refresh token and client id") {
+    val decoded = TokenRequest.from(Map("grant_type" -> "refresh_token"))
+    assertEquals(errors(decoded).map(_.code), List("invalid_request", "invalid_request"))
+  }
+
+  test("token request refuses a malformed refresh scope") {
+    val decoded = TokenRequest.from(
+      Map("grant_type" -> "refresh_token", "refresh_token" -> "rt-1", "scope" -> "read  write", "client_id" -> Client)
+    )
+    assertEquals(errors(decoded).map(_.code), List("invalid_request"))
+  }
+
   test("token request refuses an unsupported grant type") {
     assertEquals(
-      errors(TokenRequest.from(Map("grant_type" -> "refresh_token"))).map(_.code),
+      errors(TokenRequest.from(Map("grant_type" -> "password"))).map(_.code),
       List("unsupported_grant_type")
     )
     assertEquals(
-      errors(TokenRequest.from(Map("grant_type" -> "password"))).map(_.code),
+      errors(TokenRequest.from(Map("grant_type" -> "client_credentials"))).map(_.code),
       List("unsupported_grant_type")
     )
     assertEquals(errors(TokenRequest.from(Map.empty[String, String])).map(_.code), List("invalid_request"))

@@ -10,11 +10,13 @@ import dev.oauth2.core.AccessTokenHash
 import dev.oauth2.core.Clock
 import dev.oauth2.core.GrantId
 import dev.oauth2.core.RefreshToken
+import dev.oauth2.core.RefreshTokenHash
 import dev.oauth2.store.TokenRecord
 import dev.oauth2.store.TokenStore
 
 final class InMemoryTokenStore[F[_]: Monad] private (
     state: Ref[F, Map[AccessTokenHash, TokenRecord]],
+    retired: Ref[F, Map[RefreshTokenHash, GrantId]],
     clock: Clock[F]
 ) extends TokenStore[F] {
 
@@ -49,12 +51,19 @@ final class InMemoryTokenStore[F[_]: Monad] private (
 
   def revokeGrant(grantId: GrantId): F[Unit] =
     state.update(_.filterNot { case (_, record) => record.grantId == grantId })
+
+  def retire(refreshToken: RefreshToken, grantId: GrantId): F[Unit] =
+    drop(refreshToken) >> retired.update(_.updated(RefreshTokenHash.of(refreshToken), grantId))
+
+  def rotated(refreshToken: RefreshToken): F[Option[GrantId]] =
+    retired.get.map(_.get(RefreshTokenHash.of(refreshToken)))
 }
 
 object InMemoryTokenStore {
 
   def create[F[_]: cats.effect.Sync](clock: Clock[F]): F[InMemoryTokenStore[F]] =
-    Ref.of[F, Map[AccessTokenHash, TokenRecord]](Map.empty).map { state =>
-      new InMemoryTokenStore(state, clock)
-    }
+    for {
+      state <- Ref.of[F, Map[AccessTokenHash, TokenRecord]](Map.empty)
+      retired <- Ref.of[F, Map[RefreshTokenHash, GrantId]](Map.empty)
+    } yield new InMemoryTokenStore(state, retired, clock)
 }

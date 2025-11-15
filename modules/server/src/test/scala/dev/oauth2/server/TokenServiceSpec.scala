@@ -20,6 +20,7 @@ import dev.oauth2.core.LifetimePolicy
 import dev.oauth2.core.ParseFailure
 import dev.oauth2.core.Pkce
 import dev.oauth2.core.RedirectUri
+import dev.oauth2.core.RefreshToken
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
 import dev.oauth2.core.TokenRequest
@@ -288,6 +289,129 @@ class TokenServiceSpec extends CatsEffectSuite {
       assertEquals(grant.map(_.revoked), Some(true))
       assertEquals(stored, None)
     }
+  }
+
+  test("refresh rotates the access and the refresh token") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, tokens, _) = triple
+      first <- service.authorizationCode(request("code-1", verifier), client())
+      issued = first.toOption.get
+      second <- service.refresh(TokenRequest.Refresh(issued.refreshToken.get, None, clientId), client())
+      rotated = second.toOption.get
+      byOld <- tokens.findByRefresh(issued.refreshToken.get)
+      byNew <- tokens.findByRefresh(rotated.refreshToken.get)
+      oldAccess <- tokens.findByAccess(issued.accessToken)
+    } yield {
+      assert(second.isRight)
+      assertNotEquals(rotated.accessToken.value, issued.accessToken.value)
+      assertNotEquals(rotated.refreshToken.map(_.value), issued.refreshToken.map(_.value))
+      assertEquals(byOld, None)
+      assert(byNew.isDefined)
+      assertEquals(oldAccess, None)
+    }
+  }
+
+  test("refresh keeps the grant, the subject and the scope of the family") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, tokens, grants) = triple
+      first <- service.authorizationCode(request("code-1", verifier), client())
+      issued = first.toOption.get
+      second <- service.refresh(TokenRequest.Refresh(issued.refreshToken.get, None, clientId), client())
+      rotated = second.toOption.get
+      stored <- tokens.findByAccess(rotated.accessToken)
+      grant <- grants.find(rotated.record.grantId)
+    } yield {
+      assertEquals(rotated.record.grantId, issued.record.grantId)
+      assertEquals(rotated.record.subject, subject)
+      assertEquals(rotated.record.scopes, unsafe(Scopes.parse("read")))
+      assert(stored.isDefined)
+      assertEquals(grant.map(_.revoked), Some(false))
+    }
+  }
+
+  test("refresh keeps the refresh expiry of the family") {
+    val policy = LifetimePolicy.defaults.copy(
+      accessToken = unsafe(Lifetime.fromSeconds(60L)),
+      refreshToken = unsafe(Lifetime.fromSeconds(120L))
+    )
+    for {
+      triple <- setup(record("code-1"), policy)
+      (service, _, _) = triple
+      first <- service.authorizationCode(request("code-1", verifier), client())
+      issued = first.toOption.get
+      second <- service.refresh(TokenRequest.Refresh(issued.refreshToken.get, None, clientId), client())
+    } yield assertEquals(second.toOption.map(_.record.refreshExpiresAt), first.toOption.map(_.record.refreshExpiresAt))
+  }
+
+  test("refresh narrows the scope and refuses a wider one") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      first <- service.authorizationCode(request("code-1", verifier), client())
+      issued = first.toOption.get
+      narrower <- service.refresh(
+        TokenRequest.Refresh(issued.refreshToken.get, Some(unsafe(Scopes.parse("read"))), clientId),
+        client()
+      )
+      wider <- service.refresh(
+        TokenRequest.Refresh(narrower.toOption.get.refreshToken.get, Some(unsafe(Scopes.parse("read write"))), clientId),
+        client()
+      )
+    } yield {
+      assertEquals(narrower.toOption.map(_.record.scopes), Some(unsafe(Scopes.parse("read"))))
+      assertEquals(wider.left.toOption.map(_.code), Some("invalid_scope"))
+    }
+  }
+
+  test("refresh refuses an unknown refresh token") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      unknown <- service.refresh(TokenRequest.Refresh(unsafe(RefreshToken.from("rt-absent")), None, clientId), client())
+    } yield assertEquals(unknown.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("refresh refuses a token issued to another client") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      first <- service.authorizationCode(request("code-1", verifier), client())
+      issued = first.toOption.get
+      result <- service.refresh(TokenRequest.Refresh(issued.refreshToken.get, None, otherClientId), client(otherClientId))
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("refresh revokes the family when a retired refresh token is reused") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, tokens, grants) = triple
+      first <- service.authorizationCode(request("code-1", verifier), client())
+      issued = first.toOption.get
+      second <- service.refresh(TokenRequest.Refresh(issued.refreshToken.get, None, clientId), client())
+      rotated = second.toOption.get
+      replay <- service.refresh(TokenRequest.Refresh(issued.refreshToken.get, None, clientId), client())
+      grant <- grants.find(rotated.record.grantId)
+      access <- tokens.findByAccess(rotated.accessToken)
+      refresh <- tokens.findByRefresh(rotated.refreshToken.get)
+    } yield {
+      assertEquals(replay.left.toOption.map(_.code), Some("invalid_grant"))
+      assertEquals(grant.map(_.revoked), Some(true))
+      assertEquals(access, None)
+      assertEquals(refresh, None)
+    }
+  }
+
+  test("refresh refuses a revoked grant") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, grants) = triple
+      first <- service.authorizationCode(request("code-1", verifier), client())
+      issued = first.toOption.get
+      _ <- grants.revoke(issued.record.grantId)
+      result <- service.refresh(TokenRequest.Refresh(issued.refreshToken.get, None, clientId), client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
   }
 
   test("an unknown code revokes nothing") {
