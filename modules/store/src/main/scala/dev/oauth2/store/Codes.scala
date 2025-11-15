@@ -5,6 +5,7 @@ import java.time.Instant
 import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.AuthorizationDetails
 import dev.oauth2.core.ClientId
+import dev.oauth2.core.GrantId
 import dev.oauth2.core.Pkce
 import dev.oauth2.core.RedirectUri
 import dev.oauth2.core.Scopes
@@ -27,4 +28,8 @@ trait CodeStore[F[_]] {
   def save(record: CodeRecord): F[Unit]
 
   def consume(code: AuthorizationCode): F[Option[CodeRecord]]
+
+  def redeem(code: AuthorizationCode, grant: GrantId): F[Unit]
+
+  def redeemed(code: AuthorizationCode): F[Option[GrantId]]
 }
