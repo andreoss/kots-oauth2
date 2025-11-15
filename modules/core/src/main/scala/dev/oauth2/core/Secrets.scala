@@ -15,18 +15,10 @@ final case class ClientSecretHash private (value: String)
 
 object ClientSecretHash {
 
-  def of(secret: ClientSecret): ClientSecretHash = new ClientSecretHash(digest(secret))
+  def of(secret: ClientSecret): ClientSecretHash = new ClientSecretHash(Digests.sha256Hex(secret.value))
 
   def verify(hash: ClientSecretHash, secret: ClientSecret): Boolean =
-    java.security.MessageDigest.isEqual(
-      digest(secret).getBytes(StandardCharsets.US_ASCII),
-      hash.value.getBytes(StandardCharsets.US_ASCII)
-    )
-
-  private def digest(secret: ClientSecret): String =
-    Entropy.hex(
-      java.security.MessageDigest.getInstance("SHA-256").digest(secret.value.getBytes(StandardCharsets.US_ASCII))
-    )
+    Digests.equal(hash.value, Digests.sha256Hex(secret.value))
 }
 
 final case class ClientCredentials(id: ClientId, secret: ClientSecret)
