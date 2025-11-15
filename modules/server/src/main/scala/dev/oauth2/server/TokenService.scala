@@ -4,6 +4,7 @@ import cats.Monad
 import cats.syntax.all._
 
 import dev.oauth2.core.AccessToken
+import dev.oauth2.core.AccessTokenHash
 import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.Clock
 import dev.oauth2.core.Entropy
@@ -14,6 +15,7 @@ import dev.oauth2.core.OAuth2Error
 import dev.oauth2.core.Pkce
 import dev.oauth2.core.RedirectUri
 import dev.oauth2.core.RefreshToken
+import dev.oauth2.core.RefreshTokenHash
 import dev.oauth2.core.TokenRequest
 import dev.oauth2.core.TokenType
 import dev.oauth2.store.Client
@@ -21,6 +23,7 @@ import dev.oauth2.store.CodeRecord
 import dev.oauth2.store.CodeStore
 import dev.oauth2.store.Grant
 import dev.oauth2.store.GrantStore
+import dev.oauth2.store.IssuedToken
 import dev.oauth2.store.TokenRecord
 import dev.oauth2.store.TokenStore
 
@@ -36,7 +39,7 @@ final class TokenService[F[_]: Monad](
   def authorizationCode(
       request: TokenRequest.Code,
       client: Client
-  ): F[Either[OAuth2Error, TokenRecord]] =
+  ): F[Either[OAuth2Error, IssuedToken]] =
     codes.consume(request.code).flatMap {
       case None       => replay(request.code)
       case Some(record) =>
@@ -46,7 +49,7 @@ final class TokenService[F[_]: Monad](
         )
     }
 
-  private def replay(code: AuthorizationCode): F[Either[OAuth2Error, TokenRecord]] =
+  private def replay(code: AuthorizationCode): F[Either[OAuth2Error, IssuedToken]] =
     codes.redeemed(code).flatMap {
       case None        => Monad[F].pure(Left(TokenService.rejected))
       case Some(grant) => grants.revoke(grant) >> tokens.revokeGrant(grant).as(Left(TokenService.rejected))
@@ -70,7 +73,7 @@ final class TokenService[F[_]: Monad](
       }
     } yield ()
 
-  private def issue(record: CodeRecord, client: Client): F[Either[OAuth2Error, TokenRecord]] =
+  private def issue(record: CodeRecord, client: Client): F[Either[OAuth2Error, IssuedToken]] =
     for {
       now <- clock.instant
       grant <- entropy.bytes(TokenService.TokenEntropyBytes)
@@ -87,8 +90,8 @@ final class TokenService[F[_]: Monad](
         error => Monad[F].pure(Left(error)),
         { case (grantId, accessToken, refreshToken) =>
           val minted = TokenRecord(
-            accessToken = accessToken,
-            refreshToken = refreshToken,
+            accessTokenHash = AccessTokenHash.of(accessToken),
+            refreshTokenHash = refreshToken.map(RefreshTokenHash.of),
             grantId = grantId,
             clientId = record.clientId,
             subject = record.subject,
@@ -101,7 +104,7 @@ final class TokenService[F[_]: Monad](
           grants
             .save(Grant(grantId, record.clientId, record.subject, record.scopes, record.details, revoked = false))
             .flatMap(_ => tokens.save(minted))
-            .flatMap(_ => codes.redeem(record.code, grantId).as(Right(minted)))
+            .flatMap(_ => codes.redeem(record.code, grantId).as(Right(IssuedToken(accessToken, refreshToken, minted))))
         }
       )
     } yield result
