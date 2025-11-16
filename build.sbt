@@ -1,7 +1,9 @@
 import scoverage.ScoverageKeys._
 
-val Scala2 = "2.13.16"
+val Scala2 = "2.13.18"
 val Scala3 = "3.3.6"
+val Tapir = "1.11.50"
+val Circe = "0.14.16"
 
 ThisBuild / organization := "dev.oauth2"
 ThisBuild / version := "0.1.0-SNAPSHOT"
@@ -53,7 +55,16 @@ lazy val store = module("store")
   .dependsOn(core % "compile->compile;test->test")
   .settings(libraryDependencies += "org.typelevel" %% "cats-effect" % "3.6.0")
 
-lazy val http = module("http").dependsOn(core)
+lazy val http = module("http")
+  .dependsOn(core)
+  .settings(
+    libraryDependencies ++= Seq(
+      "com.softwaremill.sttp.tapir" %% "tapir-core" % Tapir,
+      "com.softwaremill.sttp.tapir" %% "tapir-json-circe" % Tapir,
+      "io.circe" %% "circe-core" % Circe,
+      "com.softwaremill.sttp.tapir" %% "tapir-openapi-docs" % Tapir % Test
+    )
+  )
 
 lazy val server = module("server").dependsOn(core, store)
 

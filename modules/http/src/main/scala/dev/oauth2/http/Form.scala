@@ -1,11 +1,18 @@
 package dev.oauth2.http
 
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 import dev.oauth2.core.OAuth2Error
 
 object Form {
+
+  def render(params: Map[String, String]): String =
+    params.toVector
+      .sortBy(_._1)
+      .map { case (name, value) => s"${encode(name)}=${encode(value)}" }
+      .mkString("&")
 
   def parse(body: String): Either[OAuth2Error, Map[String, String]] =
     if (body.isEmpty) Right(Map.empty)
@@ -43,6 +50,8 @@ object Form {
         else Right(params + entry)
       }
     }
+
+  private def encode(raw: String): String = URLEncoder.encode(raw, StandardCharsets.UTF_8)
 
   private def decode(raw: String): Either[OAuth2Error, String] =
     try Right(URLDecoder.decode(raw, StandardCharsets.UTF_8))
