@@ -21,11 +21,6 @@ class ClientAuthSpec extends ScalaCheckSuite {
 
   private val credentials: ClientCredentials = ClientCredentials(id, secret)
 
-  private def basic(id: String, secret: String): String =
-    Base64.getEncoder.encodeToString(s"$id:$secret".getBytes(StandardCharsets.UTF_8))
-
-  private val header: String = s"Basic ${basic("client-1", "s3cret")}"
-
   test("method parses every registered value") {
     assertEquals(ClientAuthMethod.from("none"), Right(ClientAuthMethod.None))
     assertEquals(ClientAuthMethod.from("client_secret_basic"), Right(ClientAuthMethod.ClientSecretBasic))
@@ -36,21 +31,27 @@ class ClientAuthSpec extends ScalaCheckSuite {
     assert(ClientAuthMethod.from("private_key_jwt").isLeft)
   }
 
-  test("input reads basic credentials from the authorization header") {
-    val input = ClientAuthInput.from(Some(header), Map.empty)
-    assertEquals(input.toOption.flatMap(_.basic), Some(credentials))
+  test("input reads basic credentials from a basic header value") {
+    val encoded = Base64.getEncoder.encodeToString("client-1:s3cret".getBytes(StandardCharsets.UTF_8))
+    assertEquals(ClientAuthInput.from(Some(encoded), Map.empty).toOption.flatMap(_.basic), Some(credentials))
   }
 
   test("input reads a percent encoded basic secret") {
-    val encoded = s"Basic ${Base64.getEncoder.encodeToString("client-1:s3cr%3At".getBytes(StandardCharsets.UTF_8))}"
+    val encoded = Base64.getEncoder.encodeToString("client-1:s3cr%3At".getBytes(StandardCharsets.UTF_8))
     assertEquals(
       ClientAuthInput.from(Some(encoded), Map.empty).toOption.flatMap(_.basic.map(_.secret.value)),
       Some("s3cr:t")
     )
   }
 
-  test("input ignores an authorization header of another scheme") {
-    assertEquals(ClientAuthInput.from(Some("Bearer at-1"), Map.empty).toOption.flatMap(_.basic), None)
+  test("input refuses a malformed basic value as invalid_client") {
+    val input = ClientAuthInput.from(Some("not base64 !"), Map.empty)
+    assert(input.fold(_.forall(_.description.isEmpty), _ => false))
+  }
+
+  test("input refuses a basic value without a separator") {
+    val encoded = Base64.getEncoder.encodeToString("client-1".getBytes(StandardCharsets.UTF_8))
+    assert(ClientAuthInput.from(Some(encoded), Map.empty).isInvalid)
   }
 
   test("input reads the client id and the secret from the body") {
@@ -60,11 +61,12 @@ class ClientAuthSpec extends ScalaCheckSuite {
   }
 
   test("input takes the client id from the basic credentials first") {
-    val input = ClientAuthInput.from(Some(header), Map("client_id" -> "client-2"))
+    val encoded = Base64.getEncoder.encodeToString("client-1:s3cret".getBytes(StandardCharsets.UTF_8))
+    val input = ClientAuthInput.from(Some(encoded), Map("client_id" -> "client-2"))
     assertEquals(input.toOption.flatMap(_.subject), Some(id))
   }
 
-  test("input takes the client id from the body when there is no header") {
+  test("input takes the client id from the body when there are no credentials") {
     assertEquals(ClientAuthInput.from(None, Map("client_id" -> "client-2")).toOption.map(_.subject), Some(Some(otherId)))
   }
 
@@ -72,14 +74,13 @@ class ClientAuthSpec extends ScalaCheckSuite {
     assertEquals(ClientAuthInput.from(None, Map.empty).toOption.map(_.subject), Some(None))
   }
 
-  test("input refuses a malformed basic header as invalid_client") {
-    val input = ClientAuthInput.from(Some("Basic not-base64"), Map.empty)
+  test("input refuses a body client id that does not parse as invalid_client") {
+    val input = ClientAuthInput.from(None, Map("client_id" -> "has space"))
     assert(input.fold(_.forall(_.description.isEmpty), _ => false))
   }
 
-  test("input refuses a basic header without a separator") {
-    val encoded = Base64.getEncoder.encodeToString("client-1".getBytes(StandardCharsets.UTF_8))
-    assert(ClientAuthInput.from(Some(s"Basic $encoded"), Map.empty).isInvalid)
+  test("input refuses a body secret that does not parse as invalid_client") {
+    assert(ClientAuthInput.from(None, Map("client_secret" -> "has space")).isInvalid)
   }
 
   property("client auth method wire round trips") {

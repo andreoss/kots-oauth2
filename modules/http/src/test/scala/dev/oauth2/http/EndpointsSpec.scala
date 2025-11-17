@@ -1,10 +1,15 @@
 package dev.oauth2.http
 
+import java.nio.charset.StandardCharsets
+import java.util.Base64
+
+import dev.oauth2.core.ClientAuthInput
 import dev.oauth2.core.OAuth2Error
 import munit.FunSuite
 import sttp.apispec.openapi.OpenAPI
 import sttp.apispec.openapi.ResponsesCodeKey
 import sttp.tapir.DecodeResult
+import sttp.tapir.EndpointInput
 import sttp.tapir.docs.openapi.OpenAPIDocsInterpreter
 
 class EndpointsSpec extends FunSuite {
@@ -73,6 +78,55 @@ class EndpointsSpec extends FunSuite {
   test("the form codec renders a body it can decode again") {
     val params = Map("code" -> "a b", "scope" -> "openid read")
     assertEquals(Endpoints.formParameters.decode(Endpoints.formParameters.encode(params)), DecodeResult.Value(params))
+  }
+
+  test("the token endpoint is described as requiring client credentials") {
+    assert(tokenOperation.security.nonEmpty)
+    assert(document.components.toList.flatMap(_.securitySchemes.toList).map(_._1).contains(Auth.BasicSchemeName))
+  }
+
+  test("the token endpoint takes an http basic auth input with the basic challenge") {
+    assertEquals(Auth.basic.authType, EndpointInput.AuthType.Http("Basic"))
+    assertEquals(Auth.basic.challenge.toString, OAuth2Error.BasicChallenge)
+  }
+
+  test("the basic input carries the value of a basic authorization header") {
+    val encoded = Base64.getEncoder.encodeToString("client-1:s3cret".getBytes(StandardCharsets.UTF_8))
+    assertEquals(Auth.basicValue.decode(List(encoded)), DecodeResult.Value(Some(encoded)))
+  }
+
+  test("the basic input carries no value without the header") {
+    assertEquals(Auth.basicValue.decode(Nil), DecodeResult.Value(None))
+  }
+
+  test("the basic input carries the value it has written") {
+    val encoded = Base64.getEncoder.encodeToString("client-1:s3cr%3At".getBytes(StandardCharsets.UTF_8))
+    assertEquals(
+      Auth.basicValue.decode(Auth.basicValue.encode(Some(encoded))),
+      DecodeResult.Value(Some(encoded))
+    )
+  }
+
+  test("a basic value is read by the core as credentials and refused when malformed") {
+    val encoded = Base64.getEncoder.encodeToString("client-1:s3cr%3At".getBytes(StandardCharsets.UTF_8))
+    assertEquals(
+      ClientAuthInput.from(Some(encoded), Map.empty).toOption.flatMap(_.basic.map(_.secret.value)),
+      Some("s3cr:t")
+    )
+    assert(ClientAuthInput.from(Some("not base64 !"), Map.empty).isInvalid)
+  }
+
+  test("the unauthorized error carries the challenge the error model knows") {
+    val error = OAuth2Error.InvalidClient()
+    assertEquals(
+      Endpoints.challengedBody(sttp.model.StatusCode.Unauthorized).encode(error),
+      (Some(OAuth2Error.BasicChallenge), error.body)
+    )
+  }
+
+  test("an error of another status carries no challenge") {
+    val error = OAuth2Error.InvalidGrant()
+    assertEquals(Endpoints.challengedBody(sttp.model.StatusCode.BadRequest).encode(error), (None, error.body))
   }
 
   test("an error is written as the body the RFC assigns to it") {

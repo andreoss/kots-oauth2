@@ -76,8 +76,8 @@ class TokenEndpointSpec extends CatsEffectSuite {
       if (method == ClientAuthMethod.None) None else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
     )
 
-  private def basic(id: String, secret: String): String =
-    "Basic " + Base64.getEncoder.encodeToString(s"$id:$secret".getBytes(StandardCharsets.UTF_8))
+  private def basic(id: String, secret: String): Option[String] =
+    Some(Base64.getEncoder.encodeToString(s"$id:$secret".getBytes(StandardCharsets.UTF_8)))
 
   private def codeParams(code: String, raw: String = verifier.value): Map[String, String] =
     Map(
@@ -122,7 +122,7 @@ class TokenEndpointSpec extends CatsEffectSuite {
   test("an authorization code request is answered with a token response") {
     for {
       endpoint <- setup()
-      result <- endpoint(Some(basic("client-1", "s3cret")), codeParams("code-1"))
+      result <- endpoint(basic("client-1", "s3cret"), codeParams("code-1"))
     } yield {
       val response = result.toOption.get
       assert(response.accessToken.value.nonEmpty)
@@ -135,10 +135,10 @@ class TokenEndpointSpec extends CatsEffectSuite {
   test("a refresh request is answered with a rotated token response") {
     for {
       endpoint <- setup()
-      first <- endpoint(Some(basic("client-1", "s3cret")), codeParams("code-1"))
+      first <- endpoint(basic("client-1", "s3cret"), codeParams("code-1"))
       rotated = first.toOption.get.refreshToken.get.value
-      second <- endpoint(Some(basic("client-1", "s3cret")), refreshParams(rotated))
-      reused <- endpoint(Some(basic("client-1", "s3cret")), refreshParams(rotated))
+      second <- endpoint(basic("client-1", "s3cret"), refreshParams(rotated))
+      reused <- endpoint(basic("client-1", "s3cret"), refreshParams(rotated))
     } yield {
       assertNotEquals(second.toOption.map(_.accessToken.value), first.toOption.map(_.accessToken.value))
       assert(second.toOption.flatMap(_.refreshToken).isDefined)
@@ -149,14 +149,14 @@ class TokenEndpointSpec extends CatsEffectSuite {
   test("an unregistered client is refused with invalid_client") {
     for {
       endpoint <- setup(clients = Nil)
-      result <- endpoint(Some(basic("client-1", "s3cret")), codeParams("code-1"))
+      result <- endpoint(basic("client-1", "s3cret"), codeParams("code-1"))
     } yield assertEquals(code(result), Some("invalid_client"))
   }
 
   test("a wrong secret is refused without a description") {
     for {
       endpoint <- setup()
-      result <- endpoint(Some(basic("client-1", "wrong")), codeParams("code-1"))
+      result <- endpoint(basic("client-1", "wrong"), codeParams("code-1"))
     } yield {
       assertEquals(code(result), Some("invalid_client"))
       assertEquals(result.left.toOption.flatMap(_.description), None)
@@ -176,29 +176,29 @@ class TokenEndpointSpec extends CatsEffectSuite {
   test("a request without a grant type is refused with invalid_request") {
     for {
       endpoint <- setup()
-      result <- endpoint(Some(basic("client-1", "s3cret")), Map("code" -> "code-1", "client_id" -> clientId.value))
+      result <- endpoint(basic("client-1", "s3cret"), Map("code" -> "code-1", "client_id" -> clientId.value))
     } yield assertEquals(code(result), Some("invalid_request"))
   }
 
   test("an unknown grant type is refused with unsupported_grant_type") {
     for {
       endpoint <- setup()
-      result <- endpoint(Some(basic("client-1", "s3cret")), Map("grant_type" -> "password", "client_id" -> clientId.value))
+      result <- endpoint(basic("client-1", "s3cret"), Map("grant_type" -> "password", "client_id" -> clientId.value))
     } yield assertEquals(code(result), Some("unsupported_grant_type"))
   }
 
   test("a malformed code verifier is refused with invalid_request") {
     for {
       endpoint <- setup()
-      result <- endpoint(Some(basic("client-1", "s3cret")), codeParams("code-1", refused))
+      result <- endpoint(basic("client-1", "s3cret"), codeParams("code-1", refused))
     } yield assertEquals(code(result), Some("invalid_request"))
   }
 
   test("a replayed code is refused with invalid_grant") {
     for {
       endpoint <- setup()
-      first <- endpoint(Some(basic("client-1", "s3cret")), codeParams("code-1"))
-      second <- endpoint(Some(basic("client-1", "s3cret")), codeParams("code-1"))
+      first <- endpoint(basic("client-1", "s3cret"), codeParams("code-1"))
+      second <- endpoint(basic("client-1", "s3cret"), codeParams("code-1"))
     } yield {
       assert(first.isRight)
       assertEquals(code(second), Some("invalid_grant"))
@@ -208,7 +208,7 @@ class TokenEndpointSpec extends CatsEffectSuite {
   test("a body client id that disagrees with the credentials is refused") {
     for {
       endpoint <- setup()
-      result <- endpoint(Some(basic("client-1", "s3cret")), codeParams("code-1").updated("client_id", "client-2"))
+      result <- endpoint(basic("client-1", "s3cret"), codeParams("code-1").updated("client_id", "client-2"))
     } yield assertEquals(code(result), Some("invalid_client"))
   }
 }

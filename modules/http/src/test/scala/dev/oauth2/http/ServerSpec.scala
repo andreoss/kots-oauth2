@@ -24,12 +24,12 @@ class ServerSpec extends FunSuite {
 
   private def success(response: TokenResponse): TokenLogic[Id] =
     new TokenLogic[Id] {
-      def apply(authorization: Option[String], parameters: Map[String, String]) = Right(response)
+      def apply(basic: Option[String], parameters: Map[String, String]) = Right(response)
     }
 
   private def failure(error: OAuth2Error): TokenLogic[Id] =
     new TokenLogic[Id] {
-      def apply(authorization: Option[String], parameters: Map[String, String]) = Left(error)
+      def apply(basic: Option[String], parameters: Map[String, String]) = Left(error)
     }
 
   private type Bound[F[_]] = ServerEndpoint[Any, F] {

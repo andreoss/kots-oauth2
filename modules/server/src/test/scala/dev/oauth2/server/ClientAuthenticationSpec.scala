@@ -31,8 +31,8 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
 
   private val storedHash: ClientSecretHash = ClientSecretHash.of(secret)
 
-  private def basic(id: String, secret: String): String =
-    s"Basic ${Base64.getEncoder.encodeToString(s"$id:$secret".getBytes(StandardCharsets.UTF_8))}"
+  private def basic(id: String, secret: String): Option[String] =
+    Some(Base64.getEncoder.encodeToString(s"$id:$secret".getBytes(StandardCharsets.UTF_8)))
 
   private def client(
       method: ClientAuthMethod = ClientAuthMethod.ClientSecretBasic,
@@ -45,10 +45,10 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
     InMemoryClientStore.create[IO](clients).map(store => new RegisteredClientAuthentication[IO](store))
 
   private def input(
-      authorization: Option[String] = None,
+      basic: Option[String] = None,
       params: Map[String, String] = Map.empty
   ): ClientAuthInput =
-    ClientAuthInput.from(authorization, params).toOption.get
+    ClientAuthInput.from(basic, params).toOption.get
 
   private def rejection(result: Either[OAuth2Error, Client]): OAuth2Error =
     result.left.getOrElse(OAuth2Error.ServerError())
@@ -57,7 +57,7 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
     val registered = client()
     for {
       authentication <- service(List(registered))
-      result <- authentication.authenticate(input(Some(basic("client-1", "s3cret"))))
+      result <- authentication.authenticate(input(basic("client-1", "s3cret")))
     } yield assertEquals(result, Right(registered))
   }
 
@@ -72,7 +72,7 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
   test("basic credentials are refused for a client registered for client_secret_post") {
     for {
       authentication <- service(List(client(ClientAuthMethod.ClientSecretPost)))
-      result <- authentication.authenticate(input(Some(basic("client-1", "s3cret"))))
+      result <- authentication.authenticate(input(basic("client-1", "s3cret")))
     } yield assert(result.isLeft)
   }
 
@@ -86,7 +86,7 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
   test("a wrong secret is refused as invalid_client without a description") {
     for {
       authentication <- service(List(client()))
-      result <- authentication.authenticate(input(Some(basic("client-1", "wrong"))))
+      result <- authentication.authenticate(input(basic("client-1", "wrong")))
     } yield {
       assertEquals(rejection(result), OAuth2Error.InvalidClient())
       assertEquals(rejection(result).body, Map("error" -> "invalid_client"))
@@ -97,7 +97,7 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
   test("an unknown client is refused") {
     for {
       authentication <- service(List.empty)
-      result <- authentication.authenticate(input(Some(basic("client-1", "s3cret"))))
+      result <- authentication.authenticate(input(basic("client-1", "s3cret")))
     } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
   }
 
@@ -131,7 +131,7 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
   test("basic credentials for another client than the body client id are refused") {
     for {
       authentication <- service(List(client(), client(id = otherId)))
-      result <- authentication.authenticate(input(Some(basic("client-1", "s3cret")), Map("client_id" -> "client-2")))
+      result <- authentication.authenticate(input(basic("client-1", "s3cret"), Map("client_id" -> "client-2")))
     } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
   }
 
@@ -145,7 +145,7 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
   test("a client registered without a secret hash is refused") {
     for {
       authentication <- service(List(client(hash = None)))
-      result <- authentication.authenticate(input(Some(basic("client-1", "s3cret"))))
+      result <- authentication.authenticate(input(basic("client-1", "s3cret")))
     } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
   }
 
@@ -153,8 +153,8 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
     val registered = client()
     for {
       authentication <- service(List(registered))
-      unknown <- authentication.authenticate(input(Some(basic("client-2", "s3cret"))))
-      wrong <- authentication.authenticate(input(Some(basic("client-1", "wrong"))))
+      unknown <- authentication.authenticate(input(basic("client-2", "s3cret")))
+      wrong <- authentication.authenticate(input(basic("client-1", "wrong")))
       missing <- authentication.authenticate(input(None, Map("client_id" -> "client-1")))
     } yield {
       assertEquals(rejection(unknown), OAuth2Error.InvalidClient())

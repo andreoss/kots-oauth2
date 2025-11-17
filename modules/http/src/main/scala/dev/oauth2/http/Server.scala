@@ -8,7 +8,7 @@ import sttp.tapir.server.ServerEndpoint
 
 trait TokenLogic[F[_]] {
   def apply(
-      authorization: Option[String],
+      basic: Option[String],
       parameters: Map[String, String]
   ): F[Either[OAuth2Error, TokenResponse]]
 }

@@ -20,10 +20,10 @@ final class TokenEndpoint[F[_]: Monad](
 ) extends TokenLogic[F] {
 
   def apply(
-      authorization: Option[String],
+      basic: Option[String],
       parameters: Map[String, String]
   ): F[Either[OAuth2Error, TokenResponse]] =
-    ClientAuthInput.from(authorization, parameters).toEither match {
+    ClientAuthInput.from(basic, parameters).toEither match {
       case Left(failures) => Monad[F].pure(Left(failures.head))
       case Right(input) =>
         authentication.authenticate(input).flatMap {
