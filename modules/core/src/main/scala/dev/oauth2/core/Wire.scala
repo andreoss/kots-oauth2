@@ -69,4 +69,8 @@ object Wire {
 
   implicit val clientAuthMethod: Wire[ClientAuthMethod] =
     instance(_.value, ClientAuthMethod.from)
+
+  implicit val revocationToken: Wire[RevocationToken] = instance(_.value, RevocationToken.from)
+
+  implicit val tokenTypeHint: Wire[TokenTypeHint] = instance(_.value, TokenTypeHint.from)
 }
