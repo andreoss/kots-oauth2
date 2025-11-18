@@ -13,11 +13,24 @@ trait TokenLogic[F[_]] {
   ): F[Either[OAuth2Error, TokenResponse]]
 }
 
+trait RevocationLogic[F[_]] {
+  def apply(
+      basic: Option[String],
+      parameters: Map[String, String]
+  ): F[Either[OAuth2Error, Unit]]
+}
+
 object Server {
 
   def token[F[_]: Functor](logic: TokenLogic[F]): ServerEndpoint[Any, F] =
     ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any, F](
       Endpoints.token,
       _ => input => logic(input._1, input._2).map(_.map(TokenResponse.render))
+    )
+
+  def revocation[F[_]](logic: RevocationLogic[F]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Unit, Any, F](
+      Endpoints.revocation,
+      _ => input => logic(input._1, input._2)
     )
 }

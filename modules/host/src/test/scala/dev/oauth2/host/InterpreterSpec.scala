@@ -26,6 +26,7 @@ import dev.oauth2.http.Endpoints
 import dev.oauth2.http.Form
 import dev.oauth2.http.Server
 import dev.oauth2.server.RegisteredClientAuthentication
+import dev.oauth2.server.RevocationEndpoint
 import dev.oauth2.server.TokenEndpoint
 import dev.oauth2.server.TokenService
 import dev.oauth2.store.Client
@@ -84,9 +85,16 @@ class InterpreterSpec extends CatsEffectSuite {
   )
 
   private def post(form: Map[String, String], secret: Option[String]): Request[IO] =
+    postTo("/token", form, secret)
+
+  private def postTo(
+      path: String,
+      form: Map[String, String],
+      secret: Option[String]
+  ): Request[IO] =
     Request[IO](
       method = Method.POST,
-      uri = Uri.unsafeFromString("http://localhost/token"),
+      uri = Uri.unsafeFromString(s"http://localhost$path"),
       headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)) ++
         Headers(secret.toList.map(value => Authorization(BasicCredentials(clientId.value, value)))),
       body = Stream.emits(Form.render(form).getBytes(StandardCharsets.UTF_8).toSeq).covary[IO]
@@ -109,6 +117,7 @@ class InterpreterSpec extends CatsEffectSuite {
       tokens <- InMemoryTokenStore.create[IO](clock)
       grants <- InMemoryGrantStore.create[IO]
       clients <- InMemoryClientStore.create[IO](List(registered))
+      revocation = new RevocationEndpoint[IO](new RegisteredClientAuthentication[IO](clients), tokens, grants)
     } yield Interpreter.routes[IO](
       List(
         Server.token(
@@ -116,7 +125,8 @@ class InterpreterSpec extends CatsEffectSuite {
             new RegisteredClientAuthentication[IO](clients),
             new TokenService[IO](codes, tokens, grants, clock, entropy, LifetimePolicy.defaults)
           )
-        )
+        ),
+        Server.revocation(revocation)
       )
     )
   }
@@ -126,6 +136,16 @@ class InterpreterSpec extends CatsEffectSuite {
 
   private def body(response: Response[IO]): IO[String] =
     response.body.compile.toVector.map(bytes => new String(bytes.toArray, StandardCharsets.UTF_8))
+
+  private def field(text: String, name: String): String =
+    io.circe.parser
+      .parse(text)
+      .toOption
+      .flatMap(_.hcursor.get[String](name).toOption)
+      .getOrElse(sys.error(s"no $name in $text"))
+
+  private def revoke(token: String, hint: String): Map[String, String] =
+    Map("token" -> token, "token_type_hint" -> hint)
 
   private val exchange: Map[String, String] = Map(
     "grant_type" -> "authorization_code",
@@ -217,6 +237,71 @@ class InterpreterSpec extends CatsEffectSuite {
       answered <- served.run(post(exchange, Some("wrong"))).value
       response = answered.get
     } yield assertEquals(cacheControl(response), Some(Endpoints.NoStore))
+  }
+
+  test("a revoked refresh token is answered with an empty success and refused afterwards") {
+    for {
+      served <- routes
+      answered <- served.run(post(exchange, Some("s3cret"))).value
+      refresh <- body(answered.get).map(field(_, "refresh_token"))
+      revoked <- served.run(postTo("/revocation", revoke(refresh, "refresh_token"), Some("s3cret"))).value
+      text <- body(revoked.get)
+      reused <- served
+        .run(post(Map("grant_type" -> "refresh_token", "refresh_token" -> refresh, "client_id" -> clientId.value), Some("s3cret")))
+        .value
+      refused <- body(reused.get)
+    } yield {
+      assertEquals(revoked.get.status, Status.Ok)
+      assertEquals(text, "")
+      assertEquals(reused.get.status, Status.BadRequest)
+      assert(refused.contains("invalid_grant"))
+    }
+  }
+
+  test("an unknown token is revoked with an empty success") {
+    for {
+      served <- routes
+      answered <- served.run(postTo("/revocation", revoke("absent", "access_token"), Some("s3cret"))).value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.Ok)
+      assertEquals(text, "")
+    }
+  }
+
+  test("revoking an access token invalidates the pair it was issued with") {
+    for {
+      served <- routes
+      answered <- served.run(post(exchange, Some("s3cret"))).value
+      text <- body(answered.get)
+      access = field(text, "access_token")
+      refresh = field(text, "refresh_token")
+      revoked <- served.run(postTo("/revocation", revoke(access, "access_token"), Some("s3cret"))).value
+      reused <- served
+        .run(post(Map("grant_type" -> "refresh_token", "refresh_token" -> refresh, "client_id" -> clientId.value), Some("s3cret")))
+        .value
+    } yield {
+      assertEquals(revoked.get.status, Status.Ok)
+      assertEquals(reused.get.status, Status.BadRequest)
+    }
+  }
+
+  test("revocation with a wrong secret is answered with unauthorized") {
+    for {
+      served <- routes
+      answered <- served.run(postTo("/revocation", revoke("at-1", "access_token"), Some("wrong"))).value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.Unauthorized)
+      assert(text.contains("invalid_client"))
+    }
+  }
+
+  test("a revoked token is served with cache control no-store") {
+    for {
+      served <- routes
+      answered <- served.run(postTo("/revocation", revoke("absent", "access_token"), Some("s3cret"))).value
+    } yield assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
   }
 
   test("a request to another path is not served") {

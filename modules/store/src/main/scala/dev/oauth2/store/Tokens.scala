@@ -9,8 +9,10 @@ import dev.oauth2.core.ClientId
 import dev.oauth2.core.GrantId
 import dev.oauth2.core.RefreshToken
 import dev.oauth2.core.RefreshTokenHash
+import dev.oauth2.core.RevocationToken
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
+import dev.oauth2.core.TokenTypeHint
 
 final case class TokenRecord(
     accessTokenHash: AccessTokenHash,
@@ -54,6 +56,8 @@ trait TokenStore[F[_]] {
   def retire(refreshToken: RefreshToken, grantId: GrantId): F[Unit]
 
   def rotated(refreshToken: RefreshToken): F[Option[GrantId]]
+
+  def revoke(token: RevocationToken, hint: Option[TokenTypeHint], clientId: ClientId): F[Option[GrantId]]
 
   def revokeGrant(grantId: GrantId): F[Unit]
 }

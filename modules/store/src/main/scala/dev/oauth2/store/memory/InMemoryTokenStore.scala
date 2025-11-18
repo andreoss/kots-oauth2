@@ -7,10 +7,13 @@ import cats.syntax.functor._
 
 import dev.oauth2.core.AccessToken
 import dev.oauth2.core.AccessTokenHash
+import dev.oauth2.core.ClientId
 import dev.oauth2.core.Clock
 import dev.oauth2.core.GrantId
 import dev.oauth2.core.RefreshToken
 import dev.oauth2.core.RefreshTokenHash
+import dev.oauth2.core.RevocationToken
+import dev.oauth2.core.TokenTypeHint
 import dev.oauth2.store.TokenRecord
 import dev.oauth2.store.TokenStore
 
@@ -57,6 +60,39 @@ final class InMemoryTokenStore[F[_]: Monad] private (
 
   def rotated(refreshToken: RefreshToken): F[Option[GrantId]] =
     retired.get.map(_.get(RefreshTokenHash.of(refreshToken)))
+
+  def revoke(token: RevocationToken, hint: Option[TokenTypeHint], clientId: ClientId): F[Option[GrantId]] =
+    state.modify { tokens =>
+      tokens.values.toVector
+        .flatMap(record => owned(record, token, hint, clientId).map(refresh => (record, refresh)))
+        .headOption match {
+        case Some((record, true)) =>
+          (tokens.filterNot { case (_, other) => other.grantId == record.grantId }, Some(record.grantId))
+        case Some((record, false)) => (tokens - record.accessTokenHash, None)
+        case None                  => (tokens, None)
+      }
+    }
+
+  private def owned(
+      record: TokenRecord,
+      token: RevocationToken,
+      hint: Option[TokenTypeHint],
+      clientId: ClientId
+  ): Option[Boolean] =
+    if (record.clientId != clientId) None
+    else
+      hint match {
+        case Some(TokenTypeHint.AccessToken) =>
+          RevocationToken.asAccessToken(token).filter(record.matchesAccess).map(_ => false)
+        case Some(TokenTypeHint.RefreshToken) =>
+          RevocationToken.asRefreshToken(token).filter(record.matchesRefresh).map(_ => true)
+        case None =>
+          RevocationToken
+            .asRefreshToken(token)
+            .filter(record.matchesRefresh)
+            .map(_ => true)
+            .orElse(RevocationToken.asAccessToken(token).filter(record.matchesAccess).map(_ => false))
+      }
 }
 
 object InMemoryTokenStore {
