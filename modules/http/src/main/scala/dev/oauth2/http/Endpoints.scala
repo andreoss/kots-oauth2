@@ -32,6 +32,8 @@ object Endpoints {
     "client_secret"
   )
 
+  val introspectionParameters: Set[String] = revocationParameters
+
   def strictForm(allowed: Set[String]): Codec[String, Map[String, String], XWwwFormUrlencoded] =
     Codec
       .id[String, XWwwFormUrlencoded](XWwwFormUrlencoded(), Schema.anyObject)
@@ -98,6 +100,10 @@ object Endpoints {
 
   lazy val revocation: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Unit, Any] =
     Revocation.endpoint
+
+  lazy val introspection
+      : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+    Introspection.endpoint
 }
 
 private[http] object Revocation {
@@ -111,5 +117,19 @@ private[http] object Revocation {
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
       .out(Endpoints.noStore(statusCode(StatusCode.Ok)))
+      .errorOut(Endpoints.errors)
+}
+
+private[http] object Introspection {
+
+  implicit val formParameters: Codec[String, Map[String, String], XWwwFormUrlencoded] =
+    Endpoints.strictForm(Endpoints.introspectionParameters)
+
+  val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+    sttp.tapir.endpoint.post
+      .in("introspection")
+      .in(Auth.basic)
+      .in(formBody[Map[String, String]])
+      .out(Endpoints.noStore(jsonBody[Map[String, String]]))
       .errorOut(Endpoints.errors)
 }
