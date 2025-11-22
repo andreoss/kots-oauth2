@@ -16,7 +16,11 @@ class EndpointsSpec extends FunSuite {
 
   private val document: OpenAPI =
     OpenAPIDocsInterpreter()
-      .toOpenAPI(List(Endpoints.token, Endpoints.revocation, Endpoints.introspection), "OAuth 2.0", "1.0")
+      .toOpenAPI(
+        List(Endpoints.token, Endpoints.revocation, Endpoints.introspection, Endpoints.metadata),
+        "OAuth 2.0",
+        "1.0"
+      )
 
   private def tokenOperation =
     document.paths.pathItems("/token").post.getOrElse(fail("no token operation in the document"))
@@ -26,6 +30,10 @@ class EndpointsSpec extends FunSuite {
 
   private def introspectionOperation =
     document.paths.pathItems("/introspection").post.getOrElse(fail("no introspection operation in the document"))
+
+  private def metadataOperation =
+    document.paths.pathItems("/.well-known/oauth-authorization-server").get
+      .getOrElse(fail("no metadata operation in the document"))
 
   private def accepted[A](result: DecodeResult[A]): Boolean =
     result match {
@@ -190,6 +198,18 @@ class EndpointsSpec extends FunSuite {
       DecodeResult.Value(Map("token" -> "at-1", "token_type_hint" -> "access_token"))
     )
     assert(refused(form.decode("token=at-1&grant_type=code")))
+  }
+
+  test("the metadata endpoint is a get at the well known path") {
+    assertEquals(Endpoints.metadata.showPathTemplate(showQueryParam = None), "/.well-known/oauth-authorization-server")
+    assertEquals(Endpoints.metadata.method.map(_.method), Some("GET"))
+    assert(metadataOperation.security.isEmpty)
+  }
+
+  test("every described metadata response carries cache control no-store") {
+    val responses = metadataOperation.responses.responses.values.flatMap(_.toOption)
+    assert(responses.nonEmpty)
+    assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
   }
 
   test("an error is written as the body the RFC assigns to it") {

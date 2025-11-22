@@ -6,6 +6,7 @@ import java.time.Instant
 import cats.effect.IO
 import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.AuthorizationDetails
+import dev.oauth2.core.AuthorizationServerMetadata
 import dev.oauth2.core.ClientAuthMethod
 import dev.oauth2.core.ClientId
 import dev.oauth2.core.ClientSecret
@@ -14,7 +15,9 @@ import dev.oauth2.core.Clock
 import dev.oauth2.core.CodeChallenge
 import dev.oauth2.core.CodeChallengeMethod
 import dev.oauth2.core.CodeVerifier
+import dev.oauth2.core.EndpointUri
 import dev.oauth2.core.Entropy
+import dev.oauth2.core.Issuer
 import dev.oauth2.core.LifetimePolicy
 import dev.oauth2.core.OAuth2Error
 import dev.oauth2.core.ParseFailure
@@ -77,6 +80,15 @@ class InterpreterSpec extends CatsEffectSuite {
     expiresAt = Start.plusSeconds(60L)
   )
 
+  private val metadata: AuthorizationServerMetadata = AuthorizationServerMetadata.of(
+    unsafe(Issuer.from("https://server.example")),
+    unsafe(EndpointUri.from("https://server.example/authorize")),
+    unsafe(EndpointUri.from("https://server.example/token")),
+    Some(unsafe(EndpointUri.from("https://server.example/revocation"))),
+    Some(unsafe(EndpointUri.from("https://server.example/introspection"))),
+    unsafe(Scopes.parse("read"))
+  )
+
   private val registered: Client = Client(
     clientId,
     Set(unsafe(RedirectUri.from("https://client.example/cb"))),
@@ -84,6 +96,12 @@ class InterpreterSpec extends CatsEffectSuite {
     ClientAuthMethod.ClientSecretBasic,
     Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
   )
+
+  private def wellKnown: Request[IO] =
+    Request[IO](
+      method = Method.GET,
+      uri = Uri.unsafeFromString("http://localhost/.well-known/oauth-authorization-server")
+    )
 
   private def post(form: Map[String, String], secret: Option[String]): Request[IO] =
     postTo("/token", form, secret)
@@ -129,7 +147,8 @@ class InterpreterSpec extends CatsEffectSuite {
           )
         ),
         Server.revocation(revocation),
-        Server.introspection(introspection)
+        Server.introspection(introspection),
+        Server.metadata(metadata)
       )
     )
   }
@@ -364,6 +383,32 @@ class InterpreterSpec extends CatsEffectSuite {
     for {
       served <- routes
       answered <- served.run(postTo("/introspection", revoke("absent", "access_token"), Some("s3cret"))).value
+    } yield assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
+  }
+
+  test("the metadata document is served at the well known path") {
+    for {
+      served <- routes
+      answered <- served.run(wellKnown).value
+      response = answered.get
+      text <- body(response)
+      cursor = io.circe.parser.parse(text).toOption.get.hcursor
+    } yield {
+      assertEquals(response.status, Status.Ok)
+      assertEquals(cursor.get[String]("issuer").toOption, Some("https://server.example"))
+      assertEquals(cursor.get[String]("authorization_endpoint").toOption, Some("https://server.example/authorize"))
+      assertEquals(cursor.get[String]("token_endpoint").toOption, Some("https://server.example/token"))
+      assertEquals(cursor.get[String]("introspection_endpoint").toOption, Some("https://server.example/introspection"))
+      assertEquals(cursor.get[List[String]]("scopes_supported").toOption, Some(List("read")))
+      assertEquals(cursor.get[List[String]]("code_challenge_methods_supported").toOption, Some(List("S256")))
+      assert(cursor.get[List[String]]("grant_types_supported").toOption.get.contains("refresh_token"))
+    }
+  }
+
+  test("the metadata document is served with cache control no-store") {
+    for {
+      served <- routes
+      answered <- served.run(wellKnown).value
     } yield assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
   }
 

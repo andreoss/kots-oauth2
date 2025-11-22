@@ -1,6 +1,7 @@
 package dev.oauth2.http
 
 import dev.oauth2.core.OAuth2Error
+import io.circe.Json
 import sttp.model.StatusCode
 import sttp.tapir.CodecFormat.XWwwFormUrlencoded
 import sttp.tapir._
@@ -104,6 +105,14 @@ object Endpoints {
   lazy val introspection
       : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     Introspection.endpoint
+
+  val WellKnownPath: List[String] = List(".well-known", "oauth-authorization-server")
+
+  lazy val metadata: PublicEndpoint[Unit, OAuth2Error, Map[String, Json], Any] =
+    WellKnownPath
+      .foldLeft(sttp.tapir.endpoint.get)((path, segment) => path.in(segment))
+      .out(noStore(jsonBody[Map[String, Json]]))
+      .errorOut(errors)
 }
 
 private[http] object Revocation {

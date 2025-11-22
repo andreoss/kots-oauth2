@@ -1,10 +1,13 @@
 package dev.oauth2.http
 
+import cats.Applicative
 import cats.Functor
 import cats.syntax.functor._
 
+import dev.oauth2.core.AuthorizationServerMetadata
 import dev.oauth2.core.IntrospectionResponse
 import dev.oauth2.core.OAuth2Error
+import io.circe.Json
 import sttp.tapir.server.ServerEndpoint
 
 trait TokenLogic[F[_]] {
@@ -46,5 +49,11 @@ object Server {
     ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any, F](
       Endpoints.introspection,
       _ => input => logic(input._1, input._2).map(_.map(_.body))
+    )
+
+  def metadata[F[_]: Applicative](document: AuthorizationServerMetadata): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[Unit, OAuth2Error, Map[String, Json], Any, F](
+      Endpoints.metadata,
+      _ => _ => Applicative[F].pure(Right(Metadata.render(document)))
     )
 }
