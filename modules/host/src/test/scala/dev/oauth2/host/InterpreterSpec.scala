@@ -18,6 +18,7 @@ import dev.oauth2.core.CodeVerifier
 import dev.oauth2.core.EndpointUri
 import dev.oauth2.core.Entropy
 import dev.oauth2.core.Issuer
+import dev.oauth2.core.KeyId
 import dev.oauth2.core.LifetimePolicy
 import dev.oauth2.core.OAuth2Error
 import dev.oauth2.core.ParseFailure
@@ -28,6 +29,8 @@ import dev.oauth2.core.Subject
 import dev.oauth2.http.Endpoints
 import dev.oauth2.http.Form
 import dev.oauth2.http.Server
+import dev.oauth2.jose.Alg
+import dev.oauth2.jose.Jwk
 import dev.oauth2.server.IntrospectionEndpoint
 import dev.oauth2.server.RegisteredClientAuthentication
 import dev.oauth2.server.RevocationEndpoint
@@ -38,6 +41,7 @@ import dev.oauth2.store.CodeRecord
 import dev.oauth2.store.memory.InMemoryClientStore
 import dev.oauth2.store.memory.InMemoryCodeStore
 import dev.oauth2.store.memory.InMemoryGrantStore
+import dev.oauth2.store.memory.InMemoryKeyStore
 import dev.oauth2.store.memory.InMemoryTokenStore
 import fs2.Stream
 import munit.CatsEffectSuite
@@ -103,6 +107,12 @@ class InterpreterSpec extends CatsEffectSuite {
       uri = Uri.unsafeFromString("http://localhost/.well-known/oauth-authorization-server")
     )
 
+  private def jwks: Request[IO] =
+    Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/jwks"))
+
+  private def published: Jwk =
+    unsafe(Jwk.rsa(unsafe(KeyId.from("key-1")), Alg.RS256, "t6Q8SWSFZkG9s2Y0m1IuA", "AQAB"))
+
   private def post(form: Map[String, String], secret: Option[String]): Request[IO] =
     postTo("/token", form, secret)
 
@@ -135,6 +145,8 @@ class InterpreterSpec extends CatsEffectSuite {
       _ <- codes.save(recorded)
       tokens <- InMemoryTokenStore.create[IO](clock)
       grants <- InMemoryGrantStore.create[IO]
+      keys <- InMemoryKeyStore.create[IO]
+      _ <- keys.add(published)
       clients <- InMemoryClientStore.create[IO](List(registered))
       revocation = new RevocationEndpoint[IO](new RegisteredClientAuthentication[IO](clients), tokens, grants)
       introspection = new IntrospectionEndpoint[IO](new RegisteredClientAuthentication[IO](clients), tokens, grants)
@@ -148,7 +160,8 @@ class InterpreterSpec extends CatsEffectSuite {
         ),
         Server.revocation(revocation),
         Server.introspection(introspection),
-        Server.metadata(metadata)
+        Server.metadata(metadata),
+        Server.jwks(keys.jwks)
       )
     )
   }
@@ -409,6 +422,33 @@ class InterpreterSpec extends CatsEffectSuite {
     for {
       served <- routes
       answered <- served.run(wellKnown).value
+    } yield assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
+  }
+
+  test("the key set is served at /jwks with the public parameters only") {
+    for {
+      served <- routes
+      answered <- served.run(jwks).value
+      response = answered.get
+      text <- body(response)
+      cursor = io.circe.parser.parse(text).toOption.get.hcursor
+      keys = cursor.downField("keys").values.getOrElse(Nil).toVector
+    } yield {
+      assertEquals(response.status, Status.Ok)
+      assertEquals(keys.length, 1)
+      assertEquals(keys.head.hcursor.get[String]("kid").toOption, Some("key-1"))
+      assertEquals(keys.head.hcursor.get[String]("kty").toOption, Some("RSA"))
+      assertEquals(keys.head.hcursor.get[String]("alg").toOption, Some("RS256"))
+      assertEquals(keys.head.hcursor.get[String]("use").toOption, Some("sig"))
+      assertEquals(keys.head.hcursor.get[String]("n").toOption, Some("t6Q8SWSFZkG9s2Y0m1IuA"))
+      assertEquals(keys.head.hcursor.get[String]("d").toOption, None)
+    }
+  }
+
+  test("the key set is served with cache control no-store") {
+    for {
+      served <- routes
+      answered <- served.run(jwks).value
     } yield assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
   }
 
