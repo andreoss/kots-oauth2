@@ -146,6 +146,31 @@ class TokenEndpointSpec extends CatsEffectSuite {
     }
   }
 
+  test("a client credentials request is answered without a refresh token") {
+    for {
+      endpoint <- setup()
+      result <- endpoint(
+        basic("client-1", "s3cret"),
+        Map("grant_type" -> "client_credentials", "scope" -> "read", "client_id" -> clientId.value)
+      )
+    } yield {
+      val response = result.toOption.get
+      assert(response.accessToken.value.nonEmpty)
+      assertEquals(response.refreshToken, None)
+      assertEquals(response.scope, unsafe(Scopes.parse("read")))
+    }
+  }
+
+  test("a client credentials request with an unregistered scope is refused") {
+    for {
+      endpoint <- setup()
+      result <- endpoint(
+        basic("client-1", "s3cret"),
+        Map("grant_type" -> "client_credentials", "scope" -> "read write", "client_id" -> clientId.value)
+      )
+    } yield assertEquals(code(result), Some("invalid_scope"))
+  }
+
   test("an unregistered client is refused with invalid_client") {
     for {
       endpoint <- setup(clients = Nil)

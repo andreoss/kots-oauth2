@@ -365,6 +365,43 @@ class TokenServiceSpec extends CatsEffectSuite {
     }
   }
 
+  test("client credentials issue an access token without a refresh token") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, tokens, _) = triple
+      result <- service.clientCredentials(TokenRequest.ClientCredentials(None, clientId), client())
+      minted = result.toOption.get
+      stored <- tokens.findByAccess(minted.accessToken)
+    } yield {
+      assertEquals(minted.refreshToken, None)
+      assertEquals(minted.record.subject.value, clientId.value)
+      assertEquals(minted.record.scopes, unsafe(Scopes.parse("read")))
+      assert(stored.isDefined)
+    }
+  }
+
+  test("client credentials refuse a scope the client is not registered for") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      result <- service.clientCredentials(
+        TokenRequest.ClientCredentials(Some(unsafe(Scopes.parse("read write"))), clientId),
+        client()
+      )
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_scope"))
+  }
+
+  test("client credentials are refused for a public client") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      result <- service.clientCredentials(
+        TokenRequest.ClientCredentials(None, clientId),
+        client(method = ClientAuthMethod.None)
+      )
+    } yield assertEquals(result.left.toOption.map(_.code), Some("unauthorized_client"))
+  }
+
   test("refresh refuses an unknown refresh token") {
     for {
       triple <- setup(record("code-1"))

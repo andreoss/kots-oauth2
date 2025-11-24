@@ -60,6 +60,35 @@ final class TokenService[F[_]: Monad](
       case Some(record) => rotate(record, request, client)
     }
 
+  def clientCredentials(
+      request: TokenRequest.ClientCredentials,
+      client: Client
+  ): F[Either[OAuth2Error, IssuedToken]] =
+    if (!client.confidential) Monad[F].pure(Left(OAuth2Error.UnauthorizedClient(): OAuth2Error))
+    else
+      request.scope match {
+        case Some(scopes) if !client.allowsScopes(scopes) =>
+          Monad[F].pure(Left(OAuth2Error.InvalidScope(): OAuth2Error))
+        case requested =>
+          clock.instant.flatMap(now =>
+            Subject.from(client.id.value).leftMap(TokenService.failure) match {
+              case Left(error) => Monad[F].pure(Left(error))
+              case Right(owner) =>
+                issue(
+                  TokenService.Mint(
+                    None,
+                    now,
+                    client.id,
+                    owner,
+                    requested.getOrElse(client.scopes),
+                    AuthorizationDetails.empty,
+                    None
+                  )
+                )
+            }
+          )
+      }
+
   private def replay(code: AuthorizationCode): F[Either[OAuth2Error, IssuedToken]] =
     codes.redeemed(code).flatMap {
       case None        => Monad[F].pure(Left(TokenService.rejected))
