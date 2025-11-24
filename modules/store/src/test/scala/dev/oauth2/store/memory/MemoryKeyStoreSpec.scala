@@ -2,32 +2,20 @@ package dev.oauth2.store.memory
 
 import cats.effect.IO
 import dev.oauth2.core.KeyId
-import dev.oauth2.core.ParseFailure
-import dev.oauth2.jose.Alg
+import dev.oauth2.jose.Fakes
 import dev.oauth2.jose.Jwk
 import dev.oauth2.jose.Jwks
 import munit.CatsEffectSuite
 
 class MemoryKeyStoreSpec extends CatsEffectSuite {
 
-  private def unsafe[A](parsed: Either[ParseFailure, A]): A =
-    parsed.fold(_ => sys.error("fixture"), identity)
+  private val first: KeyId = Fakes.keyId("key-1")
 
-  private val first: KeyId = unsafe(KeyId.from("key-1"))
+  private val second: KeyId = Fakes.keyId("key-2")
 
-  private val second: KeyId = unsafe(KeyId.from("key-2"))
+  private val firstKey: Jwk = Fakes.rsa("key-1")
 
-  private val n: String = "t6Q8SWSFZkG9s2Y0m1IuA"
-
-  private val e: String = "AQAB"
-
-  private val x: String = "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU"
-
-  private val y: String = "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"
-
-  private val firstKey: Jwk = unsafe(Jwk.rsa(first, Alg.RS256, n, e))
-
-  private val secondKey: Jwk = unsafe(Jwk.ec(second, Alg.ES256, "P-256", x, y))
+  private val secondKey: Jwk = Fakes.ec("key-2")
 
   private def store: IO[InMemoryKeyStore[IO]] =
     InMemoryKeyStore.create[IO].flatMap(keys => keys.add(firstKey).as(keys))

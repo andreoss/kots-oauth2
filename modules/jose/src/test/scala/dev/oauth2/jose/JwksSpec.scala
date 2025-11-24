@@ -1,29 +1,18 @@
 package dev.oauth2.jose
 
-import dev.oauth2.core.KeyId
-import dev.oauth2.core.ParseFailure
 import munit.FunSuite
 
 class JwksSpec extends FunSuite {
 
-  private def unsafe[A](parsed: Either[ParseFailure, A]): A =
-    parsed.fold(_ => sys.error("fixture"), identity)
+  private val n: String = Fakes.Modulus
 
-  private val kid: KeyId = unsafe(KeyId.from("key-1"))
+  private val e: String = Fakes.Exponent
 
-  private val n: String = "t6Q8SWSFZkG9s2Y0m1IuA"
+  private val rsaKey: Jwk = Fakes.rsa("key-1")
 
-  private val e: String = "AQAB"
+  private val ecKey: Jwk = Fakes.ec("key-2")
 
-  private val x: String = "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU"
-
-  private val y: String = "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"
-
-  private val rsaKey: Jwk = unsafe(Jwk.rsa(kid, Alg.RS256, n, e))
-
-  private val ecKey: Jwk = unsafe(Jwk.ec(unsafe(KeyId.from("key-2")), Alg.ES256, "P-256", x, y))
-
-  private val okpKey: Jwk = unsafe(Jwk.okp(unsafe(KeyId.from("key-3")), Alg.EdDSA, "Ed25519", x))
+  private val okpKey: Jwk = Fakes.okp("key-3")
 
   private val fixed: Set[String] = Set(Jwks.FieldKid, Jwks.FieldKty, Jwks.FieldAlg, Jwks.FieldUse)
 

@@ -1,27 +1,29 @@
 package dev.oauth2.jose
 
 import dev.oauth2.core.KeyId
-import dev.oauth2.core.ParseFailure
+import dev.oauth2.jose.Fakes.unsafe
 import munit.ScalaCheckSuite
 import org.scalacheck.Gen
 import org.scalacheck.Prop._
 
 class KeysSpec extends ScalaCheckSuite {
 
-  private def unsafe[A](parsed: Either[ParseFailure, A]): A =
-    parsed.fold(_ => sys.error("fixture"), identity)
+  private val kid: KeyId = Fakes.keyId("key-1")
 
-  private val kid: KeyId = unsafe(KeyId.from("key-1"))
+  private val other: KeyId = Fakes.keyId("key-2")
 
-  private val other: KeyId = unsafe(KeyId.from("key-2"))
+  private val n: String = Fakes.Modulus
 
-  private val n: String = "t6Q8SWSFZkG9s2Y0m1IuA"
+  private val e: String = Fakes.Exponent
 
-  private val e: String = "AQAB"
+  private val x: String = Fakes.X
 
-  private val x: String = "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU"
+  private val y: String = Fakes.Y
 
-  private val y: String = "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"
+  test("every fixture parameter is decodable base64url") {
+    val decoder = java.util.Base64.getUrlDecoder
+    List(n, e, x, y).foreach(parameter => assert(decoder.decode(parameter).nonEmpty))
+  }
 
   test("the algorithm allow-list accepts asymmetric signature algorithms only") {
     assertEquals(Alg.from("RS256"), Right(Alg.RS256))

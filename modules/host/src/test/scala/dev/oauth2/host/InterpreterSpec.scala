@@ -18,7 +18,6 @@ import dev.oauth2.core.CodeVerifier
 import dev.oauth2.core.EndpointUri
 import dev.oauth2.core.Entropy
 import dev.oauth2.core.Issuer
-import dev.oauth2.core.KeyId
 import dev.oauth2.core.LifetimePolicy
 import dev.oauth2.core.OAuth2Error
 import dev.oauth2.core.ParseFailure
@@ -29,7 +28,7 @@ import dev.oauth2.core.Subject
 import dev.oauth2.http.Endpoints
 import dev.oauth2.http.Form
 import dev.oauth2.http.Server
-import dev.oauth2.jose.Alg
+import dev.oauth2.jose.Fakes
 import dev.oauth2.jose.Jwk
 import dev.oauth2.server.IntrospectionEndpoint
 import dev.oauth2.server.RegisteredClientAuthentication
@@ -112,7 +111,7 @@ class InterpreterSpec extends CatsEffectSuite {
     Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/jwks"))
 
   private def published: Jwk =
-    unsafe(Jwk.rsa(unsafe(KeyId.from("key-1")), Alg.RS256, "t6Q8SWSFZkG9s2Y0m1IuA", "AQAB"))
+    Fakes.rsa("key-1")
 
   private def post(form: Map[String, String], secret: Option[String]): Request[IO] =
     postTo("/token", form, secret)
@@ -442,7 +441,7 @@ class InterpreterSpec extends CatsEffectSuite {
       assertEquals(keys.head.hcursor.get[String]("kty").toOption, Some("RSA"))
       assertEquals(keys.head.hcursor.get[String]("alg").toOption, Some("RS256"))
       assertEquals(keys.head.hcursor.get[String]("use").toOption, Some("sig"))
-      assertEquals(keys.head.hcursor.get[String]("n").toOption, Some("t6Q8SWSFZkG9s2Y0m1IuA"))
+      assertEquals(keys.head.hcursor.get[String]("n").toOption, Some(Fakes.Modulus))
       assertEquals(keys.head.hcursor.get[String]("d").toOption, None)
     }
   }
