@@ -22,16 +22,26 @@ object Jwks {
 
   val FieldUse: String = "use"
 
+  val PublicParameters: Map[Kty, Set[String]] = Map(
+    Kty.Rsa -> Set("n", "e"),
+    Kty.Ec -> Set("crv", "x", "y"),
+    Kty.Okp -> Set("crv", "x")
+  )
+
   def render(document: Jwks): Json =
     Json.obj(FieldKeys -> Json.arr(document.keys.map(renderKey): _*))
 
-  private def renderKey(key: Jwk): Json =
+  private def renderKey(key: Jwk): Json = {
+    val public = PublicParameters.getOrElse(key.kty, Set.empty)
     Json.fromFields(
-      List(
+      key.parameters.toList.collect {
+        case (name, value) if public.contains(name) => name -> Json.fromString(value)
+      } ++ List(
         FieldKid -> Json.fromString(key.kid.value),
         FieldKty -> Json.fromString(key.kty.value),
         FieldAlg -> Json.fromString(key.alg.value),
         FieldUse -> Json.fromString(Jwk.Use)
-      ) ++ key.parameters.toList.map { case (name, value) => name -> Json.fromString(value) }
+      )
     )
+  }
 }
