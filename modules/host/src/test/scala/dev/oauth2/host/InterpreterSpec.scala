@@ -442,7 +442,7 @@ class InterpreterSpec extends CatsEffectSuite {
       assertEquals(keys.head.hcursor.get[String]("alg").toOption, Some("RS256"))
       assertEquals(keys.head.hcursor.get[String]("use").toOption, Some("sig"))
       assertEquals(keys.head.hcursor.get[String]("n").toOption, Some(Fakes.Modulus))
-      assertEquals(keys.head.hcursor.get[String]("d").toOption, None)
+      assertEquals(keys.head.hcursor.keys.map(_.toSet), Some(Set("kid", "kty", "alg", "use", "n", "e")))
     }
   }
 

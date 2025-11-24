@@ -41,7 +41,7 @@ class JwksSpec extends FunSuite {
     val entry = entries(Jwks(List(rsaKey))).head
     assertEquals(field(entry, "n"), n)
     assertEquals(field(entry, "e"), e)
-    assertEquals(entry.hcursor.get[String]("d").toOption, None)
+    assertEquals(entry.hcursor.keys.map(_.toSet), Some(fixed ++ Jwks.PublicParameters(Kty.Rsa)))
   }
 
   test("the public parameter names are allow-listed per key type") {
