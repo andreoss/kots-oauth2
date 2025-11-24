@@ -15,6 +15,8 @@ object Metadata {
 
   val IntrospectionEndpoint: String = "introspection_endpoint"
 
+  val JwksUri: String = "jwks_uri"
+
   val ResponseTypesSupported: String = "response_types_supported"
 
   val GrantTypesSupported: String = "grant_types_supported"
@@ -37,7 +39,8 @@ object Metadata {
       ScopesSupported -> values(metadata.scopesSupported.value.map(_.value))
     ) ++
       metadata.revocationEndpoint.map(uri => RevocationEndpoint -> Json.fromString(uri.value)) ++
-      metadata.introspectionEndpoint.map(uri => IntrospectionEndpoint -> Json.fromString(uri.value))
+      metadata.introspectionEndpoint.map(uri => IntrospectionEndpoint -> Json.fromString(uri.value)) ++
+      metadata.jwksUri.map(uri => JwksUri -> Json.fromString(uri.value))
 
   private def values(raw: Set[String]): Json =
     Json.arr(raw.toVector.sorted.map(Json.fromString): _*)

@@ -17,8 +17,10 @@ class MetadataSpec extends FunSuite {
 
   private val introspection: EndpointUri = unsafe(EndpointUri.from("https://server.example/introspection"))
 
+  private val keys: EndpointUri = unsafe(EndpointUri.from("https://server.example/jwks"))
+
   private val metadata: AuthorizationServerMetadata =
-    AuthorizationServerMetadata.of(issuer, authorization, token, Some(revocation), Some(introspection), unsafe(Scopes.parse("read write")))
+    AuthorizationServerMetadata.of(issuer, authorization, token, Some(revocation), Some(introspection), Some(keys), unsafe(Scopes.parse("read write")))
 
   test("an endpoint uri refuses a relative reference") {
     assert(EndpointUri.from("/token").isLeft)
@@ -38,6 +40,7 @@ class MetadataSpec extends FunSuite {
     assertEquals(metadata.tokenEndpoint, token)
     assertEquals(metadata.revocationEndpoint, Some(revocation))
     assertEquals(metadata.introspectionEndpoint, Some(introspection))
+    assertEquals(metadata.jwksUri, Some(keys))
   }
 
   test("the metadata offers only the code challenge method the server accepts") {
@@ -57,9 +60,10 @@ class MetadataSpec extends FunSuite {
 
   test("the metadata is built without the optional endpoints as well") {
     val minimal =
-      AuthorizationServerMetadata.of(issuer, authorization, token, None, None, Scopes.empty)
+      AuthorizationServerMetadata.of(issuer, authorization, token, None, None, None, Scopes.empty)
     assertEquals(minimal.revocationEndpoint, None)
     assertEquals(minimal.introspectionEndpoint, None)
+    assertEquals(minimal.jwksUri, None)
     assertEquals(minimal.scopesSupported, Scopes.empty)
   }
 }

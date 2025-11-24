@@ -6,6 +6,7 @@ final case class AuthorizationServerMetadata(
     tokenEndpoint: EndpointUri,
     revocationEndpoint: Option[EndpointUri],
     introspectionEndpoint: Option[EndpointUri],
+    jwksUri: Option[EndpointUri],
     responseTypesSupported: Set[ResponseType],
     grantTypesSupported: Set[GrantType],
     tokenEndpointAuthMethodsSupported: Set[ClientAuthMethod],
@@ -21,6 +22,7 @@ object AuthorizationServerMetadata {
       tokenEndpoint: EndpointUri,
       revocationEndpoint: Option[EndpointUri],
       introspectionEndpoint: Option[EndpointUri],
+      jwksUri: Option[EndpointUri],
       scopesSupported: Scopes
   ): AuthorizationServerMetadata =
     AuthorizationServerMetadata(
@@ -29,6 +31,7 @@ object AuthorizationServerMetadata {
       tokenEndpoint,
       revocationEndpoint,
       introspectionEndpoint,
+      jwksUri,
       ResponseType.all.toSet,
       GrantType.all.toSet,
       ClientAuthMethod.all.toSet,
