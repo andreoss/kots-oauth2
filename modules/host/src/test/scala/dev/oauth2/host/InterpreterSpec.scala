@@ -461,6 +461,20 @@ class InterpreterSpec extends CatsEffectSuite {
     } yield assert(declared.exists(_.startsWith(Endpoints.JwkSetMediaType)))
   }
 
+  test("a failing document read is answered as a server error") {
+    val failing =
+      Interpreter.routes[IO](List(Server.jwks[IO](IO.raiseError[dev.oauth2.jose.Jwks](new RuntimeException("kaput")))))
+    for {
+      answered <- failing.run(jwks).value
+      response = answered.get
+      text <- body(response)
+    } yield {
+      assertEquals(response.status, Status.InternalServerError)
+      assertEquals(cacheControl(response), Some(Endpoints.NoStore))
+      assertEquals(field(text, "error"), "server_error")
+    }
+  }
+
   test("a request to another path is not served") {
     for {
       served <- routes

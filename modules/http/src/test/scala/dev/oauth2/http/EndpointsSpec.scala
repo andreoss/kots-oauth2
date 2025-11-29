@@ -220,6 +220,13 @@ class EndpointsSpec extends FunSuite {
     assert(responses.exists(_.content.keys.exists(_.startsWith(Endpoints.JwkSetMediaType))))
   }
 
+  test("a document endpoint describes only the responses it can answer") {
+    val jwksCodes = jwksOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
+    val metadataCodes = metadataOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
+    assertEquals(jwksCodes, Set(200, 500, 503))
+    assertEquals(metadataCodes, Set(200, 500, 503))
+  }
+
   test("every described jwks response carries a cache control header") {
     val responses = jwksOperation.responses.responses.values.flatMap(_.toOption)
     assert(responses.nonEmpty)
