@@ -21,19 +21,37 @@ object Kty {
     all.find(_.value == raw).toRight(ParseFailure("Kty", "not allowed"))
 }
 
+sealed trait Use {
+  def value: String
+}
+
+object Use {
+
+  case object Sig extends Use { val value: String = "sig" }
+
+  case object Enc extends Use { val value: String = "enc" }
+
+  val all: Set[Use] = Set(Sig, Enc)
+
+  def from(raw: String): Either[ParseFailure, Use] =
+    all.find(_.value == raw).toRight(ParseFailure("Use", "not allowed"))
+}
+
 sealed trait Alg {
   def value: String
 
   def kty: Kty
+
+  def use: Use
 }
 
 object Alg {
 
-  case object RS256 extends Alg { val value: String = "RS256"; val kty: Kty = Kty.Rsa }
+  case object RS256 extends Alg { val value: String = "RS256"; val kty: Kty = Kty.Rsa; val use: Use = Use.Sig }
 
-  case object ES256 extends Alg { val value: String = "ES256"; val kty: Kty = Kty.Ec }
+  case object ES256 extends Alg { val value: String = "ES256"; val kty: Kty = Kty.Ec; val use: Use = Use.Sig }
 
-  case object EdDSA extends Alg { val value: String = "EdDSA"; val kty: Kty = Kty.Okp }
+  case object EdDSA extends Alg { val value: String = "EdDSA"; val kty: Kty = Kty.Okp; val use: Use = Use.Sig }
 
   val allowed: Set[Alg] = Set(RS256, ES256, EdDSA)
 
@@ -47,6 +65,8 @@ sealed trait Jwk {
   def alg: Alg
 
   def kty: Kty
+
+  def use: Use = alg.use
 
   def parameters: Map[String, String]
 }
@@ -70,8 +90,6 @@ final case class OkpKey private[jose] (kid: KeyId, alg: Alg, crv: String, x: Str
 }
 
 object Jwk {
-
-  val Use: String = "sig"
 
   def rsa(kid: KeyId, alg: Alg, n: String, e: String): Either[ParseFailure, Jwk] =
     for {

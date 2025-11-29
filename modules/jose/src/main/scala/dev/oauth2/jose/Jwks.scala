@@ -40,7 +40,7 @@ object Jwks {
         FieldKid -> Json.fromString(key.kid.value),
         FieldKty -> Json.fromString(key.kty.value),
         FieldAlg -> Json.fromString(key.alg.value),
-        FieldUse -> Json.fromString(Jwk.Use)
+        FieldUse -> Json.fromString(key.use.value)
       )
     )
   }

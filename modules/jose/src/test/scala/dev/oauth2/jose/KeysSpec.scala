@@ -44,6 +44,23 @@ class KeysSpec extends ScalaCheckSuite {
     assertEquals(Alg.EdDSA.kty, Kty.Okp)
   }
 
+  test("every allowed algorithm is a signature algorithm") {
+    assert(Alg.allowed.forall(_.use == Use.Sig))
+  }
+
+  test("a key carries the use of its algorithm") {
+    assertEquals(Fakes.rsa("key-1").use, Use.Sig)
+    assertEquals(Fakes.ec("key-2").use, Use.Sig)
+    assertEquals(Fakes.okp("key-3").use, Use.Sig)
+  }
+
+  test("a use is parsed from its wire value and refused otherwise") {
+    assertEquals(Use.from("sig"), Right(Use.Sig))
+    assertEquals(Use.from("enc"), Right(Use.Enc))
+    assertEquals(Use.from("mac").isLeft, true)
+    assertEquals(Use.from("").isLeft, true)
+  }
+
   test("an rsa key carries its identifier, algorithm, key type and public parameters") {
     val key = unsafe(Jwk.rsa(kid, Alg.RS256, n, e))
     assertEquals(key.kid, kid)
