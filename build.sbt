@@ -64,6 +64,7 @@ lazy val http = module("http")
       "com.softwaremill.sttp.tapir" %% "tapir-core" % Tapir,
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe" % Tapir,
       "io.circe" %% "circe-core" % Circe,
+      "io.circe" %% "circe-parser" % Circe,
       "com.softwaremill.sttp.tapir" %% "tapir-openapi-docs" % Tapir % Test
     )
   )

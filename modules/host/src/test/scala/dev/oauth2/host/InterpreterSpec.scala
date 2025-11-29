@@ -453,6 +453,14 @@ class InterpreterSpec extends CatsEffectSuite {
     } yield assertEquals(cacheControl(answered.get), Some(Endpoints.PublicCache))
   }
 
+  test("the key set is served with the jwk set media type") {
+    for {
+      served <- routes
+      answered <- served.run(jwks).value
+      declared = answered.get.headers.headers.find(_.name.toString == "Content-Type").map(_.value)
+    } yield assert(declared.exists(_.startsWith(Endpoints.JwkSetMediaType)))
+  }
+
   test("a request to another path is not served") {
     for {
       served <- routes

@@ -215,6 +215,11 @@ class EndpointsSpec extends FunSuite {
     assert(jwksOperation.security.isEmpty)
   }
 
+  test("the jwks response is described with the jwk set media type") {
+    val responses = jwksOperation.responses.responses.values.flatMap(_.toOption)
+    assert(responses.exists(_.content.keys.exists(_.startsWith(Endpoints.JwkSetMediaType))))
+  }
+
   test("every described jwks response carries a cache control header") {
     val responses = jwksOperation.responses.responses.values.flatMap(_.toOption)
     assert(responses.nonEmpty)
