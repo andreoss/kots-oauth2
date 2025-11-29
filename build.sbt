@@ -49,9 +49,7 @@ lazy val core =
   module("core")
     .settings(libraryDependencies += "org.typelevel" %% "cats-core" % "2.12.0")
 
-lazy val jose = module("jose")
-  .dependsOn(core)
-  .settings(libraryDependencies += "io.circe" %% "circe-core" % Circe)
+lazy val jose = module("jose").dependsOn(core)
 
 lazy val store = module("store")
   .dependsOn(core % "compile->compile;test->test", jose % "compile->compile;test->test")

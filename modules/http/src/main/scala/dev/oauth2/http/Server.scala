@@ -59,8 +59,8 @@ object Server {
     )
 
   def jwks[F[_]: Functor](document: F[Jwks]): ServerEndpoint[Any, F] =
-    ServerEndpoint.public[Unit, OAuth2Error, Json, Any, F](
+    ServerEndpoint.public[Unit, OAuth2Error, Map[String, Json], Any, F](
       Endpoints.jwks,
-      _ => _ => document.map(keys => Right(Jwks.render(keys)): Either[OAuth2Error, Json])
+      _ => _ => document.map(keys => Right(JwkSet.render(keys)): Either[OAuth2Error, Map[String, Json]])
     )
 }

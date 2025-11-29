@@ -1,8 +1,12 @@
-package dev.oauth2.jose
+package dev.oauth2.http
 
+import dev.oauth2.jose.Fakes
+import dev.oauth2.jose.Jwk
+import dev.oauth2.jose.Jwks
+import dev.oauth2.jose.Kty
 import munit.FunSuite
 
-class JwksSpec extends FunSuite {
+class JwkSetSpec extends FunSuite {
 
   private val n: String = Fakes.Modulus
 
@@ -14,15 +18,14 @@ class JwksSpec extends FunSuite {
 
   private val okpKey: Jwk = Fakes.okp("key-3")
 
-  private val fixed: Set[String] = Set(Jwks.FieldKid, Jwks.FieldKty, Jwks.FieldAlg, Jwks.FieldUse)
+  private val fixed: Set[String] = Set(JwkSet.FieldKid, JwkSet.FieldKty, JwkSet.FieldAlg, JwkSet.FieldUse)
 
   private def entries(document: Jwks): List[io.circe.Json] =
-    Jwks
+    JwkSet
       .render(document)
-      .hcursor
-      .downField(Jwks.FieldKeys)
-      .values
-      .getOrElse(fail(s"no ${Jwks.FieldKeys} array in the document"))
+      .getOrElse(JwkSet.FieldKeys, fail(s"no ${JwkSet.FieldKeys} array in the document"))
+      .asArray
+      .getOrElse(fail(s"no ${JwkSet.FieldKeys} array in the document"))
       .toList
 
   private def field(entry: io.circe.Json, name: String): String =
@@ -31,24 +34,24 @@ class JwksSpec extends FunSuite {
   test("a document renders one entry per key") {
     val rendered = entries(Jwks(List(rsaKey, ecKey)))
     assertEquals(rendered.length, 2)
-    assertEquals(rendered.map(field(_, Jwks.FieldKid)), List("key-1", "key-2"))
-    assertEquals(rendered.map(field(_, Jwks.FieldKty)), List("RSA", "EC"))
-    assertEquals(rendered.map(field(_, Jwks.FieldAlg)), List("RS256", "ES256"))
-    assertEquals(rendered.map(field(_, Jwks.FieldUse)), List("sig", "sig"))
+    assertEquals(rendered.map(field(_, JwkSet.FieldKid)), List("key-1", "key-2"))
+    assertEquals(rendered.map(field(_, JwkSet.FieldKty)), List("RSA", "EC"))
+    assertEquals(rendered.map(field(_, JwkSet.FieldAlg)), List("RS256", "ES256"))
+    assertEquals(rendered.map(field(_, JwkSet.FieldUse)), List("sig", "sig"))
   }
 
   test("an entry carries the public parameters of its key type") {
     val entry = entries(Jwks(List(rsaKey))).head
     assertEquals(field(entry, "n"), n)
     assertEquals(field(entry, "e"), e)
-    assertEquals(entry.hcursor.keys.map(_.toSet), Some(fixed ++ Jwks.PublicParameters(Kty.Rsa)))
+    assertEquals(entry.hcursor.keys.map(_.toSet), Some(fixed ++ JwkSet.PublicParameters(Kty.Rsa)))
   }
 
   test("the public parameter names are allow-listed per key type") {
-    assertEquals(Jwks.PublicParameters(Kty.Rsa), Set("n", "e"))
-    assertEquals(Jwks.PublicParameters(Kty.Ec), Set("crv", "x", "y"))
-    assertEquals(Jwks.PublicParameters(Kty.Okp), Set("crv", "x"))
-    assertEquals(Jwks.PublicParameters.keySet, Kty.all)
+    assertEquals(JwkSet.PublicParameters(Kty.Rsa), Set("n", "e"))
+    assertEquals(JwkSet.PublicParameters(Kty.Ec), Set("crv", "x", "y"))
+    assertEquals(JwkSet.PublicParameters(Kty.Okp), Set("crv", "x"))
+    assertEquals(JwkSet.PublicParameters.keySet, Kty.all)
   }
 
   test("an entry carries exactly the fixed fields and its allow-listed parameters") {
@@ -57,9 +60,9 @@ class JwksSpec extends FunSuite {
     assertEquals(
       names,
       List(
-        fixed ++ Jwks.PublicParameters(Kty.Rsa),
-        fixed ++ Jwks.PublicParameters(Kty.Ec),
-        fixed ++ Jwks.PublicParameters(Kty.Okp)
+        fixed ++ JwkSet.PublicParameters(Kty.Rsa),
+        fixed ++ JwkSet.PublicParameters(Kty.Ec),
+        fixed ++ JwkSet.PublicParameters(Kty.Okp)
       )
     )
   }
@@ -67,7 +70,7 @@ class JwksSpec extends FunSuite {
   test("a fixed field is rendered after the parameters so it is never overridden") {
     val entry = entries(Jwks(List(rsaKey))).head
     val names = entry.hcursor.keys.map(_.toList).getOrElse(Nil)
-    assertEquals(names.takeRight(4), List(Jwks.FieldKid, Jwks.FieldKty, Jwks.FieldAlg, Jwks.FieldUse))
+    assertEquals(names.takeRight(4), List(JwkSet.FieldKid, JwkSet.FieldKty, JwkSet.FieldAlg, JwkSet.FieldUse))
   }
 
   test("an empty document renders an empty key array") {

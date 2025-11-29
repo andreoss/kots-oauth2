@@ -136,14 +136,18 @@ object Endpoints {
       sttp.model.MediaType.unsafeParse(JwkSetMediaType)
   }
 
-  private val jwkSet: Codec[String, Json, JwkSetJson] =
+  private val jwkSet: Codec[String, Map[String, Json], JwkSetJson] =
     Codec
-      .id[String, JwkSetJson](JwkSetJson(), Schema.string)
-      .mapDecode(raw =>
-        io.circe.parser.parse(raw).fold(error => DecodeResult.Error(raw, error), DecodeResult.Value(_))
-      )(_.noSpaces)
+      .id[String, JwkSetJson](JwkSetJson(), Schema.anyObject)
+      .mapDecode { raw =>
+        io.circe.parser.parse(raw).map(_.asObject) match {
+          case Right(Some(fields)) => DecodeResult.Value(fields.toMap)
+          case Right(None)         => DecodeResult.Error(raw, new IllegalArgumentException(JwkSetMediaType))
+          case Left(error)         => DecodeResult.Error(raw, error)
+        }
+      }(fields => Json.fromFields(fields).noSpaces)
 
-  lazy val jwks: PublicEndpoint[Unit, OAuth2Error, Json, Any] =
+  lazy val jwks: PublicEndpoint[Unit, OAuth2Error, Map[String, Json], Any] =
     sttp.tapir.endpoint.get
       .in(JwksPath)
       .out(cacheable(stringBodyUtf8AnyFormat(jwkSet)))

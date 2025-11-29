@@ -121,8 +121,8 @@ class ServerSpec extends FunSuite {
 
   test("the bound jwks logic answers with the rendered document") {
     val document = ServerSpec.keys
-    val bound = Server.jwks[cats.Id](document).asInstanceOf[ServerSpec.JwksBound[cats.Id]]
-    assertEquals(bound.logic(IdentityMonad)(())(()), Right(dev.oauth2.jose.Jwks.render(document)))
+    val bound = Server.jwks[cats.Id](document).asInstanceOf[ServerSpec.MetadataBound[cats.Id]]
+    assertEquals(bound.logic(IdentityMonad)(())(()), Right(JwkSet.render(document)))
     assertEquals(bound.showPathTemplate(showQueryParam = None), Endpoints.jwks.showPathTemplate(showQueryParam = None))
   }
 
@@ -143,14 +143,6 @@ object ServerSpec {
     type INPUT = Unit
     type ERROR_OUTPUT = OAuth2Error
     type OUTPUT = Map[String, io.circe.Json]
-  }
-
-  type JwksBound[F[_]] = ServerEndpoint[Any, F] {
-    type SECURITY_INPUT = Unit
-    type PRINCIPAL = Unit
-    type INPUT = Unit
-    type ERROR_OUTPUT = OAuth2Error
-    type OUTPUT = io.circe.Json
   }
 
   def keys: dev.oauth2.jose.Jwks =
