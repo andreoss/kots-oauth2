@@ -24,7 +24,9 @@ import dev.oauth2.core.Scope
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
 import dev.oauth2.store.Client
+import dev.oauth2.store.ConsentRecord
 import dev.oauth2.store.memory.InMemoryCodeStore
+import dev.oauth2.store.memory.InMemoryConsentStore
 import munit.CatsEffectSuite
 
 class AuthorizationServiceSpec extends CatsEffectSuite {
@@ -75,9 +77,22 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     val entropy = new Entropy[IO] {
       def bytes(n: Int): IO[Array[Byte]] = IO.pure(Array.fill(n)(7.toByte))
     }
-    InMemoryCodeStore.create[IO](clock).map { codes =>
-      (new AuthorizationService[IO](codes, clock, entropy, policy), codes, clock)
+    for {
+      codes <- InMemoryCodeStore.create[IO](clock)
+      consents <- InMemoryConsentStore.create[IO]
+      _ <- consents.grant(ConsentRecord(clientId, subject, unsafe(Scopes.parse("read write"))))
+    } yield (new AuthorizationService[IO](codes, consents, clock, entropy, policy), codes, clock)
+  }
+
+  private def unconsented: IO[(AuthorizationService[IO], InMemoryConsentStore[IO])] = {
+    val entropy = new Entropy[IO] {
+      def bytes(n: Int): IO[Array[Byte]] = IO.pure(Array.fill(n)(7.toByte))
     }
+    val clock = new Ticking(Start)
+    for {
+      codes <- InMemoryCodeStore.create[IO](clock)
+      consents <- InMemoryConsentStore.create[IO]
+    } yield (new AuthorizationService[IO](codes, consents, clock, entropy, LifetimePolicy.defaults), consents)
   }
 
   private def client(
@@ -92,6 +107,44 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
       method,
       if (method == ClientAuthMethod.None) None else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
     )
+
+  test("issuance is denied without a recorded consent") {
+    val registered = client(Set(callback), "read")
+    for {
+      pair <- unconsented
+      (service, _) = pair
+      issued <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+    } yield assertEquals(issued.left.toOption.map(_.code), Some("access_denied"))
+  }
+
+  test("issuance is denied when the consent is narrower than the request") {
+    val registered = client(Set(callback), "read write")
+    for {
+      pair <- unconsented
+      (service, consents) = pair
+      _ <- consents.grant(ConsentRecord(clientId, subject, unsafe(Scopes.parse("read"))))
+      narrow <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      wide <- service.issue(request(Some(callback), Some("read write"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+    } yield {
+      assert(narrow.isRight)
+      assertEquals(wide.left.toOption.map(_.code), Some("access_denied"))
+    }
+  }
+
+  test("a revoked consent denies the next issuance") {
+    val registered = client(Set(callback), "read")
+    for {
+      pair <- unconsented
+      (service, consents) = pair
+      _ <- consents.grant(ConsentRecord(clientId, subject, unsafe(Scopes.parse("read"))))
+      first <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      _ <- consents.revoke(clientId, subject)
+      second <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+    } yield {
+      assert(first.isRight)
+      assertEquals(second.left.toOption.map(_.code), Some("access_denied"))
+    }
+  }
 
   test("issuance stores a code bound to the client, redirect, subject and challenge") {
     val registered = client(Set(callback), "read write")

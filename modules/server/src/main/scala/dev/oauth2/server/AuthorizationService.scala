@@ -22,9 +22,11 @@ import dev.oauth2.core.TokenType
 import dev.oauth2.store.Client
 import dev.oauth2.store.CodeRecord
 import dev.oauth2.store.CodeStore
+import dev.oauth2.store.ConsentStore
 
 final class AuthorizationService[F[_]: Monad](
     codes: CodeStore[F],
+    consent: ConsentStore[F],
     clock: Clock[F],
     entropy: Entropy[F],
     policy: LifetimePolicy
@@ -38,7 +40,12 @@ final class AuthorizationService[F[_]: Monad](
   ): F[Either[OAuth2Error, AuthorizationCode]] =
     validate(request, client).fold(
       errors => Monad[F].pure(Left(errors.head)),
-      { case (redirectUri, scopes, pkce) => mint(request.clientId, redirectUri, subject, scopes, details, pkce) }
+      { case (redirectUri, scopes, pkce) =>
+        consent.decide(request.clientId, subject, scopes).flatMap {
+          case false => Monad[F].pure(Left(OAuth2Error.AccessDenied(): OAuth2Error))
+          case true  => mint(request.clientId, redirectUri, subject, scopes, details, pkce)
+        }
+      }
     )
 
   private def validate(
