@@ -167,7 +167,8 @@ class InterpreterSpec extends CatsEffectSuite {
       authorization = new AuthorizationEndpoint[IO](
         clients,
         login,
-        new AuthorizationService[IO](codes, consents, clock, entropy, LifetimePolicy.defaults)
+        new AuthorizationService[IO](codes, consents, clock, entropy, LifetimePolicy.defaults),
+        unsafe(Issuer.from("https://server.example"))
       )
       revocation = new RevocationEndpoint[IO](authentication, tokens, grants)
       introspection = new IntrospectionEndpoint[IO](authentication, tokens, grants)
@@ -543,6 +544,7 @@ class InterpreterSpec extends CatsEffectSuite {
       assertEquals(response.status, Status.Found)
       assert(location.startsWith("https://client.example/cb?"))
       assertEquals(query.get("state"), Some("xyz"))
+      assertEquals(query.get("iss"), Some("https://server.example"))
       assertEquals(cacheControl(response), Some(Endpoints.NoStore))
       assertEquals(exchanged.get.status, Status.Ok)
       assert(field(text, "access_token").nonEmpty)
@@ -565,6 +567,7 @@ class InterpreterSpec extends CatsEffectSuite {
       assertEquals(response.status, Status.Found)
       assertEquals(query.get("error"), Some("access_denied"))
       assertEquals(query.get("state"), Some("xyz"))
+      assertEquals(query.get("iss"), Some("https://server.example"))
       assertEquals(query.get("code"), None)
     }
   }

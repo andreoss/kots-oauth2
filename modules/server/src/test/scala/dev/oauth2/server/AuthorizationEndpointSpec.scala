@@ -35,6 +35,8 @@ class AuthorizationEndpointSpec extends CatsEffectSuite {
 
   private val subject: Subject = unsafe(Subject.from("user-1"))
 
+  private val issuer: dev.oauth2.core.Issuer = unsafe(dev.oauth2.core.Issuer.from("https://server.example"))
+
   private val callback: RedirectUri = unsafe(RedirectUri.from("https://client.example/cb"))
 
   private val other: RedirectUri = unsafe(RedirectUri.from("https://client.example/other"))
@@ -78,7 +80,8 @@ class AuthorizationEndpointSpec extends CatsEffectSuite {
     } yield new AuthorizationEndpoint[IO](
       clients,
       login,
-      new AuthorizationService[IO](codes, consents, clock, entropy, LifetimePolicy.defaults)
+      new AuthorizationService[IO](codes, consents, clock, entropy, LifetimePolicy.defaults),
+      issuer
     )
   }
 
@@ -94,6 +97,7 @@ class AuthorizationEndpointSpec extends CatsEffectSuite {
       assert(redirect.location.startsWith(callback.value + "?"))
       assert(query(redirect)("code").nonEmpty)
       assertEquals(query(redirect).get("state"), Some("xyz"))
+      assertEquals(query(redirect).get("iss"), Some(issuer.value))
       assertEquals(query(redirect).get("error"), None)
     }
   }
@@ -106,6 +110,7 @@ class AuthorizationEndpointSpec extends CatsEffectSuite {
       val fields = query(answered.toOption.get)
       assertEquals(fields.get("error"), Some("access_denied"))
       assertEquals(fields.get("state"), Some("xyz"))
+      assertEquals(fields.get("iss"), Some(issuer.value))
       assertEquals(fields.get("code"), None)
     }
   }
