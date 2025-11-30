@@ -34,6 +34,10 @@ object Wire {
   implicit val authorizationCode: Wire[AuthorizationCode] =
     instance(_.value, AuthorizationCode.from)
 
+  implicit val deviceCode: Wire[DeviceCode] = instance(_.value, DeviceCode.from)
+
+  implicit val userCode: Wire[UserCode] = instance(_.value, UserCode.from)
+
   implicit val accessToken: Wire[AccessToken] = instance(_.value, AccessToken.from)
 
   implicit val refreshToken: Wire[RefreshToken] = instance(_.value, RefreshToken.from)

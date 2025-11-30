@@ -201,6 +201,35 @@ class RequestsSpec extends ScalaCheckSuite {
     assertEquals(errors(decoded).map(_.code), List("invalid_request", "invalid_request"))
   }
 
+  test("token request decodes a device code grant") {
+    val decoded = TokenRequest.from(
+      Map(
+        "grant_type" -> "urn:ietf:params:oauth:grant-type:device_code",
+        "device_code" -> "device-1",
+        "client_id" -> Client
+      )
+    )
+    val request = valid(decoded).asInstanceOf[TokenRequest.Device]
+    assertEquals(request.deviceCode.value, "device-1")
+    assertEquals(request.clientId.value, Client)
+  }
+
+  test("token request accumulates a missing device code and client id") {
+    val decoded = TokenRequest.from(Map("grant_type" -> "urn:ietf:params:oauth:grant-type:device_code"))
+    assertEquals(errors(decoded).map(_.code), List("invalid_request", "invalid_request"))
+  }
+
+  test("device authorization request decodes the scope and client id") {
+    val decoded = DeviceAuthorizationRequest.from(Map("client_id" -> Client, "scope" -> "read write"))
+    val request = valid(decoded)
+    assertEquals(request.clientId.value, Client)
+    assertEquals(request.scope.map(_.value.map(_.value)), Some(Set("read", "write")))
+  }
+
+  test("device authorization request refuses a missing client id") {
+    assertEquals(errors(DeviceAuthorizationRequest.from(Map.empty[String, String])).map(_.code), List("invalid_request"))
+  }
+
   test("token request refuses an unsupported grant type") {
     assertEquals(
       errors(TokenRequest.from(Map("grant_type" -> "password"))).map(_.code),

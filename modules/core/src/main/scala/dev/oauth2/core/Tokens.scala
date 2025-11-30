@@ -21,6 +21,20 @@ object RefreshToken {
     Text.printable("RefreshToken", raw).map(new RefreshToken(_))
 }
 
+final case class DeviceCode private (value: String)
+
+object DeviceCode {
+  def from(raw: String): Either[ParseFailure, DeviceCode] =
+    Text.printable("DeviceCode", raw).map(new DeviceCode(_))
+}
+
+final case class UserCode private (value: String)
+
+object UserCode {
+  def from(raw: String): Either[ParseFailure, UserCode] =
+    Text.printable("UserCode", raw).map(new UserCode(_))
+}
+
 final case class AccessTokenHash private (value: String)
 
 object AccessTokenHash {

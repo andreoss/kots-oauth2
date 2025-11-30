@@ -26,6 +26,7 @@ import dev.oauth2.core.TokenType
 import dev.oauth2.store.Client
 import dev.oauth2.store.CodeRecord
 import dev.oauth2.store.CodeStore
+import dev.oauth2.store.DeviceStore
 import dev.oauth2.store.Grant
 import dev.oauth2.store.GrantStore
 import dev.oauth2.store.IssuedToken
@@ -36,6 +37,7 @@ final class TokenService[F[_]: Monad](
     codes: CodeStore[F],
     tokens: TokenStore[F],
     grants: GrantStore[F],
+    devices: DeviceStore[F],
     clock: Clock[F],
     entropy: Entropy[F],
     policy: LifetimePolicy
@@ -88,6 +90,50 @@ final class TokenService[F[_]: Monad](
             }
           )
       }
+
+  def deviceCode(request: TokenRequest.Device, client: Client): F[Either[OAuth2Error, IssuedToken]] =
+    devices.poll(request.deviceCode).flatMap {
+      case None => Monad[F].pure(Left(TokenService.rejected))
+      case Some(record) =>
+        clock.instant.flatMap { now =>
+          if (record.clientId != client.id) Monad[F].pure(Left(TokenService.rejected))
+          else if (record.isExpired(now)) Monad[F].pure(Left(OAuth2Error.ExpiredToken(): OAuth2Error))
+          else if (record.denied) Monad[F].pure(Left(OAuth2Error.AccessDenied(): OAuth2Error))
+          else
+            record.subject match {
+              case None =>
+                val early = record.lastPolledAt.exists(previous =>
+                  now.isBefore(previous.plusSeconds(DeviceAuthorizationService.Interval.seconds))
+                )
+                Monad[F].pure(
+                  Left(
+                    if (early) OAuth2Error.SlowDown(): OAuth2Error
+                    else OAuth2Error.AuthorizationPending(): OAuth2Error
+                  )
+                )
+              case Some(subject) =>
+                devices.consume(request.deviceCode).flatMap {
+                  case None => Monad[F].pure(Left(TokenService.rejected))
+                  case Some(_) =>
+                    val refreshExpiresAt =
+                      if (client.confidential)
+                        Some(Lifetime.expiresAt(now, LifetimePolicy.of(policy, TokenType.Refresh)))
+                      else None
+                    issue(
+                      TokenService.Mint(
+                        None,
+                        now,
+                        record.clientId,
+                        subject,
+                        record.scopes,
+                        AuthorizationDetails.empty,
+                        refreshExpiresAt
+                      )
+                    )
+                }
+            }
+        }
+    }
 
   private def replay(code: AuthorizationCode): F[Either[OAuth2Error, IssuedToken]] =
     codes.redeemed(code).flatMap {

@@ -20,8 +20,9 @@ object GrantType {
   case object AuthorizationCode extends GrantType("authorization_code")
   case object RefreshToken extends GrantType("refresh_token")
   case object ClientCredentials extends GrantType("client_credentials")
+  case object DeviceCode extends GrantType("urn:ietf:params:oauth:grant-type:device_code")
 
-  val all: List[GrantType] = List(AuthorizationCode, RefreshToken, ClientCredentials)
+  val all: List[GrantType] = List(AuthorizationCode, RefreshToken, ClientCredentials, DeviceCode)
 
   def from(raw: String): Either[ParseFailure, GrantType] =
     all.find(_.value == raw).toRight(ParseFailure("GrantType", "not a registered grant type"))
@@ -88,6 +89,11 @@ object TokenRequest {
       clientId: ClientId
   ) extends TokenRequest
 
+  final case class Device(
+      deviceCode: DeviceCode,
+      clientId: ClientId
+  ) extends TokenRequest
+
   def from(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
     Params
       .required(params, "grant_type")(
@@ -97,6 +103,7 @@ object TokenRequest {
         case GrantType.AuthorizationCode => authorizationCode(params)
         case GrantType.RefreshToken      => refreshToken(params)
         case GrantType.ClientCredentials => clientCredentials(params)
+        case GrantType.DeviceCode        => device(params)
       }
 
   private def authorizationCode(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
@@ -119,4 +126,24 @@ object TokenRequest {
       Params.fieldOpt(params, "scope")(Scopes.parse),
       Params.field(params, "client_id")(ClientId.from)
     ).mapN(ClientCredentials.apply)
+
+  private def device(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
+    (
+      Params.field(params, "device_code")(DeviceCode.from),
+      Params.field(params, "client_id")(ClientId.from)
+    ).mapN(Device.apply)
+}
+
+final case class DeviceAuthorizationRequest(
+    scope: Option[Scopes],
+    clientId: ClientId
+)
+
+object DeviceAuthorizationRequest {
+
+  def from(params: Map[String, String]): ValidatedNec[OAuth2Error, DeviceAuthorizationRequest] =
+    (
+      Params.fieldOpt(params, "scope")(Scopes.parse),
+      Params.field(params, "client_id")(ClientId.from)
+    ).mapN(DeviceAuthorizationRequest.apply)
 }

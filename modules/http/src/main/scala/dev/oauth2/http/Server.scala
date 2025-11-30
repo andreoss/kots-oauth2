@@ -32,6 +32,13 @@ trait IntrospectionLogic[F[_]] {
   ): F[Either[OAuth2Error, IntrospectionResponse]]
 }
 
+trait DeviceAuthorizationLogic[F[_]] {
+  def apply(
+      basic: Option[String],
+      parameters: Map[String, String]
+  ): F[Either[OAuth2Error, DeviceAuthorizationResponse]]
+}
+
 object Server {
 
   def token[F[_]: Functor](logic: TokenLogic[F]): ServerEndpoint[Any, F] =
@@ -50,6 +57,12 @@ object Server {
     ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any, F](
       Endpoints.introspection,
       _ => input => logic(input._1, input._2).map(_.map(_.body))
+    )
+
+  def deviceAuthorization[F[_]: Functor](logic: DeviceAuthorizationLogic[F]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any, F](
+      Endpoints.deviceAuthorization,
+      _ => input => logic(input._1, input._2).map(_.map(DeviceAuthorizationResponse.render))
     )
 
   def metadata[F[_]: Applicative](document: AuthorizationServerMetadata): ServerEndpoint[Any, F] =

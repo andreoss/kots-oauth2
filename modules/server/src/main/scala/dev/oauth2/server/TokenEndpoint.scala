@@ -44,6 +44,8 @@ final class TokenEndpoint[F[_]: Monad](
           case refresh: TokenRequest.Refresh => tokens.refresh(refresh, client).map(_.map(TokenEndpoint.render))
           case credentials: TokenRequest.ClientCredentials =>
             tokens.clientCredentials(credentials, client).map(_.map(TokenEndpoint.render))
+          case device: TokenRequest.Device =>
+            tokens.deviceCode(device, client).map(_.map(TokenEndpoint.render))
         }
     }
 }

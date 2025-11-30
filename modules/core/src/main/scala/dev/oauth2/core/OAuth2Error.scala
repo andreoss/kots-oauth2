@@ -66,6 +66,21 @@ object OAuth2Error {
       errorUri: Option[String] = None
   ) extends OAuth2Error("temporarily_unavailable", 503)
 
+  final case class AuthorizationPending(
+      description: Option[String] = None,
+      errorUri: Option[String] = None
+  ) extends OAuth2Error("authorization_pending", 400)
+
+  final case class SlowDown(
+      description: Option[String] = None,
+      errorUri: Option[String] = None
+  ) extends OAuth2Error("slow_down", 400)
+
+  final case class ExpiredToken(
+      description: Option[String] = None,
+      errorUri: Option[String] = None
+  ) extends OAuth2Error("expired_token", 400)
+
   val BasicRealm: String = "oauth2"
 
   val BasicChallenge: String = s"""Basic realm="$BasicRealm""""
@@ -80,7 +95,10 @@ object OAuth2Error {
     "access_denied",
     "unsupported_response_type",
     "server_error",
-    "temporarily_unavailable"
+    "temporarily_unavailable",
+    "authorization_pending",
+    "slow_down",
+    "expired_token"
   )
 
   val knownStatuses: Set[Int] = Set(400, 401, 403, 500, 503)
@@ -113,6 +131,9 @@ object OAuth2Error {
       case "unsupported_response_type" => Right(UnsupportedResponseType(description, errorUri))
       case "server_error"              => Right(ServerError(description, errorUri))
       case "temporarily_unavailable"   => Right(TemporarilyUnavailable(description, errorUri))
+      case "authorization_pending"     => Right(AuthorizationPending(description, errorUri))
+      case "slow_down"                 => Right(SlowDown(description, errorUri))
+      case "expired_token"             => Right(ExpiredToken(description, errorUri))
       case other => Left(ParseFailure("OAuth2Error", s"unknown error code: $other"))
     }
   }
