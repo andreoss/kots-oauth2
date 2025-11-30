@@ -44,6 +44,16 @@ object Endpoints {
     "scope"
   )
 
+  val authorizeParameters: Set[String] = Set(
+    "response_type",
+    "client_id",
+    "redirect_uri",
+    "scope",
+    "state",
+    "code_challenge",
+    "code_challenge_method"
+  )
+
   val revocationParameters: Set[String] = Set(
     "token",
     "token_type_hint",
@@ -65,6 +75,20 @@ object Endpoints {
 
   implicit val formParameters: Codec[String, Map[String, String], XWwwFormUrlencoded] =
     strictForm(tokenParameters)
+
+  def strictQuery(allowed: Set[String]): sttp.model.QueryParams => DecodeResult[Map[String, String]] =
+    params =>
+      params.toMultiSeq.collectFirst { case (name, values) if values.sizeIs > 1 => name } match {
+        case Some(name) =>
+          DecodeResult.Error(name, new IllegalArgumentException(s"duplicated parameter: $name"))
+        case None =>
+          Form
+            .strict(params.toMap, allowed)
+            .fold(
+              error => DecodeResult.Error(error.code, new IllegalArgumentException(error.code)),
+              DecodeResult.Value(_)
+            )
+      }
 
   val statuses: List[StatusCode] = List(
     StatusCode.BadRequest,
@@ -117,6 +141,24 @@ object Endpoints {
       errorVariant(StatusCode.InternalServerError),
       errorVariant(StatusCode.ServiceUnavailable)
     )
+
+  val AuthorizePath: String = "authorize"
+
+  val LocationHeader: String = "Location"
+
+  def authorizeErrors: EndpointOutput[OAuth2Error] =
+    oneOf[OAuth2Error](
+      errorVariant(StatusCode.BadRequest),
+      errorVariant(StatusCode.InternalServerError),
+      errorVariant(StatusCode.ServiceUnavailable)
+    )
+
+  lazy val authorize: PublicEndpoint[Map[String, String], OAuth2Error, String, Any] =
+    sttp.tapir.endpoint.get
+      .in(AuthorizePath)
+      .in(queryParams.mapDecode(strictQuery(authorizeParameters))(sttp.model.QueryParams.fromMap))
+      .out(statusCode(StatusCode.Found).and(noStore(header[String](LocationHeader))))
+      .errorOut(authorizeErrors)
 
   val token: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     endpoint.post

@@ -48,6 +48,9 @@ final class AuthorizationService[F[_]: Monad](
       }
     )
 
+  def target(client: Client, requested: Option[RedirectUri]): Either[OAuth2Error, RedirectUri] =
+    redirect(client, requested).toEither.leftMap(_.head)
+
   private def validate(
       request: AuthorizationRequest,
       client: Client

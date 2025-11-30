@@ -11,6 +11,10 @@ import dev.oauth2.jose.Jwks
 import io.circe.Json
 import sttp.tapir.server.ServerEndpoint
 
+trait AuthorizeLogic[F[_]] {
+  def apply(parameters: Map[String, String]): F[Either[OAuth2Error, AuthorizationRedirect]]
+}
+
 trait TokenLogic[F[_]] {
   def apply(
       basic: Option[String],
@@ -40,6 +44,12 @@ trait DeviceAuthorizationLogic[F[_]] {
 }
 
 object Server {
+
+  def authorize[F[_]: Functor](logic: AuthorizeLogic[F]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[Map[String, String], OAuth2Error, String, Any, F](
+      Endpoints.authorize,
+      _ => parameters => logic(parameters).map(_.map(_.location))
+    )
 
   def token[F[_]: Functor](logic: TokenLogic[F]): ServerEndpoint[Any, F] =
     ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any, F](
