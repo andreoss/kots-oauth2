@@ -23,6 +23,13 @@ object GrantId {
     Text.printable("GrantId", raw).map(new GrantId(_))
 }
 
+final case class Audience private (value: String)
+
+object Audience {
+  def from(raw: String): Either[ParseFailure, Audience] =
+    Text.printable("Audience", raw).map(new Audience(_))
+}
+
 final case class KeyId private (value: String)
 
 object KeyId {

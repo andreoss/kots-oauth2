@@ -4,6 +4,7 @@ import java.time.Instant
 
 import dev.oauth2.core.AccessToken
 import dev.oauth2.core.AccessTokenHash
+import dev.oauth2.core.Audience
 import dev.oauth2.core.AuthorizationDetails
 import dev.oauth2.core.ClientId
 import dev.oauth2.core.GrantId
@@ -24,7 +25,9 @@ final case class TokenRecord(
     details: AuthorizationDetails,
     issuedAt: Instant,
     accessExpiresAt: Instant,
-    refreshExpiresAt: Option[Instant]
+    refreshExpiresAt: Option[Instant],
+    audience: Option[Audience] = None,
+    actor: Option[Subject] = None
 ) {
   def isAccessExpired(now: Instant): Boolean = !now.isBefore(accessExpiresAt)
 
