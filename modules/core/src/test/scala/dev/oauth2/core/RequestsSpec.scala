@@ -36,7 +36,9 @@ class RequestsSpec extends ScalaCheckSuite {
     decoded.fold(_.toChain.toList, _ => Nil)
 
   private def authorization(extra: (String, String)*): ValidatedNec[OAuth2Error, AuthorizationRequest] =
-    AuthorizationRequest.from(Map("response_type" -> "code", "client_id" -> Client) ++ extra)
+    AuthorizationRequest.from(
+      Map("response_type" -> "code", "client_id" -> Client, "state" -> "xyz") ++ extra
+    )
 
   test("authorization request decodes the minimal code request") {
     val request = valid(authorization())
@@ -44,8 +46,13 @@ class RequestsSpec extends ScalaCheckSuite {
     assertEquals(request.clientId.value, Client)
     assertEquals(request.redirectUri, None)
     assertEquals(request.scope, Scopes.empty)
-    assertEquals(request.state, None)
+    assertEquals(request.state.value, "xyz")
     assertEquals(request.pkce, None)
+  }
+
+  test("authorization request refuses a missing state") {
+    val decoded = AuthorizationRequest.from(Map("response_type" -> "code", "client_id" -> Client))
+    assertEquals(errors(decoded).map(_.code), List("invalid_request"))
   }
 
   test("authorization request decodes every field") {
@@ -60,26 +67,27 @@ class RequestsSpec extends ScalaCheckSuite {
     )
     assertEquals(request.redirectUri.map(_.value), Some(Redirect))
     assertEquals(request.scope, Scopes.of(List(Scope.from("openid").toOption.get, Scope.from("profile").toOption.get)))
-    assertEquals(request.state.map(_.value), Some("xyz"))
+    assertEquals(request.state.value, "xyz")
     assertEquals(request.pkce.map(_.method), Some(CodeChallengeMethod.S256))
     assertEquals(request.pkce.map(_.challenge.value), Some(Verifier))
   }
 
   test("authorization request accumulates every missing and invalid field") {
     val decoded = AuthorizationRequest.from(Map.empty[String, String])
-    assertEquals(errors(decoded).map(_.code), List("invalid_request", "invalid_request"))
+    assertEquals(errors(decoded).map(_.code), List("invalid_request", "invalid_request", "invalid_request"))
 
     val mixed = AuthorizationRequest.from(
       Map("response_type" -> "token", "client_id" -> "", "scope" -> "openid  profile")
     )
     assertEquals(
       errors(mixed).map(_.code).sorted,
-      List("invalid_request", "invalid_request", "unsupported_response_type")
+      List("invalid_request", "invalid_request", "invalid_request", "unsupported_response_type")
     )
   }
 
   test("authorization request refuses an unsupported response type") {
-    val decoded = AuthorizationRequest.from(Map("response_type" -> "id_token", "client_id" -> Client))
+    val decoded =
+      AuthorizationRequest.from(Map("response_type" -> "id_token", "client_id" -> Client, "state" -> "xyz"))
     assertEquals(errors(decoded).map(_.code), List("unsupported_response_type"))
   }
 
@@ -354,7 +362,7 @@ class RequestsSpec extends ScalaCheckSuite {
       )
       val request = AuthorizationRequest.from(params).toOption.get
       request.clientId == clientId &&
-      request.state.contains(state) &&
+      request.state == state &&
       request.pkce.map(_.challenge).contains(challenge) &&
       request.pkce.map(_.method).contains(CodeChallengeMethod.S256) &&
       request.redirectUri.map(_.value).contains(Redirect) &&
@@ -363,11 +371,12 @@ class RequestsSpec extends ScalaCheckSuite {
   }
 
   property("removing a required field invalidates an authorization request") {
-    forAll(genClientId) { clientId =>
-      val complete = Map("response_type" -> "code", "client_id" -> clientId.value)
+    forAll(genClientId, genState) { (clientId, state) =>
+      val complete = Map("response_type" -> "code", "client_id" -> clientId.value, "state" -> state.value)
       AuthorizationRequest.from(complete).isValid &&
       !AuthorizationRequest.from(complete - "response_type").isValid &&
-      !AuthorizationRequest.from(complete - "client_id").isValid
+      !AuthorizationRequest.from(complete - "client_id").isValid &&
+      !AuthorizationRequest.from(complete - "state").isValid
     }
   }
 

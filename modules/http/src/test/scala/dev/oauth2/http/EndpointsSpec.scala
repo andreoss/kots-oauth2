@@ -179,6 +179,15 @@ class EndpointsSpec extends FunSuite {
     assertEquals(codes, Set(302, 400, 500, 503))
   }
 
+  test("the authorization redirect never leaks through the referrer") {
+    val redirect = authorizeOperation.responses.responses
+      .get(ResponsesCodeKey(302))
+      .flatMap(_.toOption)
+      .getOrElse(fail("no redirect response in the document"))
+    assert(redirect.headers.contains(Endpoints.ReferrerPolicyHeader))
+    assert(redirect.headers.contains(Endpoints.CacheControlHeader))
+  }
+
   test("the authorization query accepts its own parameters and refuses the others") {
     val decode = Endpoints.strictQuery(Endpoints.authorizeParameters)
     assert(accepted(decode(sttp.model.QueryParams.fromMap(Map("response_type" -> "code", "client_id" -> "c")))))
