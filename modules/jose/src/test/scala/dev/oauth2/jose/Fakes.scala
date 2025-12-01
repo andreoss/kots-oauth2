@@ -19,6 +19,21 @@ object Fakes {
 
   def keyId(value: String): KeyId = unsafe(KeyId.from(value))
 
+  lazy val signingPair: java.security.KeyPair = {
+    val generator = java.security.KeyPairGenerator.getInstance("RSA")
+    generator.initialize(2048)
+    generator.generateKeyPair
+  }
+
+  lazy val signingJwk: Jwk = {
+    val public = signingPair.getPublic.asInstanceOf[java.security.interfaces.RSAPublicKey]
+    def parameter(value: java.math.BigInteger): String =
+      java.util.Base64.getUrlEncoder.withoutPadding.encodeToString(value.toByteArray.dropWhile(_ == 0))
+    unsafe(Jwk.rsa(keyId("key-1"), Alg.RS256, parameter(public.getModulus), parameter(public.getPublicExponent)))
+  }
+
+  lazy val signingKey: SigningKey = SigningKey(keyId("key-1"), Alg.RS256, signingPair.getPrivate)
+
   def rsa(kid: String): Jwk = unsafe(Jwk.rsa(keyId(kid), Alg.RS256, Modulus, Exponent))
 
   def ec(kid: String): Jwk = unsafe(Jwk.ec(keyId(kid), Alg.ES256, "P-256", X, Y))

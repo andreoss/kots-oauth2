@@ -12,9 +12,15 @@ object Jws {
 
   val Type: String = "JWT"
 
-  def sign(alg: Alg, kid: KeyId, key: PrivateKey, payload: String): Either[ParseFailure, String] = {
+  def sign(
+      alg: Alg,
+      kid: KeyId,
+      key: PrivateKey,
+      payload: String,
+      typ: String = Type
+  ): Either[ParseFailure, String] = {
     val header = Json.obj(
-      "typ" -> Json.fromString(Type),
+      "typ" -> Json.fromString(typ),
       "alg" -> Json.fromString(alg.value),
       "kid" -> Json.fromString(kid.value)
     )
@@ -25,11 +31,13 @@ object Jws {
       .map(signature => input + "." + encode(signature))
   }
 
-  def verify(compact: String, keys: Jwks): Either[ParseFailure, String] =
+  def verify(compact: String, keys: Jwks, typ: String = Type): Either[ParseFailure, String] =
     compact.split('.') match {
       case Array(header, payload, signature) =>
         for {
           fields <- parse(header)
+          declared <- field(fields, "typ")
+          _ <- Either.cond(declared == typ, (), ParseFailure("Jws", s"not a $typ"))
           alg <- field(fields, "alg").flatMap(Alg.from)
           kid <- field(fields, "kid").flatMap(KeyId.from)
           jwk <- keys.find(kid).toRight(ParseFailure("Jws", "no key for the kid"))

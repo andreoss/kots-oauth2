@@ -30,6 +30,13 @@ object Audience {
     Text.printable("Audience", raw).map(new Audience(_))
 }
 
+final case class JwtId private (value: String)
+
+object JwtId {
+  def from(raw: String): Either[ParseFailure, JwtId] =
+    Text.printable("JwtId", raw).map(new JwtId(_))
+}
+
 final case class KeyId private (value: String)
 
 object KeyId {
