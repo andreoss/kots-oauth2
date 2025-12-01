@@ -24,6 +24,7 @@ class EndpointsSpec extends FunSuite {
           Endpoints.introspection,
           Endpoints.deviceAuthorization,
           Endpoints.metadata,
+          Endpoints.resourceMetadata,
           Endpoints.jwks
         ),
         "OAuth 2.0",
@@ -52,6 +53,10 @@ class EndpointsSpec extends FunSuite {
 
   private def jwksOperation =
     document.paths.pathItems("/jwks").get.getOrElse(fail("no jwks operation in the document"))
+
+  private def resourceOperation =
+    document.paths.pathItems("/.well-known/oauth-protected-resource").get
+      .getOrElse(fail("no protected resource operation in the document"))
 
   private def accepted[A](result: DecodeResult[A]): Boolean =
     result match {
@@ -290,8 +295,23 @@ class EndpointsSpec extends FunSuite {
   test("a document endpoint describes only the responses it can answer") {
     val jwksCodes = jwksOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
     val metadataCodes = metadataOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
+    val resourceCodes =
+      resourceOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
     assertEquals(jwksCodes, Set(200, 500, 503))
     assertEquals(metadataCodes, Set(200, 500, 503))
+    assertEquals(resourceCodes, Set(200, 500, 503))
+  }
+
+  test("the protected resource metadata endpoint is a cacheable get at its well known path") {
+    assertEquals(
+      Endpoints.resourceMetadata.showPathTemplate(showQueryParam = None),
+      "/.well-known/oauth-protected-resource"
+    )
+    assertEquals(Endpoints.resourceMetadata.method.map(_.method), Some("GET"))
+    assert(resourceOperation.security.isEmpty)
+    val responses = resourceOperation.responses.responses.values.flatMap(_.toOption)
+    assert(responses.nonEmpty)
+    assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
   }
 
   test("every described jwks response carries a cache control header") {

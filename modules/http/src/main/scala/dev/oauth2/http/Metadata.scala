@@ -1,6 +1,7 @@
 package dev.oauth2.http
 
 import dev.oauth2.core.AuthorizationServerMetadata
+import dev.oauth2.core.ProtectedResourceMetadata
 import io.circe.Json
 
 object Metadata {
@@ -29,6 +30,10 @@ object Metadata {
 
   val AuthorizationResponseIssParameterSupported: String = "authorization_response_iss_parameter_supported"
 
+  val Resource: String = "resource"
+
+  val AuthorizationServers: String = "authorization_servers"
+
   def render(metadata: AuthorizationServerMetadata): Map[String, Json] =
     Map(
       Issuer -> Json.fromString(metadata.issuer.value),
@@ -44,6 +49,15 @@ object Metadata {
       metadata.revocationEndpoint.map(uri => RevocationEndpoint -> Json.fromString(uri.value)) ++
       metadata.introspectionEndpoint.map(uri => IntrospectionEndpoint -> Json.fromString(uri.value)) ++
       metadata.jwksUri.map(uri => JwksUri -> Json.fromString(uri.value))
+
+  def renderResource(metadata: ProtectedResourceMetadata): Map[String, Json] =
+    Map(
+      Resource -> Json.fromString(metadata.resource.value),
+      AuthorizationServers -> Json.arr(
+        metadata.authorizationServers.map(issuer => Json.fromString(issuer.value)): _*
+      ),
+      ScopesSupported -> values(metadata.scopesSupported.value.map(_.value))
+    )
 
   private def values(raw: Set[String]): Json =
     Json.arr(raw.toVector.sorted.map(Json.fromString): _*)

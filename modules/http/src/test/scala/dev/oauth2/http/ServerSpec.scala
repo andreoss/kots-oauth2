@@ -167,6 +167,25 @@ class ServerSpec extends FunSuite {
     assertEquals(bound.logic(IdentityMonad)(())(()), Right(Metadata.render(metadata)))
   }
 
+  test("a protected resource document is rendered with its resource, servers and scopes") {
+    val rendered = Metadata.renderResource(ServerSpec.resource)
+    assertEquals(rendered(Metadata.Resource), io.circe.Json.fromString("https://api.example"))
+    assertEquals(
+      rendered(Metadata.AuthorizationServers),
+      io.circe.Json.arr(io.circe.Json.fromString("https://server.example"))
+    )
+    assertEquals(rendered(Metadata.ScopesSupported), io.circe.Json.arr(io.circe.Json.fromString("read")))
+  }
+
+  test("the bound protected resource logic answers with the rendered document") {
+    val bound = Server.resourceMetadata[cats.Id](ServerSpec.resource).asInstanceOf[ServerSpec.MetadataBound[cats.Id]]
+    assertEquals(bound.logic(IdentityMonad)(())(()), Right(Metadata.renderResource(ServerSpec.resource)))
+    assertEquals(
+      bound.showPathTemplate(showQueryParam = None),
+      Endpoints.resourceMetadata.showPathTemplate(showQueryParam = None)
+    )
+  }
+
   test("the bound jwks logic answers with the rendered document") {
     val document = ServerSpec.keys
     val bound = Server.jwks[cats.Id](document).asInstanceOf[ServerSpec.MetadataBound[cats.Id]]
@@ -195,6 +214,16 @@ object ServerSpec {
 
   def keys: dev.oauth2.jose.Jwks =
     dev.oauth2.jose.Jwks(List(dev.oauth2.jose.Fakes.rsa("key-1")))
+
+  def resource: dev.oauth2.core.ProtectedResourceMetadata = {
+    def unsafe[A](parsed: Either[ParseFailure, A]): A =
+      parsed.fold(_ => sys.error("fixture"), identity)
+    dev.oauth2.core.ProtectedResourceMetadata(
+      unsafe(dev.oauth2.core.ResourceIndicator.from("https://api.example")),
+      List(unsafe(dev.oauth2.core.Issuer.from("https://server.example"))),
+      unsafe(Scopes.parse("read"))
+    )
+  }
 
   def document: dev.oauth2.core.AuthorizationServerMetadata = {
     def unsafe[A](parsed: Either[ParseFailure, A]): A =

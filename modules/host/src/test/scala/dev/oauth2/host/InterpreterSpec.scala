@@ -22,7 +22,9 @@ import dev.oauth2.core.LifetimePolicy
 import dev.oauth2.core.OAuth2Error
 import dev.oauth2.core.ParseFailure
 import dev.oauth2.core.Pkce
+import dev.oauth2.core.ProtectedResourceMetadata
 import dev.oauth2.core.RedirectUri
+import dev.oauth2.core.ResourceIndicator
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
 import dev.oauth2.core.UserCode
@@ -103,6 +105,12 @@ class InterpreterSpec extends CatsEffectSuite {
   )
 
   private val verification: EndpointUri = unsafe(EndpointUri.from("https://server.example/device"))
+
+  private val resource: ProtectedResourceMetadata = ProtectedResourceMetadata(
+    unsafe(ResourceIndicator.from("https://api.example")),
+    List(unsafe(Issuer.from("https://server.example"))),
+    unsafe(Scopes.parse("read"))
+  )
 
   private val registered: Client = Client(
     clientId,
@@ -190,6 +198,7 @@ class InterpreterSpec extends CatsEffectSuite {
           Server.introspection(introspection),
           Server.deviceAuthorization(device),
           Server.metadata(metadata),
+          Server.resourceMetadata(resource),
           Server.jwks(keys.jwks)
         )
       ),
@@ -432,6 +441,29 @@ class InterpreterSpec extends CatsEffectSuite {
       served <- routes
       answered <- served.run(postTo("/introspection", revoke("absent", "access_token"), Some("s3cret"))).value
     } yield assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
+  }
+
+  test("the protected resource document is served at its well known path") {
+    for {
+      served <- routes
+      answered <- served
+        .run(
+          Request[IO](
+            method = Method.GET,
+            uri = Uri.unsafeFromString("http://localhost/.well-known/oauth-protected-resource")
+          )
+        )
+        .value
+      response = answered.get
+      text <- body(response)
+      cursor = io.circe.parser.parse(text).toOption.get.hcursor
+    } yield {
+      assertEquals(response.status, Status.Ok)
+      assertEquals(cursor.get[String]("resource").toOption, Some("https://api.example"))
+      assertEquals(cursor.get[List[String]]("authorization_servers").toOption, Some(List("https://server.example")))
+      assertEquals(cursor.get[List[String]]("scopes_supported").toOption, Some(List("read")))
+      assertEquals(cacheControl(response), Some(Endpoints.PublicCache))
+    }
   }
 
   test("the metadata document is served at the well known path") {
