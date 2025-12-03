@@ -35,6 +35,8 @@ object Endpoints {
     "resource",
     "client_id",
     "client_secret",
+    "client_assertion",
+    "client_assertion_type",
     "scope"
   )
 

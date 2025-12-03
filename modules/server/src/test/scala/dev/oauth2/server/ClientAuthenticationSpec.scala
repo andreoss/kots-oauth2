@@ -53,6 +53,145 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
   private def rejection(result: Either[OAuth2Error, Client]): OAuth2Error =
     result.left.getOrElse(OAuth2Error.ServerError())
 
+  private val Start: java.time.Instant = java.time.Instant.parse("2025-01-01T00:00:00Z")
+
+  private def jwtClient: Client =
+    Client(
+      id,
+      Set.empty,
+      Scopes.empty,
+      ClientAuthMethod.PrivateKeyJwt,
+      None,
+      dev.oauth2.jose.Jwks(List(dev.oauth2.jose.Fakes.signingJwk))
+    )
+
+  private def assertionService(
+      clients: List[Client]
+  ): IO[ClientAuthentication[IO]] = {
+    val clock = new dev.oauth2.core.Clock[IO] {
+      def instant: IO[java.time.Instant] = IO.pure(Start)
+    }
+    for {
+      store <- InMemoryClientStore.create[IO](clients)
+      replays <- dev.oauth2.store.memory.InMemoryReplayStore.create[IO](clock)
+    } yield new RegisteredClientAuthentication[IO](
+      store,
+      Some(
+        RegisteredClientAuthentication.Assertions(
+          unsafe(dev.oauth2.core.Issuer.from("https://server.example")),
+          replays,
+          clock
+        )
+      )
+    )
+  }
+
+  private def assertion(
+      iss: String = "client-1",
+      sub: String = "client-1",
+      aud: String = "https://server.example",
+      exp: java.time.Instant = Start.plusSeconds(60L),
+      jti: String = "jti-1",
+      key: java.security.PrivateKey = dev.oauth2.jose.Fakes.signingPair.getPrivate
+  ): String = {
+    val payload = io.circe.Json
+      .obj(
+        "iss" -> io.circe.Json.fromString(iss),
+        "sub" -> io.circe.Json.fromString(sub),
+        "aud" -> io.circe.Json.fromString(aud),
+        "exp" -> io.circe.Json.fromLong(exp.getEpochSecond),
+        "jti" -> io.circe.Json.fromString(jti)
+      )
+      .noSpaces
+    dev.oauth2.jose.Jws
+      .sign(dev.oauth2.jose.Alg.RS256, dev.oauth2.jose.Fakes.keyId("key-1"), key, payload)
+      .toOption
+      .get
+  }
+
+  private def assertionInput(raw: String): ClientAuthInput =
+    input(
+      None,
+      Map("client_assertion" -> raw, "client_assertion_type" -> dev.oauth2.core.ClientAssertion.Type)
+    )
+
+  test("a private key jwt assertion authenticates the registered client") {
+    val registered = jwtClient
+    for {
+      authentication <- assertionService(List(registered))
+      result <- authentication.authenticate(assertionInput(assertion()))
+    } yield assertEquals(result, Right(registered))
+  }
+
+  test("a replayed assertion is refused") {
+    for {
+      authentication <- assertionService(List(jwtClient))
+      first <- authentication.authenticate(assertionInput(assertion()))
+      second <- authentication.authenticate(assertionInput(assertion()))
+    } yield {
+      assert(first.isRight)
+      assertEquals(rejection(second), OAuth2Error.InvalidClient())
+    }
+  }
+
+  test("an assertion for another audience or an expired one is refused") {
+    for {
+      authentication <- assertionService(List(jwtClient))
+      wrongAudience <- authentication.authenticate(assertionInput(assertion(aud = "https://other.example")))
+      expired <- authentication.authenticate(assertionInput(assertion(exp = Start)))
+    } yield {
+      assertEquals(rejection(wrongAudience), OAuth2Error.InvalidClient())
+      assertEquals(rejection(expired), OAuth2Error.InvalidClient())
+    }
+  }
+
+  test("an assertion whose issuer and subject differ is refused") {
+    for {
+      authentication <- assertionService(List(jwtClient))
+      result <- authentication.authenticate(assertionInput(assertion(iss = "client-2")))
+    } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
+  }
+
+  test("an assertion for a client registered with another method is refused") {
+    for {
+      authentication <- assertionService(List(client()))
+      result <- authentication.authenticate(assertionInput(assertion()))
+    } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
+  }
+
+  test("an assertion signed by another key is refused") {
+    val stranger = {
+      val generator = java.security.KeyPairGenerator.getInstance("RSA")
+      generator.initialize(2048)
+      generator.generateKeyPair
+    }
+    for {
+      authentication <- assertionService(List(jwtClient))
+      result <- authentication.authenticate(assertionInput(assertion(key = stranger.getPrivate)))
+    } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
+  }
+
+  test("an assertion combined with a secret is refused") {
+    for {
+      authentication <- assertionService(List(jwtClient))
+      result <- authentication.authenticate(
+        ClientAuthInput(
+          None,
+          None,
+          Some(secret),
+          Some(unsafe(dev.oauth2.core.ClientAssertion.from(assertion())))
+        )
+      )
+    } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
+  }
+
+  test("an assertion without a configured verifier is refused") {
+    for {
+      authentication <- service(List(jwtClient))
+      result <- authentication.authenticate(assertionInput(assertion()))
+    } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
+  }
+
   test("basic credentials authenticate a client registered for client_secret_basic") {
     val registered = client()
     for {
