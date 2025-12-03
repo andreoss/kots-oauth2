@@ -74,7 +74,7 @@ lazy val http = module("http")
     )
   )
 
-lazy val server = module("server").dependsOn(core, store, http)
+lazy val server = module("server").dependsOn(core, store, http, jose % "test->test")
 
 lazy val client = module("client").dependsOn(core)
 

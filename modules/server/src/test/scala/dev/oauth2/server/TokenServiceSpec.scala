@@ -115,6 +115,59 @@ class TokenServiceSpec extends CatsEffectSuite {
     } yield (new TokenService[IO](codes, tokens, grants, devices, clock, entropy, policy), tokens, grants)
   }
 
+  private def signedSetup: IO[(TokenService[IO], InMemoryTokenStore[IO])] = {
+    val clock = new Clock[IO] {
+      def instant: IO[Instant] = IO.pure(Start)
+    }
+    var calls: Int = 0
+    val entropy = new Entropy[IO] {
+      def bytes(n: Int): IO[Array[Byte]] = IO {
+        calls += 1
+        Array.fill(n)(calls.toByte)
+      }
+    }
+    val signing = TokenService.Signing(
+      unsafe(dev.oauth2.core.Issuer.from("https://server.example")),
+      dev.oauth2.jose.Fakes.signingKey
+    )
+    for {
+      codes <- InMemoryCodeStore.create[IO](clock)
+      tokens <- InMemoryTokenStore.create[IO](clock)
+      grants <- InMemoryGrantStore.create[IO]
+      devices <- InMemoryDeviceStore.create[IO](clock)
+    } yield (
+      new TokenService[IO](codes, tokens, grants, devices, clock, entropy, LifetimePolicy.defaults, Some(signing)),
+      tokens
+    )
+  }
+
+  test("a configured signer mints a verifiable jwt access token") {
+    for {
+      pair <- signedSetup
+      (service, _) = pair
+      issued <- service.clientCredentials(TokenRequest.ClientCredentials(None, clientId), client())
+    } yield {
+      val minted = issued.toOption.get
+      val published = dev.oauth2.jose.Jwks(List(dev.oauth2.jose.Fakes.signingJwk))
+      val parsed = dev.oauth2.jose.Jwt.claims(minted.accessToken.value, published, Start).toOption.get
+      assertEquals(parsed.issuer.value, "https://server.example")
+      assertEquals(parsed.subject.value, clientId.value)
+      assertEquals(parsed.clientId, clientId)
+      assertEquals(parsed.scopes, unsafe(Scopes.parse("read")))
+      assertEquals(parsed.issuedAt, Start)
+      assertEquals(parsed.expiresAt, Start.plusSeconds(3600L))
+    }
+  }
+
+  test("a minted jwt access token is still found by its hash") {
+    for {
+      pair <- signedSetup
+      (service, tokens) = pair
+      issued <- service.clientCredentials(TokenRequest.ClientCredentials(None, clientId), client())
+      found <- tokens.findByAccess(issued.toOption.get.accessToken)
+    } yield assertEquals(found.map(_.clientId), Some(clientId))
+  }
+
   private def deviceRecord(
       subject: Option[Subject] = None,
       denied: Boolean = false,

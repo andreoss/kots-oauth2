@@ -11,7 +11,7 @@ final case class AccessToken private (value: String)
 
 object AccessToken {
   def from(raw: String): Either[ParseFailure, AccessToken] =
-    Text.printable("AccessToken", raw).map(new AccessToken(_))
+    Text.printableToken("AccessToken", raw).map(new AccessToken(_))
 }
 
 final case class RefreshToken private (value: String)

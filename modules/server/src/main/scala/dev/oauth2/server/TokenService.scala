@@ -13,6 +13,8 @@ import dev.oauth2.core.ClientId
 import dev.oauth2.core.Clock
 import dev.oauth2.core.Entropy
 import dev.oauth2.core.GrantId
+import dev.oauth2.core.Issuer
+import dev.oauth2.core.JwtId
 import dev.oauth2.core.Lifetime
 import dev.oauth2.core.LifetimePolicy
 import dev.oauth2.core.OAuth2Error
@@ -24,6 +26,9 @@ import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
 import dev.oauth2.core.TokenRequest
 import dev.oauth2.core.TokenType
+import dev.oauth2.jose.Jwt
+import dev.oauth2.jose.JwtClaims
+import dev.oauth2.jose.SigningKey
 import dev.oauth2.store.Client
 import dev.oauth2.store.CodeRecord
 import dev.oauth2.store.CodeStore
@@ -41,7 +46,8 @@ final class TokenService[F[_]: Monad](
     devices: DeviceStore[F],
     clock: Clock[F],
     entropy: Entropy[F],
-    policy: LifetimePolicy
+    policy: LifetimePolicy,
+    signer: Option[TokenService.Signing] = None
 ) {
 
   def authorizationCode(
@@ -273,14 +279,15 @@ final class TokenService[F[_]: Monad](
         }
     }
 
-  private def issue(mint: TokenService.Mint): F[Either[OAuth2Error, IssuedToken]] =
+  private def issue(mint: TokenService.Mint): F[Either[OAuth2Error, IssuedToken]] = {
+    val accessExpiresAt = Lifetime.expiresAt(mint.now, LifetimePolicy.of(policy, TokenType.Access))
     for {
       grant <- grantIdOf(mint)
       access <- entropy.bytes(TokenService.TokenEntropyBytes)
       refresh <- entropy.bytes(TokenService.TokenEntropyBytes)
       issued = (
         grant,
-        AccessToken.from(Entropy.hex(access)).leftMap(TokenService.failure),
+        accessTokenOf(mint, Entropy.hex(access), accessExpiresAt),
         if (mint.refreshExpiresAt.isDefined)
           RefreshToken.from(Entropy.hex(refresh)).map(Some(_)).leftMap(TokenService.failure)
         else Right(None): Either[OAuth2Error, Option[RefreshToken]]
@@ -297,7 +304,7 @@ final class TokenService[F[_]: Monad](
             scopes = mint.scopes,
             details = mint.details,
             issuedAt = mint.now,
-            accessExpiresAt = Lifetime.expiresAt(mint.now, LifetimePolicy.of(policy, TokenType.Access)),
+            accessExpiresAt = accessExpiresAt,
             refreshExpiresAt = refreshToken.map(_ => mint.refreshExpiresAt.getOrElse(mint.now)),
             audience = mint.audience,
             actor = mint.actor
@@ -309,6 +316,34 @@ final class TokenService[F[_]: Monad](
         }
       )
     } yield result
+  }
+
+  private def accessTokenOf(
+      mint: TokenService.Mint,
+      seed: String,
+      expiresAt: Instant
+  ): Either[OAuth2Error, AccessToken] =
+    signer match {
+      case None => AccessToken.from(seed).leftMap(TokenService.failure)
+      case Some(signing) =>
+        (for {
+          tokenId <- JwtId.from(seed)
+          compact <- Jwt.issue(
+            signing.key,
+            JwtClaims(
+              issuer = signing.issuer,
+              subject = mint.subject,
+              audience = mint.audience,
+              clientId = mint.clientId,
+              scopes = mint.scopes,
+              issuedAt = mint.now,
+              expiresAt = expiresAt,
+              tokenId = tokenId
+            )
+          )
+          token <- AccessToken.from(compact)
+        } yield token).leftMap(TokenService.failure)
+    }
 
   private def grantIdOf(mint: TokenService.Mint): F[Either[OAuth2Error, GrantId]] =
     mint.grantId.fold(
@@ -320,6 +355,8 @@ final class TokenService[F[_]: Monad](
 
 object TokenService {
   val TokenEntropyBytes: Int = 32
+
+  final case class Signing(issuer: Issuer, key: SigningKey)
 
   private[server] final case class Mint(
       grantId: Option[GrantId],
