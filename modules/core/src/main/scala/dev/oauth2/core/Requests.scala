@@ -35,7 +35,8 @@ final case class AuthorizationRequest(
     redirectUri: Option[RedirectUri],
     scope: Scopes,
     state: State,
-    pkce: Option[Pkce]
+    pkce: Option[Pkce],
+    resource: Option[ResourceIndicator] = None
 )
 
 object AuthorizationRequest {
@@ -52,9 +53,10 @@ object AuthorizationRequest {
       (
         Params.fieldOpt(params, "code_challenge")(CodeChallenge.from),
         Params.fieldOpt(params, "code_challenge_method")(CodeChallengeMethod.from)
-      ).tupled.andThen { case (challenge, method) => pkce(challenge, method) }
-    ).mapN { case (responseType, clientId, redirectUri, scope, state, pkce) =>
-      AuthorizationRequest(responseType, clientId, redirectUri, scope.getOrElse(Scopes.empty), state, pkce)
+      ).tupled.andThen { case (challenge, method) => pkce(challenge, method) },
+      Params.fieldOpt(params, "resource")(ResourceIndicator.from)
+    ).mapN { case (responseType, clientId, redirectUri, scope, state, pkce, resource) =>
+      AuthorizationRequest(responseType, clientId, redirectUri, scope.getOrElse(Scopes.empty), state, pkce, resource)
     }
 
   private def pkce(
@@ -76,23 +78,27 @@ object TokenRequest {
       code: AuthorizationCode,
       redirectUri: Option[RedirectUri],
       verifier: CodeVerifier,
-      clientId: ClientId
+      clientId: ClientId,
+      resource: Option[ResourceIndicator] = None
   ) extends TokenRequest
 
   final case class Refresh(
       refreshToken: RefreshToken,
       scope: Option[Scopes],
-      clientId: ClientId
+      clientId: ClientId,
+      resource: Option[ResourceIndicator] = None
   ) extends TokenRequest
 
   final case class ClientCredentials(
       scope: Option[Scopes],
-      clientId: ClientId
+      clientId: ClientId,
+      resource: Option[ResourceIndicator] = None
   ) extends TokenRequest
 
   final case class Device(
       deviceCode: DeviceCode,
-      clientId: ClientId
+      clientId: ClientId,
+      resource: Option[ResourceIndicator] = None
   ) extends TokenRequest
 
   final case class Exchange(
@@ -122,26 +128,30 @@ object TokenRequest {
       Params.field(params, "code")(AuthorizationCode.from),
       Params.fieldOpt(params, "redirect_uri")(RedirectUri.from),
       Params.field(params, "code_verifier")(CodeVerifier.from),
-      Params.field(params, "client_id")(ClientId.from)
+      Params.field(params, "client_id")(ClientId.from),
+      Params.fieldOpt(params, "resource")(ResourceIndicator.from)
     ).mapN(Code.apply)
 
   private def refreshToken(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
     (
       Params.field(params, "refresh_token")(RefreshToken.from),
       Params.fieldOpt(params, "scope")(Scopes.parse),
-      Params.field(params, "client_id")(ClientId.from)
+      Params.field(params, "client_id")(ClientId.from),
+      Params.fieldOpt(params, "resource")(ResourceIndicator.from)
     ).mapN(Refresh.apply)
 
   private def clientCredentials(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
     (
       Params.fieldOpt(params, "scope")(Scopes.parse),
-      Params.field(params, "client_id")(ClientId.from)
+      Params.field(params, "client_id")(ClientId.from),
+      Params.fieldOpt(params, "resource")(ResourceIndicator.from)
     ).mapN(ClientCredentials.apply)
 
   private def device(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
     (
       Params.field(params, "device_code")(DeviceCode.from),
-      Params.field(params, "client_id")(ClientId.from)
+      Params.field(params, "client_id")(ClientId.from),
+      Params.fieldOpt(params, "resource")(ResourceIndicator.from)
     ).mapN(Device.apply)
 
   private def exchange(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
@@ -188,7 +198,8 @@ object ExchangeTokenType {
 
 final case class DeviceAuthorizationRequest(
     scope: Option[Scopes],
-    clientId: ClientId
+    clientId: ClientId,
+    resource: Option[ResourceIndicator] = None
 )
 
 object DeviceAuthorizationRequest {
@@ -196,6 +207,7 @@ object DeviceAuthorizationRequest {
   def from(params: Map[String, String]): ValidatedNec[OAuth2Error, DeviceAuthorizationRequest] =
     (
       Params.fieldOpt(params, "scope")(Scopes.parse),
-      Params.field(params, "client_id")(ClientId.from)
+      Params.field(params, "client_id")(ClientId.from),
+      Params.fieldOpt(params, "resource")(ResourceIndicator.from)
     ).mapN(DeviceAuthorizationRequest.apply)
 }

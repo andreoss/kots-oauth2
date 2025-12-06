@@ -220,6 +220,48 @@ class TokenServiceSpec extends CatsEffectSuite {
       if (method == ClientAuthMethod.None) None else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
     )
 
+  private val boundResource: dev.oauth2.core.ResourceIndicator =
+    unsafe(dev.oauth2.core.ResourceIndicator.from("https://api.example"))
+
+  test("a client credentials token is bound to the requested resource") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      issued <- service.clientCredentials(
+        TokenRequest.ClientCredentials(None, clientId, Some(boundResource)),
+        client()
+      )
+    } yield assertEquals(issued.toOption.get.record.audience.map(_.value), Some("https://api.example"))
+  }
+
+  test("a code exchange binds the token to the resource of its code") {
+    for {
+      triple <- setup(record("code-1").copy(resource = Some(boundResource)))
+      (service, _, _) = triple
+      issued <- service.authorizationCode(request("code-1", verifier), client())
+    } yield assertEquals(issued.toOption.get.record.audience.map(_.value), Some("https://api.example"))
+  }
+
+  test("a refresh keeps the audience of the rotated token") {
+    for {
+      triple <- setup(record("code-1").copy(resource = Some(boundResource)))
+      (service, _, _) = triple
+      first <- service.authorizationCode(request("code-1", verifier), client())
+      rotated <- service.refresh(
+        TokenRequest.Refresh(first.toOption.get.refreshToken.get, None, clientId),
+        client()
+      )
+    } yield assertEquals(rotated.toOption.get.record.audience.map(_.value), Some("https://api.example"))
+  }
+
+  test("a device token is bound to the resource of its authorization") {
+    for {
+      triple <- deviceSetup(deviceRecord(subject = Some(subject)).copy(resource = Some(boundResource)))
+      (service, _, _) = triple
+      issued <- service.deviceCode(deviceRequest, client())
+    } yield assertEquals(issued.toOption.get.record.audience.map(_.value), Some("https://api.example"))
+  }
+
   private def issuedSubject(service: TokenService[IO]): IO[dev.oauth2.store.IssuedToken] =
     service
       .authorizationCode(request("code-1", verifier), client())

@@ -93,6 +93,16 @@ class DeviceAuthorizationServiceSpec extends CatsEffectSuite {
     } yield assertEquals(stored.map(_.scopes), Some(client.scopes))
   }
 
+  test("the requested resource is recorded on the device authorization") {
+    val bound = unsafe(dev.oauth2.core.ResourceIndicator.from("https://api.example"))
+    for {
+      pair <- setup
+      (service, devices) = pair
+      answered <- service.authorize(request(None).copy(resource = Some(bound)), client)
+      stored <- devices.poll(answered.toOption.get.deviceCode)
+    } yield assertEquals(stored.flatMap(_.resource), Some(bound))
+  }
+
   test("a scope outside the client registration is refused") {
     for {
       pair <- setup

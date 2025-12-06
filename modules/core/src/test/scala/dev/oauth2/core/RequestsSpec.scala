@@ -132,11 +132,12 @@ class RequestsSpec extends ScalaCheckSuite {
     )
     val request = valid(decoded)
     request match {
-      case TokenRequest.Code(code, redirectUri, verifier, clientId) =>
+      case TokenRequest.Code(code, redirectUri, verifier, clientId, resource) =>
         assertEquals(code.value, "code-1")
         assertEquals(redirectUri.map(_.value), Some(Redirect))
         assertEquals(verifier.value, Verifier)
         assertEquals(clientId.value, Client)
+        assertEquals(resource, None)
       case other => fail(s"unexpected request $other")
     }
   }
@@ -158,12 +159,63 @@ class RequestsSpec extends ScalaCheckSuite {
       Map("grant_type" -> "refresh_token", "refresh_token" -> "rt-1", "client_id" -> Client)
     )
     valid(decoded) match {
-      case TokenRequest.Refresh(refreshToken, scope, clientId) =>
+      case TokenRequest.Refresh(refreshToken, scope, clientId, resource) =>
         assertEquals(refreshToken.value, "rt-1")
         assertEquals(scope, None)
         assertEquals(clientId.value, Client)
+        assertEquals(resource, None)
       case other => fail(s"unexpected request $other")
     }
+  }
+
+  test("every minting grant decodes a resource indicator") {
+    val bound = "https://api.example"
+    val code = valid(
+      TokenRequest.from(
+        Map(
+          "grant_type" -> "authorization_code",
+          "code" -> "code-1",
+          "code_verifier" -> Verifier,
+          "client_id" -> Client,
+          "resource" -> bound
+        )
+      )
+    ).asInstanceOf[TokenRequest.Code]
+    val refresh = valid(
+      TokenRequest.from(
+        Map("grant_type" -> "refresh_token", "refresh_token" -> "rt-1", "client_id" -> Client, "resource" -> bound)
+      )
+    ).asInstanceOf[TokenRequest.Refresh]
+    val credentials = valid(
+      TokenRequest.from(Map("grant_type" -> "client_credentials", "client_id" -> Client, "resource" -> bound))
+    ).asInstanceOf[TokenRequest.ClientCredentials]
+    val device = valid(
+      TokenRequest.from(
+        Map(
+          "grant_type" -> "urn:ietf:params:oauth:grant-type:device_code",
+          "device_code" -> "device-1",
+          "client_id" -> Client,
+          "resource" -> bound
+        )
+      )
+    ).asInstanceOf[TokenRequest.Device]
+    assertEquals(code.resource.map(_.value), Some(bound))
+    assertEquals(refresh.resource.map(_.value), Some(bound))
+    assertEquals(credentials.resource.map(_.value), Some(bound))
+    assertEquals(device.resource.map(_.value), Some(bound))
+  }
+
+  test("the authorization and device authorization requests decode a resource indicator") {
+    val request = valid(
+      authorization(
+        "code_challenge" -> Verifier,
+        "code_challenge_method" -> "S256",
+        "resource" -> "https://api.example"
+      )
+    )
+    assertEquals(request.resource.map(_.value), Some("https://api.example"))
+    val device = valid(DeviceAuthorizationRequest.from(Map("client_id" -> Client, "resource" -> "https://api.example")))
+    assertEquals(device.resource.map(_.value), Some("https://api.example"))
   }
 
   test("token request decodes a refresh token grant with a narrower scope") {
@@ -189,9 +241,10 @@ class RequestsSpec extends ScalaCheckSuite {
   test("token request decodes a client credentials grant") {
     val decoded = TokenRequest.from(Map("grant_type" -> "client_credentials", "client_id" -> Client))
     valid(decoded) match {
-      case TokenRequest.ClientCredentials(scope, clientId) =>
+      case TokenRequest.ClientCredentials(scope, clientId, resource) =>
         assertEquals(scope, None)
         assertEquals(clientId.value, Client)
+        assertEquals(resource, None)
       case other => fail(s"unexpected request $other")
     }
   }

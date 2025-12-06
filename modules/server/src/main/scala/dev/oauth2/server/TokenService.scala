@@ -21,6 +21,7 @@ import dev.oauth2.core.OAuth2Error
 import dev.oauth2.core.Pkce
 import dev.oauth2.core.RedirectUri
 import dev.oauth2.core.RefreshToken
+import dev.oauth2.core.ResourceIndicator
 import dev.oauth2.core.RefreshTokenHash
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
@@ -59,7 +60,7 @@ final class TokenService[F[_]: Monad](
       case Some(record) =>
         check(record, request, client).fold(
           error => Monad[F].pure(Left(error)),
-          _ => issue(record, client)
+          _ => issue(record, request.resource.orElse(record.resource), client)
         )
     }
 
@@ -80,9 +81,12 @@ final class TokenService[F[_]: Monad](
           Monad[F].pure(Left(OAuth2Error.InvalidScope(): OAuth2Error))
         case requested =>
           clock.instant.flatMap(now =>
-            Subject.from(client.id.value).leftMap(TokenService.failure) match {
+            (
+              Subject.from(client.id.value).leftMap(TokenService.failure),
+              bound(request.resource)
+            ).mapN((_, _)) match {
               case Left(error) => Monad[F].pure(Left(error))
-              case Right(owner) =>
+              case Right((owner, audience)) =>
                 issue(
                   TokenService.Mint(
                     None,
@@ -91,7 +95,8 @@ final class TokenService[F[_]: Monad](
                     owner,
                     requested.getOrElse(client.scopes),
                     AuthorizationDetails.empty,
-                    None
+                    None,
+                    audience
                   )
                 )
             }
@@ -126,17 +131,22 @@ final class TokenService[F[_]: Monad](
                       if (client.confidential)
                         Some(Lifetime.expiresAt(now, LifetimePolicy.of(policy, TokenType.Refresh)))
                       else None
-                    issue(
-                      TokenService.Mint(
-                        None,
-                        now,
-                        record.clientId,
-                        subject,
-                        record.scopes,
-                        AuthorizationDetails.empty,
-                        refreshExpiresAt
-                      )
-                    )
+                    bound(request.resource.orElse(record.resource)) match {
+                      case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+                      case Right(audience) =>
+                        issue(
+                          TokenService.Mint(
+                            None,
+                            now,
+                            record.clientId,
+                            subject,
+                            record.scopes,
+                            AuthorizationDetails.empty,
+                            refreshExpiresAt,
+                            audience
+                          )
+                        )
+                    }
                 }
             }
         }
@@ -184,35 +194,58 @@ final class TokenService[F[_]: Monad](
             Monad[F].pure(Left(OAuth2Error.InvalidScope(): OAuth2Error))
           case requested =>
             clock.instant.flatMap { now =>
-              issue(
-                TokenService.Mint(
-                  Some(record.grantId),
-                  now,
-                  record.clientId,
-                  record.subject,
-                  requested.getOrElse(record.scopes),
-                  record.details,
-                  record.refreshExpiresAt
-                )
-              ).flatMap {
-                case Right(issued) => tokens.retire(request.refreshToken, record.grantId).as(Right(issued))
-                case left          => Monad[F].pure(left)
+              bound(request.resource) match {
+                case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+                case Right(narrowed) =>
+                  issue(
+                    TokenService.Mint(
+                      Some(record.grantId),
+                      now,
+                      record.clientId,
+                      record.subject,
+                      requested.getOrElse(record.scopes),
+                      record.details,
+                      record.refreshExpiresAt,
+                      narrowed.orElse(record.audience)
+                    )
+                  ).flatMap {
+                    case Right(issued) => tokens.retire(request.refreshToken, record.grantId).as(Right(issued))
+                    case left          => Monad[F].pure(left)
+                  }
               }
             }
         }
       case _ => Monad[F].pure(Left(TokenService.rejected))
     }
 
-  private def issue(record: CodeRecord, client: Client): F[Either[OAuth2Error, IssuedToken]] =
+  private def issue(
+      record: CodeRecord,
+      resource: Option[ResourceIndicator],
+      client: Client
+  ): F[Either[OAuth2Error, IssuedToken]] =
     clock.instant.flatMap { now =>
       val refreshExpiresAt =
         if (client.confidential) Some(Lifetime.expiresAt(now, LifetimePolicy.of(policy, TokenType.Refresh)))
         else None
-      issue(TokenService.Mint(None, now, record.clientId, record.subject, record.scopes, record.details, refreshExpiresAt))
-        .flatMap {
-          case Right(issued) => codes.redeem(record.code, issued.record.grantId).as(Right(issued))
-          case left          => Monad[F].pure(left)
-        }
+      bound(resource) match {
+        case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+        case Right(audience) =>
+          issue(
+            TokenService.Mint(
+              None,
+              now,
+              record.clientId,
+              record.subject,
+              record.scopes,
+              record.details,
+              refreshExpiresAt,
+              audience
+            )
+          ).flatMap {
+            case Right(issued) => codes.redeem(record.code, issued.record.grantId).as(Right(issued))
+            case left          => Monad[F].pure(left)
+          }
+      }
     }
 
   def exchange(request: TokenRequest.Exchange, client: Client): F[Either[OAuth2Error, IssuedToken]] =
@@ -271,12 +304,14 @@ final class TokenService[F[_]: Monad](
   private def audienceOf(request: TokenRequest.Exchange): Either[OAuth2Error, Option[Audience]] =
     request.audience match {
       case some @ Some(_) => Right(some)
-      case None =>
-        request.resource match {
-          case None => Right(None)
-          case Some(resource) =>
-            Audience.from(resource.value).map(Some(_): Option[Audience]).leftMap(TokenService.failure)
-        }
+      case None           => bound(request.resource)
+    }
+
+  private def bound(resource: Option[ResourceIndicator]): Either[OAuth2Error, Option[Audience]] =
+    resource match {
+      case None => Right(None)
+      case Some(value) =>
+        Audience.from(value.value).map(Some(_): Option[Audience]).leftMap(TokenService.failure)
     }
 
   private def issue(mint: TokenService.Mint): F[Either[OAuth2Error, IssuedToken]] = {
