@@ -51,6 +51,10 @@ trait ParLogic[F[_]] {
   ): F[Either[OAuth2Error, PushedAuthorizationResponse]]
 }
 
+trait RegisterLogic[F[_]] {
+  def apply(body: Map[String, Json]): F[Either[OAuth2Error, ClientRegistrationResponse]]
+}
+
 object Server {
 
   def authorize[F[_]: Functor](logic: AuthorizeLogic[F]): ServerEndpoint[Any, F] =
@@ -63,6 +67,12 @@ object Server {
     ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any, F](
       Endpoints.par,
       _ => input => logic(input._1, input._2).map(_.map(PushedAuthorizationResponse.render))
+    )
+
+  def register[F[_]: Functor](logic: RegisterLogic[F]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[Map[String, Json], OAuth2Error, Map[String, Json], Any, F](
+      Endpoints.register,
+      _ => body => logic(body).map(_.map(ClientRegistrationResponse.render))
     )
 
   def token[F[_]: Functor](logic: TokenLogic[F]): ServerEndpoint[Any, F] =

@@ -209,6 +209,15 @@ object Endpoints {
   lazy val par: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     PushedAuthorization.endpoint
 
+  val RegisterPath: String = "register"
+
+  lazy val register: PublicEndpoint[Map[String, Json], OAuth2Error, Map[String, Json], Any] =
+    sttp.tapir.endpoint.post
+      .in(RegisterPath)
+      .in(jsonBody[Map[String, Json]])
+      .out(statusCode(StatusCode.Created).and(noStore(jsonBody[Map[String, Json]])))
+      .errorOut(authorizeErrors)
+
   lazy val introspection
       : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     Introspection.endpoint

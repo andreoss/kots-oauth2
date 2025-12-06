@@ -26,4 +26,6 @@ final case class Client(
 
 trait ClientStore[F[_]] {
   def find(id: ClientId): F[Option[Client]]
+
+  def save(client: Client): F[Unit]
 }

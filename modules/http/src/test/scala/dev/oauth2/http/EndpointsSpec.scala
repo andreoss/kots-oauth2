@@ -20,6 +20,7 @@ class EndpointsSpec extends FunSuite {
         List(
           Endpoints.authorize,
           Endpoints.par,
+          Endpoints.register,
           Endpoints.token,
           Endpoints.revocation,
           Endpoints.introspection,
@@ -40,6 +41,9 @@ class EndpointsSpec extends FunSuite {
 
   private def parOperation =
     document.paths.pathItems("/par").post.getOrElse(fail("no par operation in the document"))
+
+  private def registerOperation =
+    document.paths.pathItems("/register").post.getOrElse(fail("no register operation in the document"))
 
   private def revocationOperation =
     document.paths.pathItems("/revocation").post.getOrElse(fail("no revocation operation in the document"))
@@ -186,6 +190,21 @@ class EndpointsSpec extends FunSuite {
   test("the authorization endpoint describes the redirect and its reachable failures") {
     val codes = authorizeOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
     assertEquals(codes, Set(302, 400, 500, 503))
+  }
+
+  test("the register endpoint is a json post answering created") {
+    assertEquals(Endpoints.register.showPathTemplate(showQueryParam = None), "/register")
+    assertEquals(Endpoints.register.method.map(_.method), Some("POST"))
+    assert(registerOperation.security.isEmpty)
+    assertEquals(
+      registerOperation.requestBody.flatMap(_.toOption).map(_.content.keys.toList),
+      Some(List("application/json"))
+    )
+    val codes = registerOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
+    assert(codes.contains(201))
+    val responses = registerOperation.responses.responses.values.flatMap(_.toOption)
+    assert(responses.nonEmpty)
+    assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
   }
 
   test("the par endpoint is a form post answering created") {
