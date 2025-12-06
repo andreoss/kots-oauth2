@@ -78,3 +78,16 @@ object ResourceIndicator {
   def from(raw: String): Either[ParseFailure, ResourceIndicator] =
     Text.absolute("ResourceIndicator", raw).map(new ResourceIndicator(_))
 }
+
+final case class RequestUri private (value: String)
+
+object RequestUri {
+
+  val Prefix: String = "urn:ietf:params:oauth:request_uri:"
+
+  def from(raw: String): Either[ParseFailure, RequestUri] =
+    Text.printable("RequestUri", raw).flatMap { value =>
+      if (value.startsWith(Prefix) && value.length > Prefix.length) Right(new RequestUri(value))
+      else Left(ParseFailure("RequestUri", "not a pushed request uri"))
+    }
+}

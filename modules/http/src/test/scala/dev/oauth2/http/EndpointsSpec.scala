@@ -19,6 +19,7 @@ class EndpointsSpec extends FunSuite {
       .toOpenAPI(
         List(
           Endpoints.authorize,
+          Endpoints.par,
           Endpoints.token,
           Endpoints.revocation,
           Endpoints.introspection,
@@ -36,6 +37,9 @@ class EndpointsSpec extends FunSuite {
 
   private def authorizeOperation =
     document.paths.pathItems("/authorize").get.getOrElse(fail("no authorize operation in the document"))
+
+  private def parOperation =
+    document.paths.pathItems("/par").post.getOrElse(fail("no par operation in the document"))
 
   private def revocationOperation =
     document.paths.pathItems("/revocation").post.getOrElse(fail("no revocation operation in the document"))
@@ -182,6 +186,22 @@ class EndpointsSpec extends FunSuite {
   test("the authorization endpoint describes the redirect and its reachable failures") {
     val codes = authorizeOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
     assertEquals(codes, Set(302, 400, 500, 503))
+  }
+
+  test("the par endpoint is a form post answering created") {
+    assertEquals(Endpoints.par.showPathTemplate(showQueryParam = None), "/par")
+    assertEquals(Endpoints.par.method.map(_.method), Some("POST"))
+    val codes = parOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
+    assert(codes.contains(201))
+    val responses = parOperation.responses.responses.values.flatMap(_.toOption)
+    assert(responses.nonEmpty)
+    assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
+  }
+
+  test("the par form accepts the pushed parameters and refuses a request uri") {
+    val form = Endpoints.strictForm(Endpoints.parParameters)
+    assert(accepted(form.decode("response_type=code&client_id=c&state=xyz&client_secret=s")))
+    assert(refused(form.decode("request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3Aabc")))
   }
 
   test("the authorization redirect never leaks through the referrer") {

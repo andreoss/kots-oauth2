@@ -88,6 +88,75 @@ class AuthorizationEndpointSpec extends CatsEffectSuite {
   private def query(redirect: AuthorizationRedirect): Map[String, String] =
     Form.parse(redirect.location.dropWhile(_ != '?').drop(1)).toOption.get
 
+  private def pushedSetup
+      : IO[(AuthorizationEndpoint[IO], dev.oauth2.store.memory.InMemoryPushedRequestStore[IO])] = {
+    val clock = new Clock[IO] {
+      def instant: IO[Instant] = IO.pure(Start)
+    }
+    val entropy = new Entropy[IO] {
+      def bytes(n: Int): IO[Array[Byte]] = IO.pure(Array.fill(n)(7.toByte))
+    }
+    for {
+      codes <- InMemoryCodeStore.create[IO](clock)
+      consents <- InMemoryConsentStore.create[IO]
+      _ <- consents.grant(ConsentRecord(clientId, subject, unsafe(Scopes.parse("read"))))
+      login <- SessionLogin.create[IO]
+      _ <- login.login(subject)
+      clients <- InMemoryClientStore.create[IO](List(registered))
+      pushed <- dev.oauth2.store.memory.InMemoryPushedRequestStore.create[IO](clock)
+    } yield (
+      new AuthorizationEndpoint[IO](
+        clients,
+        login,
+        new AuthorizationService[IO](codes, consents, clock, entropy, LifetimePolicy.defaults),
+        issuer,
+        Some(pushed)
+      ),
+      pushed
+    )
+  }
+
+  private val pushedUri: dev.oauth2.core.RequestUri =
+    unsafe(dev.oauth2.core.RequestUri.from(dev.oauth2.core.RequestUri.Prefix + "abc"))
+
+  test("a pushed request uri resolves to its stored authorization request") {
+    for {
+      pair <- pushedSetup
+      (endpoint, pushed) = pair
+      _ <- pushed.save(
+        dev.oauth2.store.PushedRequest(pushedUri, clientId, params, Start.plusSeconds(60L))
+      )
+      answered <- endpoint(Map("client_id" -> clientId.value, "request_uri" -> pushedUri.value))
+      replayed <- endpoint(Map("client_id" -> clientId.value, "request_uri" -> pushedUri.value))
+    } yield {
+      val fields = query(answered.toOption.get)
+      assert(fields("code").nonEmpty)
+      assertEquals(fields.get("state"), Some("xyz"))
+      assertEquals(replayed.left.toOption.map(_.code), Some("invalid_request"))
+    }
+  }
+
+  test("a request uri combined with other parameters is refused") {
+    for {
+      pair <- pushedSetup
+      (endpoint, _) = pair
+      answered <- endpoint(
+        Map("client_id" -> clientId.value, "request_uri" -> pushedUri.value, "scope" -> "read")
+      )
+    } yield assertEquals(answered.left.toOption.map(_.code), Some("invalid_request"))
+  }
+
+  test("a request uri of another client is refused") {
+    for {
+      pair <- pushedSetup
+      (endpoint, pushed) = pair
+      _ <- pushed.save(
+        dev.oauth2.store.PushedRequest(pushedUri, unsafe(ClientId.from("client-2")), params, Start.plusSeconds(60L))
+      )
+      answered <- endpoint(Map("client_id" -> clientId.value, "request_uri" -> pushedUri.value))
+    } yield assertEquals(answered.left.toOption.map(_.code), Some("invalid_request"))
+  }
+
   test("an authorized request is redirected back with the code and the state") {
     for {
       endpoint <- setup()

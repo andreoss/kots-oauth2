@@ -91,6 +91,13 @@ class NewtypeSpec extends ScalaCheckSuite {
     assertEquals(ResourceIndicator.from("cb").isLeft, true)
   }
 
+  test("a request uri requires the pushed request urn prefix") {
+    assert(RequestUri.from(RequestUri.Prefix + "abc").isRight)
+    assert(RequestUri.from(RequestUri.Prefix).isLeft)
+    assert(RequestUri.from("urn:other:abc").isLeft)
+    assert(RequestUri.from("https://example.com/request").isLeft)
+  }
+
   test("redirect uri matching is exact") {
     val registered = Set(RedirectUri.from("https://example.com/cb").toOption.get)
     val candidate = RedirectUri.from("https://example.com/cb").toOption.get

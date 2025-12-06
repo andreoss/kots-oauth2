@@ -44,12 +44,25 @@ trait DeviceAuthorizationLogic[F[_]] {
   ): F[Either[OAuth2Error, DeviceAuthorizationResponse]]
 }
 
+trait ParLogic[F[_]] {
+  def apply(
+      basic: Option[String],
+      parameters: Map[String, String]
+  ): F[Either[OAuth2Error, PushedAuthorizationResponse]]
+}
+
 object Server {
 
   def authorize[F[_]: Functor](logic: AuthorizeLogic[F]): ServerEndpoint[Any, F] =
     ServerEndpoint.public[Map[String, String], OAuth2Error, String, Any, F](
       Endpoints.authorize,
       _ => parameters => logic(parameters).map(_.map(_.location))
+    )
+
+  def par[F[_]: Functor](logic: ParLogic[F]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any, F](
+      Endpoints.par,
+      _ => input => logic(input._1, input._2).map(_.map(PushedAuthorizationResponse.render))
     )
 
   def token[F[_]: Functor](logic: TokenLogic[F]): ServerEndpoint[Any, F] =

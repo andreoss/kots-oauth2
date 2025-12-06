@@ -39,6 +39,8 @@ import dev.oauth2.server.DeviceAuthorizationEndpoint
 import dev.oauth2.server.DeviceAuthorizationService
 import dev.oauth2.server.SessionLogin
 import dev.oauth2.server.IntrospectionEndpoint
+import dev.oauth2.server.PushedAuthorizationEndpoint
+import dev.oauth2.server.PushedAuthorizationService
 import dev.oauth2.server.RegisteredClientAuthentication
 import dev.oauth2.server.RevocationEndpoint
 import dev.oauth2.server.TokenEndpoint
@@ -52,6 +54,7 @@ import dev.oauth2.store.memory.InMemoryConsentStore
 import dev.oauth2.store.memory.InMemoryDeviceStore
 import dev.oauth2.store.memory.InMemoryGrantStore
 import dev.oauth2.store.memory.InMemoryKeyStore
+import dev.oauth2.store.memory.InMemoryPushedRequestStore
 import dev.oauth2.store.memory.InMemoryTokenStore
 import fs2.Stream
 import munit.CatsEffectSuite
@@ -171,12 +174,18 @@ class InterpreterSpec extends CatsEffectSuite {
       clients <- InMemoryClientStore.create[IO](List(registered))
       consents <- InMemoryConsentStore.create[IO]
       login <- SessionLogin.create[IO]
+      pushed <- InMemoryPushedRequestStore.create[IO](clock)
       authentication = new RegisteredClientAuthentication[IO](clients)
       authorization = new AuthorizationEndpoint[IO](
         clients,
         login,
         new AuthorizationService[IO](codes, consents, clock, entropy, LifetimePolicy.defaults),
-        unsafe(Issuer.from("https://server.example"))
+        unsafe(Issuer.from("https://server.example")),
+        Some(pushed)
+      )
+      par = new PushedAuthorizationEndpoint[IO](
+        authentication,
+        new PushedAuthorizationService[IO](pushed, clock, entropy, LifetimePolicy.defaults)
       )
       revocation = new RevocationEndpoint[IO](authentication, tokens, grants)
       introspection = new IntrospectionEndpoint[IO](authentication, tokens, grants)
@@ -188,6 +197,7 @@ class InterpreterSpec extends CatsEffectSuite {
       Interpreter.routes[IO](
         List(
           Server.authorize(authorization),
+          Server.par(par),
           Server.token(
             new TokenEndpoint[IO](
               authentication,
@@ -582,6 +592,69 @@ class InterpreterSpec extends CatsEffectSuite {
         response.headers.headers.find(_.name.toString == Endpoints.ReferrerPolicyHeader).map(_.value),
         Some(Endpoints.NoReferrer)
       )
+      assertEquals(exchanged.get.status, Status.Ok)
+      assert(field(text, "access_token").nonEmpty)
+    }
+  }
+
+  test("a pushed authorization request drives the code flow end to end") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      tuple <- application
+      (served, _, login, consents) = tuple
+      _ <- consents.grant(ConsentRecord(clientId, user, unsafe(Scopes.parse("read"))))
+      _ <- login.login(user)
+      parAnswer <- served
+        .run(
+          postTo(
+            "/par",
+            Map(
+              "response_type" -> "code",
+              "client_id" -> clientId.value,
+              "redirect_uri" -> "https://client.example/cb",
+              "scope" -> "read",
+              "state" -> "xyz",
+              "code_challenge" -> challenge.value,
+              "code_challenge_method" -> "S256"
+            ),
+            Some("s3cret")
+          )
+        )
+        .value
+      parText <- body(parAnswer.get)
+      requestUri = field(parText, "request_uri")
+      authorized <- served
+        .run(
+          Request[IO](
+            method = Method.GET,
+            uri = Uri.unsafeFromString(
+              s"http://localhost/authorize?client_id=${clientId.value}&request_uri=" +
+                java.net.URLEncoder.encode(requestUri, "UTF-8")
+            )
+          )
+        )
+        .value
+      location = authorized.get.headers.headers.find(_.name.toString == "Location").map(_.value).get
+      query = Form.parse(location.dropWhile(_ != '?').drop(1)).toOption.get
+      exchanged <- served
+        .run(
+          post(
+            Map(
+              "grant_type" -> "authorization_code",
+              "code" -> query("code"),
+              "code_verifier" -> verifier.value,
+              "client_id" -> clientId.value
+            ),
+            Some("s3cret")
+          )
+        )
+        .value
+      text <- body(exchanged.get)
+    } yield {
+      assertEquals(parAnswer.get.status, Status.Created)
+      assert(requestUri.startsWith("urn:ietf:params:oauth:request_uri:"))
+      assertEquals(authorized.get.status, Status.Found)
+      assertEquals(query.get("state"), Some("xyz"))
       assertEquals(exchanged.get.status, Status.Ok)
       assert(field(text, "access_token").nonEmpty)
     }
