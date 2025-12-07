@@ -78,7 +78,7 @@ lazy val http = module("http")
 lazy val server = module("server").dependsOn(core, store, http, jose % "test->test")
 
 lazy val client = module("client")
-  .dependsOn(core)
+  .dependsOn(core % "compile->compile;test->test", jose % "compile->compile;test->test")
   .settings(
     libraryDependencies ++= Seq(
       "org.http4s" %% "http4s-client" % Http4s,
