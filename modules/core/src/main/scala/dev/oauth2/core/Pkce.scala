@@ -48,6 +48,9 @@ final case class Pkce(challenge: CodeChallenge, method: CodeChallengeMethod)
 
 object Pkce {
 
+  def challenge(verifier: CodeVerifier): Either[ParseFailure, CodeChallenge] =
+    CodeChallenge.from(s256(verifier))
+
   def verify(pkce: Pkce, verifier: CodeVerifier): Either[OAuth2Error, Unit] =
     pkce.method match {
       case CodeChallengeMethod.Plain =>
