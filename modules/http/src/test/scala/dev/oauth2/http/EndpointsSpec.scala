@@ -21,6 +21,9 @@ class EndpointsSpec extends FunSuite {
           Endpoints.authorize,
           Endpoints.par,
           Endpoints.register,
+          Endpoints.registrationRead,
+          Endpoints.registrationUpdate,
+          Endpoints.registrationDelete,
           Endpoints.token,
           Endpoints.revocation,
           Endpoints.introspection,
@@ -190,6 +193,23 @@ class EndpointsSpec extends FunSuite {
   test("the authorization endpoint describes the redirect and its reachable failures") {
     val codes = authorizeOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
     assertEquals(codes, Set(302, 400, 500, 503))
+  }
+
+  test("the registration is managed at its client path behind a bearer token") {
+    assertEquals(
+      Endpoints.registrationRead.showPathTemplate(showQueryParam = None),
+      "/register/{client_id}"
+    )
+    assertEquals(Endpoints.registrationRead.method.map(_.method), Some("GET"))
+    assertEquals(Endpoints.registrationUpdate.method.map(_.method), Some("PUT"))
+    assertEquals(Endpoints.registrationDelete.method.map(_.method), Some("DELETE"))
+    val item = document.paths.pathItems("/register/{client_id}")
+    assert(item.get.exists(_.security.nonEmpty))
+    assert(item.put.exists(_.security.nonEmpty))
+    assert(item.delete.exists(_.security.nonEmpty))
+    val codes =
+      item.delete.get.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
+    assert(codes.contains(204))
   }
 
   test("the register endpoint is a json post answering created") {

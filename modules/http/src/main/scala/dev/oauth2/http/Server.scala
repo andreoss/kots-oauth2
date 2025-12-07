@@ -55,6 +55,18 @@ trait RegisterLogic[F[_]] {
   def apply(body: Map[String, Json]): F[Either[OAuth2Error, ClientRegistrationResponse]]
 }
 
+trait RegistrationManagementLogic[F[_]] {
+  def read(clientId: String, token: Option[String]): F[Either[OAuth2Error, ClientRegistrationResponse]]
+
+  def update(
+      clientId: String,
+      token: Option[String],
+      body: Map[String, Json]
+  ): F[Either[OAuth2Error, ClientRegistrationResponse]]
+
+  def remove(clientId: String, token: Option[String]): F[Either[OAuth2Error, Unit]]
+}
+
 object Server {
 
   def authorize[F[_]: Functor](logic: AuthorizeLogic[F]): ServerEndpoint[Any, F] =
@@ -73,6 +85,24 @@ object Server {
     ServerEndpoint.public[Map[String, Json], OAuth2Error, Map[String, Json], Any, F](
       Endpoints.register,
       _ => body => logic(body).map(_.map(ClientRegistrationResponse.render))
+    )
+
+  def registrationRead[F[_]: Functor](logic: RegistrationManagementLogic[F]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[(String, Option[String]), OAuth2Error, Map[String, Json], Any, F](
+      Endpoints.registrationRead,
+      _ => input => logic.read(input._1, input._2).map(_.map(ClientRegistrationResponse.render))
+    )
+
+  def registrationUpdate[F[_]: Functor](logic: RegistrationManagementLogic[F]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[(String, Option[String], Map[String, Json]), OAuth2Error, Map[String, Json], Any, F](
+      Endpoints.registrationUpdate,
+      _ => input => logic.update(input._1, input._2, input._3).map(_.map(ClientRegistrationResponse.render))
+    )
+
+  def registrationDelete[F[_]](logic: RegistrationManagementLogic[F]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[(String, Option[String]), OAuth2Error, Unit, Any, F](
+      Endpoints.registrationDelete,
+      _ => input => logic.remove(input._1, input._2)
     )
 
   def token[F[_]: Functor](logic: TokenLogic[F]): ServerEndpoint[Any, F] =

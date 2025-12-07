@@ -218,6 +218,32 @@ object Endpoints {
       .out(statusCode(StatusCode.Created).and(noStore(jsonBody[Map[String, Json]])))
       .errorOut(authorizeErrors)
 
+  lazy val registrationRead: PublicEndpoint[(String, Option[String]), OAuth2Error, Map[String, Json], Any] =
+    sttp.tapir.endpoint.get
+      .in(RegisterPath)
+      .in(path[String]("client_id"))
+      .in(Auth.bearer)
+      .out(noStore(jsonBody[Map[String, Json]]))
+      .errorOut(errors)
+
+  lazy val registrationUpdate
+      : PublicEndpoint[(String, Option[String], Map[String, Json]), OAuth2Error, Map[String, Json], Any] =
+    sttp.tapir.endpoint.put
+      .in(RegisterPath)
+      .in(path[String]("client_id"))
+      .in(Auth.bearer)
+      .in(jsonBody[Map[String, Json]])
+      .out(noStore(jsonBody[Map[String, Json]]))
+      .errorOut(errors)
+
+  lazy val registrationDelete: PublicEndpoint[(String, Option[String]), OAuth2Error, Unit, Any] =
+    sttp.tapir.endpoint.delete
+      .in(RegisterPath)
+      .in(path[String]("client_id"))
+      .in(Auth.bearer)
+      .out(noStore(statusCode(StatusCode.NoContent)))
+      .errorOut(errors)
+
   lazy val introspection
       : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     Introspection.endpoint

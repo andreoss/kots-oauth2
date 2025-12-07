@@ -74,4 +74,47 @@ class RegistrationServiceSpec extends CatsEffectSuite {
       second <- service.register(registration(ClientAuthMethod.ClientSecretBasic))
     } yield assert(first.toOption.get.clientId != second.toOption.get.clientId)
   }
+
+  test("a registration token reads, updates and deletes its own registration") {
+    for {
+      pair <- setup
+      (service, clients) = pair
+      minted <- service.register(registration(ClientAuthMethod.ClientSecretBasic))
+      response = minted.toOption.get
+      token = response.registrationToken.get
+      read <- service.read(response.clientId.value, Some(token.value))
+      updated <- service.update(
+        response.clientId.value,
+        Some(token.value),
+        registration(ClientAuthMethod.ClientSecretBasic).copy(scopes = unsafe(Scopes.parse("read write")))
+      )
+      removed <- service.remove(response.clientId.value, Some(token.value))
+      afterwards <- service.read(response.clientId.value, Some(token.value))
+      gone <- clients.find(response.clientId)
+    } yield {
+      assertEquals(read.toOption.get.registration.scopes, unsafe(Scopes.parse("read")))
+      assertEquals(read.toOption.get.secret, None)
+      assertEquals(read.toOption.get.registrationToken, None)
+      assertEquals(updated.toOption.get.registration.scopes, unsafe(Scopes.parse("read write")))
+      assertEquals(removed, Right(()))
+      assertEquals(afterwards.left.toOption.map(_.code), Some("invalid_client"))
+      assertEquals(gone, None)
+    }
+  }
+
+  test("a wrong or missing registration token is refused") {
+    for {
+      pair <- setup
+      (service, _) = pair
+      minted <- service.register(registration(ClientAuthMethod.ClientSecretBasic))
+      response = minted.toOption.get
+      wrong <- service.read(response.clientId.value, Some("wrong"))
+      missing <- service.read(response.clientId.value, None)
+      unknown <- service.read("client-9", response.registrationToken.map(_.value))
+    } yield {
+      assertEquals(wrong.left.toOption.map(_.code), Some("invalid_client"))
+      assertEquals(missing.left.toOption.map(_.code), Some("invalid_client"))
+      assertEquals(unknown.left.toOption.map(_.code), Some("invalid_client"))
+    }
+  }
 }

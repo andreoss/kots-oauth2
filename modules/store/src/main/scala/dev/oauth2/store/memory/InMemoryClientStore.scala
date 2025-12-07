@@ -17,6 +17,9 @@ final class InMemoryClientStore[F[_]: Monad] private (
 
   def save(client: Client): F[Unit] =
     state.update(_.updated(client.id, client))
+
+  def delete(id: ClientId): F[Unit] =
+    state.update(_ - id)
 }
 
 object InMemoryClientStore {

@@ -18,4 +18,11 @@ object Auth {
 
   val basic: EndpointInput.Auth[Option[String], EndpointInput.AuthType.Http] =
     auth.basic[Option[String]](challenge).securitySchemeName(BasicSchemeName)
+
+  val BearerSchemeName: String = "registration_access_token"
+
+  val bearer: EndpointInput.Auth[Option[String], EndpointInput.AuthType.Http] =
+    auth
+      .bearer[Option[String]](WWWAuthenticateChallenge.bearer(OAuth2Error.BasicRealm))
+      .securitySchemeName(BearerSchemeName)
 }
