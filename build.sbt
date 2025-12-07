@@ -4,6 +4,7 @@ val Scala2 = "2.13.18"
 val Scala3 = "3.3.6"
 val Tapir = "1.11.50"
 val Circe = "0.14.16"
+val Http4s = "0.23.30"
 
 ThisBuild / organization := "dev.oauth2"
 ThisBuild / version := "0.1.0-SNAPSHOT"
@@ -83,6 +84,8 @@ lazy val host = module("host")
   .settings(
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % Tapir,
+      "org.http4s" %% "http4s-ember-server" % Http4s,
+      "org.http4s" %% "http4s-ember-client" % Http4s % Test,
       "io.circe" %% "circe-parser" % Circe % Test
     )
   )
