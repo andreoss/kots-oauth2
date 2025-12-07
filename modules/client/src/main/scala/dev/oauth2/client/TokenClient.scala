@@ -65,6 +65,20 @@ final class TokenClient[F[_]: Concurrent](transport: Client[F], endpoint: Endpoi
       secret.map(value => BasicCredentials(clientId.value, value.value))
     )
 
+  def device(
+      code: dev.oauth2.core.DeviceCode,
+      clientId: ClientId,
+      secret: Option[ClientSecret]
+  ): F[Either[OAuth2Error, TokenClient.Grant]] =
+    request(
+      Map(
+        "grant_type" -> "urn:ietf:params:oauth:grant-type:device_code",
+        "device_code" -> code.value,
+        "client_id" -> clientId.value
+      ),
+      secret.map(value => BasicCredentials(clientId.value, value.value))
+    )
+
   private def request(
       form: Map[String, String],
       credentials: Option[BasicCredentials]
