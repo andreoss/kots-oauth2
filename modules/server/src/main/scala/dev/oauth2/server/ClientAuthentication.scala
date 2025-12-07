@@ -29,10 +29,23 @@ trait ClientAuthentication[F[_]] {
 
 final class RegisteredClientAuthentication[F[_]: Monad](
     clients: ClientStore[F],
-    assertions: Option[RegisteredClientAuthentication.Assertions[F]] = None
+    assertions: Option[RegisteredClientAuthentication.Assertions[F]] = None,
+    audit: Option[dev.oauth2.store.AuditLog[F]] = None
 ) extends ClientAuthentication[F] {
 
+  private val auditLog: dev.oauth2.store.AuditLog[F] =
+    audit.getOrElse(dev.oauth2.store.AuditLog.noop[F])
+
   def authenticate(input: ClientAuthInput): F[Either[OAuth2Error, Client]] =
+    resolved(input).flatMap {
+      case left @ Left(_) =>
+        auditLog
+          .record(dev.oauth2.store.AuditEvent.AuthenticationFailed(input.subject))
+          .as(left: Either[OAuth2Error, Client])
+      case right => Monad[F].pure(right)
+    }
+
+  private def resolved(input: ClientAuthInput): F[Either[OAuth2Error, Client]] =
     input.assertion match {
       case Some(raw) if input.basic.isEmpty && input.clientSecret.isEmpty => asserted(raw, input)
       case Some(_) => Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
