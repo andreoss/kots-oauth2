@@ -67,6 +67,10 @@ trait RegistrationManagementLogic[F[_]] {
   def remove(clientId: String, token: Option[String]): F[Either[OAuth2Error, Unit]]
 }
 
+trait ReadinessLogic[F[_]] {
+  def report: F[HealthReport]
+}
+
 object Server {
 
   def authorize[F[_]: Functor](logic: AuthorizeLogic[F]): ServerEndpoint[Any, F] =
@@ -145,5 +149,27 @@ object Server {
     ServerEndpoint.public[Unit, OAuth2Error, Map[String, Json], Any, F](
       Endpoints.jwks,
       _ => _ => document.map(keys => Right(JwkSet.render(keys)): Either[OAuth2Error, Map[String, Json]])
+    )
+
+  def health[F[_]: Applicative]: ServerEndpoint[Any, F] =
+    ServerEndpoint.public[Unit, OAuth2Error, Map[String, Json], Any, F](
+      Endpoints.health,
+      _ =>
+        _ =>
+          Applicative[F].pure(
+            Right(Map("status" -> Json.fromString(HealthReport.Ok))): Either[OAuth2Error, Map[String, Json]]
+          )
+    )
+
+  def ready[F[_]: Functor](logic: ReadinessLogic[F]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[Unit, OAuth2Error, (sttp.model.StatusCode, Map[String, Json]), Any, F](
+      Endpoints.ready,
+      _ =>
+        _ =>
+          logic.report.map { report =>
+            val status =
+              if (report.healthy) sttp.model.StatusCode.Ok else sttp.model.StatusCode.ServiceUnavailable
+            Right((status, HealthReport.render(report))): Either[OAuth2Error, (sttp.model.StatusCode, Map[String, Json])]
+          }
     )
 }
