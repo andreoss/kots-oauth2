@@ -36,6 +36,14 @@ final class InMemoryCodeStore[F[_]: Monad] private (
 
   def redeemed(code: AuthorizationCode): F[Option[GrantId]] =
     issued.get.map(_.get(code))
+
+  def sweep: F[Int] =
+    clock.instant.flatMap { now =>
+      state.modify { codes =>
+        val (dead, live) = codes.partition { case (_, record) => record.isExpired(now) }
+        (live, dead.size)
+      }
+    }
 }
 
 object InMemoryCodeStore {

@@ -34,4 +34,6 @@ trait CodeStore[F[_]] {
   def redeem(code: AuthorizationCode, grant: GrantId): F[Unit]
 
   def redeemed(code: AuthorizationCode): F[Option[GrantId]]
+
+  def sweep: F[Int]
 }

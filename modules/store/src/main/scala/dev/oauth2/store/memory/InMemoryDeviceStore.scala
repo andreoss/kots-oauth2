@@ -48,6 +48,14 @@ final class InMemoryDeviceStore[F[_]: Monad] private (
       }
     }
 
+  def sweep: F[Int] =
+    clock.instant.flatMap { now =>
+      state.modify { devices =>
+        val (dead, live) = devices.partition { case (_, record) => record.isExpired(now) }
+        (live, dead.size)
+      }
+    }
+
   private def decide(userCode: UserCode, transition: DeviceRecord => DeviceRecord): F[Boolean] =
     clock.instant.flatMap { now =>
       state.modify { devices =>

@@ -28,6 +28,14 @@ final class InMemoryPushedRequestStore[F[_]: Monad] private (
         }
       }
     }
+
+  def sweep: F[Int] =
+    clock.instant.flatMap { now =>
+      state.modify { pushed =>
+        val (dead, live) = pushed.partition { case (_, record) => record.isExpired(now) }
+        (live, dead.size)
+      }
+    }
 }
 
 object InMemoryPushedRequestStore {
