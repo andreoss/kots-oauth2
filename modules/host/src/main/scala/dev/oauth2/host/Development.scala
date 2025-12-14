@@ -54,6 +54,7 @@ import dev.oauth2.store.memory.InMemoryConsentStore
 import dev.oauth2.store.memory.InMemoryDeviceStore
 import dev.oauth2.store.memory.InMemoryGrantStore
 import dev.oauth2.store.memory.InMemoryKeyStore
+import dev.oauth2.store.memory.InMemoryMetrics
 import dev.oauth2.store.memory.InMemoryPushedRequestStore
 import dev.oauth2.store.memory.InMemoryReplayStore
 import dev.oauth2.store.memory.InMemoryTokenStore
@@ -225,14 +226,16 @@ object Development {
     Resource
       .eval(assembled[F])
       .flatMap { case (bound, sweeps) =>
-        EmberServerBuilder
-          .default[F]
-          .withPort(port)
-          .withHttpApp(bound.orNotFound)
-          .build
-          .flatMap(server =>
-            Sweeper.stream[F](SweepInterval, sweeps).compile.drain.background.as(server)
-          )
+        Resource.eval(InMemoryMetrics.create[F]).flatMap { metrics =>
+          EmberServerBuilder
+            .default[F]
+            .withPort(port)
+            .withHttpApp(Measured(metrics, bound).orNotFound)
+            .build
+            .flatMap(server =>
+              Sweeper.stream[F](SweepInterval, sweeps).compile.drain.background.as(server)
+            )
+        }
       }
 
   private def publishedKey(pair: KeyPair): Either[ParseFailure, Jwk] = {
