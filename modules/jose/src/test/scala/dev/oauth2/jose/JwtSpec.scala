@@ -66,6 +66,15 @@ class JwtSpec extends FunSuite {
     assertEquals(Jwt.claims(compact, published, Start), Right(stepped))
   }
 
+  test("a key bound token round trips the confirmation thumbprint") {
+    val bound = claims.copy(jkt = Dpop.thumbprint(Fakes.signingJwk).toOption)
+    val compact = Jwt.issue(Fakes.signingKey, bound).toOption.get
+    val payload = new String(Base64.getUrlDecoder.decode(compact.split('.')(1)), "UTF-8")
+    val cursor = io.circe.parser.parse(payload).toOption.get.hcursor
+    assertEquals(cursor.downField("cnf").get[String]("jkt").toOption, bound.jkt.map(_.value))
+    assertEquals(Jwt.claims(compact, published, Start), Right(bound))
+  }
+
   test("a jws of another type is not an access token") {
     val compact = Jws
       .sign(Alg.RS256, Fakes.keyId("key-1"), Fakes.signingPair.getPrivate, """{"sub":"user-1"}""")

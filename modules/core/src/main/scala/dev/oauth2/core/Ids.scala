@@ -69,3 +69,10 @@ object Acr {
   def from(raw: String): Either[ParseFailure, Acr] =
     Text.printable("Acr", raw).map(new Acr(_))
 }
+
+final case class KeyThumbprint private (value: String)
+
+object KeyThumbprint {
+  def from(raw: String): Either[ParseFailure, KeyThumbprint] =
+    Text.printable("KeyThumbprint", raw).map(new KeyThumbprint(_))
+}
