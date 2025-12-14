@@ -11,16 +11,19 @@ final case class TokenResponse(
     expiresIn: Long,
     scope: Scopes,
     refreshToken: Option[RefreshToken],
-    issuedTokenType: Option[ExchangeTokenType] = None
+    issuedTokenType: Option[ExchangeTokenType] = None,
+    tokenType: String = TokenResponse.TokenType
 )
 
 object TokenResponse {
   val TokenType: String = "Bearer"
 
+  val DpopTokenType: String = "DPoP"
+
   def render(response: TokenResponse): Map[String, String] =
     Map(
       "access_token" -> Wire[AccessToken].encode(response.accessToken),
-      "token_type" -> TokenType,
+      "token_type" -> response.tokenType,
       "expires_in" -> response.expiresIn.toString
     ) ++
       (if (response.scope.value.isEmpty) Map.empty[String, String] else Map("scope" -> Wire[Scopes].encode(response.scope))) ++
