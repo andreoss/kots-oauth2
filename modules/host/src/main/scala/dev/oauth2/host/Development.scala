@@ -227,14 +227,16 @@ object Development {
       .eval(assembled[F])
       .flatMap { case (bound, sweeps) =>
         Resource.eval(InMemoryMetrics.create[F]).flatMap { metrics =>
-          EmberServerBuilder
-            .default[F]
-            .withPort(port)
-            .withHttpApp(Measured(metrics, bound).orNotFound)
-            .build
-            .flatMap(server =>
-              Sweeper.stream[F](SweepInterval, sweeps).compile.drain.background.as(server)
-            )
+          Resource.eval(secureEntropy[F]).flatMap { entropy =>
+            EmberServerBuilder
+              .default[F]
+              .withPort(port)
+              .withHttpApp(Correlated(entropy, Measured(metrics, bound)).orNotFound)
+              .build
+              .flatMap(server =>
+                Sweeper.stream[F](SweepInterval, sweeps).compile.drain.background.as(server)
+              )
+          }
         }
       }
 
