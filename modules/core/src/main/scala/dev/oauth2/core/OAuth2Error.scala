@@ -162,7 +162,7 @@ object OAuth2Error {
       case "invalid_redirect_uri"      => Right(InvalidRedirectUri(description, errorUri))
       case "invalid_dpop_proof"        => Right(InvalidDpopProof(description, errorUri))
       case "use_dpop_nonce"            => Right(UseDpopNonce(description, errorUri))
-      case other => Left(ParseFailure("OAuth2Error", s"unknown error code: $other"))
+      case other                       => Left(ParseFailure("OAuth2Error", s"unknown error code: $other"))
     }
   }
 }

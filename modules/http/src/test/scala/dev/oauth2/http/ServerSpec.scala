@@ -78,13 +78,27 @@ class ServerSpec extends FunSuite {
 
   test("the bound logic answers through the described endpoint") {
     val endpoint = Server.token(success(TokenResponse(accessToken, 1L, Scopes.empty, None)))
-    assertEquals(endpoint.showPathTemplate(showQueryParam = None), Endpoints.token.showPathTemplate(showQueryParam = None))
+    assertEquals(
+      endpoint.showPathTemplate(showQueryParam = None),
+      Endpoints.token.showPathTemplate(showQueryParam = None)
+    )
     assertEquals(endpoint.method.map(_.method), Endpoints.token.method.map(_.method))
   }
 
   test("a answered token is rendered as the endpoint body") {
-    val out = run(success(TokenResponse(accessToken, 3600L, scopes, None)), (None, Map("grant_type" -> "code"), None))
-    assertEquals(out, Right(Map("access_token" -> "at-1", "token_type" -> "Bearer", "expires_in" -> "3600", "scope" -> "openid read")))
+    val out =
+      run(success(TokenResponse(accessToken, 3600L, scopes, None)), (None, Map("grant_type" -> "code"), None))
+    assertEquals(
+      out,
+      Right(
+        Map(
+          "access_token" -> "at-1",
+          "token_type" -> "Bearer",
+          "expires_in" -> "3600",
+          "scope" -> "openid read"
+        )
+      )
+    )
   }
 
   test("a refused token is carried through as the endpoint error") {
@@ -118,7 +132,10 @@ class ServerSpec extends FunSuite {
     }
     val bound = Server.introspection(logic).asInstanceOf[Bound[Id]]
     assertEquals(bound.logic(IdentityMonad)(())((None, Map("token" -> "at-1"))), Right(response.body))
-    assertEquals(bound.showPathTemplate(showQueryParam = None), Endpoints.introspection.showPathTemplate(showQueryParam = None))
+    assertEquals(
+      bound.showPathTemplate(showQueryParam = None),
+      Endpoints.introspection.showPathTemplate(showQueryParam = None)
+    )
   }
 
   test("a metadata document is rendered with its endpoints and supported values") {
@@ -127,11 +144,20 @@ class ServerSpec extends FunSuite {
     assertEquals(rendered(Metadata.Issuer), io.circe.Json.fromString("https://server.example"))
     assertEquals(rendered(Metadata.AuthorizationResponseIssParameterSupported), io.circe.Json.True)
     assertEquals(rendered(Metadata.TokenEndpoint), io.circe.Json.fromString("https://server.example/token"))
-    assertEquals(rendered(Metadata.RevocationEndpoint), io.circe.Json.fromString("https://server.example/revocation"))
-    assertEquals(rendered(Metadata.IntrospectionEndpoint), io.circe.Json.fromString("https://server.example/introspection"))
+    assertEquals(
+      rendered(Metadata.RevocationEndpoint),
+      io.circe.Json.fromString("https://server.example/revocation")
+    )
+    assertEquals(
+      rendered(Metadata.IntrospectionEndpoint),
+      io.circe.Json.fromString("https://server.example/introspection")
+    )
     assertEquals(rendered(Metadata.JwksUri), io.circe.Json.fromString("https://server.example/jwks"))
     assertEquals(rendered(Metadata.ScopesSupported), io.circe.Json.arr(io.circe.Json.fromString("read")))
-    assertEquals(rendered(Metadata.CodeChallengeMethodsSupported), io.circe.Json.arr(io.circe.Json.fromString("S256")))
+    assertEquals(
+      rendered(Metadata.CodeChallengeMethodsSupported),
+      io.circe.Json.arr(io.circe.Json.fromString("S256"))
+    )
     assertEquals(
       rendered(Metadata.GrantTypesSupported).asArray.get.map(_.asString.get).toSet,
       dev.oauth2.core.GrantType.all.map(_.value).toSet
@@ -165,7 +191,10 @@ class ServerSpec extends FunSuite {
     assertEquals(rendered("verification_uri"), "https://server.example/device")
     assertEquals(rendered("expires_in"), "1800")
     assertEquals(rendered("interval"), "5")
-    assertEquals(rendered.keySet, Set("device_code", "user_code", "verification_uri", "expires_in", "interval"))
+    assertEquals(
+      rendered.keySet,
+      Set("device_code", "user_code", "verification_uri", "expires_in", "interval")
+    )
   }
 
   test("the bound device authorization logic answers with the rendered response") {
@@ -207,7 +236,8 @@ class ServerSpec extends FunSuite {
   }
 
   test("the bound protected resource logic answers with the rendered document") {
-    val bound = Server.resourceMetadata[cats.Id](ServerSpec.resource).asInstanceOf[ServerSpec.MetadataBound[cats.Id]]
+    val bound =
+      Server.resourceMetadata[cats.Id](ServerSpec.resource).asInstanceOf[ServerSpec.MetadataBound[cats.Id]]
     assertEquals(bound.logic(IdentityMonad)(())(()), Right(Metadata.renderResource(ServerSpec.resource)))
     assertEquals(
       bound.showPathTemplate(showQueryParam = None),
@@ -219,7 +249,10 @@ class ServerSpec extends FunSuite {
     val document = ServerSpec.keys
     val bound = Server.jwks[cats.Id](document).asInstanceOf[ServerSpec.MetadataBound[cats.Id]]
     assertEquals(bound.logic(IdentityMonad)(())(()), Right(JwkSet.render(document)))
-    assertEquals(bound.showPathTemplate(showQueryParam = None), Endpoints.jwks.showPathTemplate(showQueryParam = None))
+    assertEquals(
+      bound.showPathTemplate(showQueryParam = None),
+      Endpoints.jwks.showPathTemplate(showQueryParam = None)
+    )
   }
 
   test("a refused introspection is carried through as the endpoint error") {
@@ -227,7 +260,10 @@ class ServerSpec extends FunSuite {
       def apply(basic: Option[String], parameters: Map[String, String]) = Left(OAuth2Error.InvalidClient())
     }
     val bound = Server.introspection(logic).asInstanceOf[Bound[Id]]
-    assertEquals(bound.logic(IdentityMonad)(())((None, Map.empty[String, String])), Left(OAuth2Error.InvalidClient()))
+    assertEquals(
+      bound.logic(IdentityMonad)(())((None, Map.empty[String, String])),
+      Left(OAuth2Error.InvalidClient())
+    )
   }
 }
 

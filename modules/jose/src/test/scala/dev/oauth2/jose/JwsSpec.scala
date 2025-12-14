@@ -100,7 +100,8 @@ class JwsSpec extends FunSuite {
   test("a tampered payload is refused") {
     val compact = Jws.sign(Alg.RS256, kid, rsaPair.getPrivate, payload).toOption.get
     val segments = compact.split('.')
-    val forged = segments(0) + "." + encoder.encodeToString("""{"sub":"user-2"}""".getBytes("UTF-8")) + "." + segments(2)
+    val forged =
+      segments(0) + "." + encoder.encodeToString("""{"sub":"user-2"}""".getBytes("UTF-8")) + "." + segments(2)
     assert(Jws.verify(forged, Jwks(List(rsaJwk))).isLeft)
   }
 

@@ -19,7 +19,7 @@ final class PushedAuthorizationEndpoint[F[_]: Monad](
   ): F[Either[OAuth2Error, PushedAuthorizationResponse]] =
     ClientAuthInput.from(basic, parameters).toEither match {
       case Left(failures) => Monad[F].pure(Left(failures.head))
-      case Right(input) =>
+      case Right(input)   =>
         authentication.authenticate(input).flatMap {
           case Left(error)   => Monad[F].pure(Left(error))
           case Right(client) => service.push(parameters, client)

@@ -21,7 +21,10 @@ object ClientRegistrationResponse {
       "client_id" -> Json.fromString(Wire[ClientId].encode(response.clientId)),
       Registration.TokenEndpointAuthMethod -> Json.fromString(response.registration.authMethod.value),
       Registration.RedirectUris -> Json.arr(
-        response.registration.redirectUris.map(uri => Json.fromString(uri.value)).toVector.sortBy(_.asString): _*
+        response.registration.redirectUris
+          .map(uri => Json.fromString(uri.value))
+          .toVector
+          .sortBy(_.asString): _*
       ),
       Registration.Scope -> Json.fromString(
         response.registration.scopes.value.map(_.value).toVector.sorted.mkString(" ")

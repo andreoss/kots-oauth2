@@ -49,9 +49,9 @@ final class RegisteredClientAuthentication[F[_]: Monad](
     input.assertion match {
       case Some(raw) if input.basic.isEmpty && input.clientSecret.isEmpty => asserted(raw, input)
       case Some(_) => Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
-      case None =>
+      case None    =>
         input.subject match {
-          case None => Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
+          case None     => Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
           case Some(id) =>
             clients.find(id).map {
               case None         => Left(RegisteredClientAuthentication.rejected)
@@ -62,10 +62,10 @@ final class RegisteredClientAuthentication[F[_]: Monad](
 
   private def asserted(raw: ClientAssertion, input: ClientAuthInput): F[Either[OAuth2Error, Client]] =
     assertions match {
-      case None => Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
+      case None         => Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
       case Some(config) =>
         unverified(raw) match {
-          case Left(error) => Monad[F].pure(Left(error))
+          case Left(error)                                           => Monad[F].pure(Left(error))
           case Right(claimed) if input.clientId.exists(_ != claimed) =>
             Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
           case Right(claimed) =>
@@ -81,7 +81,8 @@ final class RegisteredClientAuthentication[F[_]: Monad](
                       }
                   }
                 }
-              case _ => Monad[F].pure(Left(RegisteredClientAuthentication.rejected): Either[OAuth2Error, Client])
+              case _ =>
+                Monad[F].pure(Left(RegisteredClientAuthentication.rejected): Either[OAuth2Error, Client])
             }
         }
     }

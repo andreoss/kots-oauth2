@@ -18,14 +18,12 @@ final class Refresher[F[_]: Temporal] private (
 
   def refresh(token: RefreshToken): F[Either[OAuth2Error, TokenClient.Grant]] =
     Deferred[F, Either[OAuth2Error, TokenClient.Grant]].flatMap { gate =>
-      flights
-        .modify { inFlight =>
-          inFlight.get(token) match {
-            case Some(existing) => (inFlight, existing.get)
-            case None           => (inFlight.updated(token, gate), fly(token, gate))
-          }
+      flights.modify { inFlight =>
+        inFlight.get(token) match {
+          case Some(existing) => (inFlight, existing.get)
+          case None           => (inFlight.updated(token, gate), fly(token, gate))
         }
-        .flatten
+      }.flatten
     }
 
   private def fly(

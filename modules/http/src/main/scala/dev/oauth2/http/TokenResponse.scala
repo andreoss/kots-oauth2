@@ -26,7 +26,8 @@ object TokenResponse {
       "token_type" -> response.tokenType,
       "expires_in" -> response.expiresIn.toString
     ) ++
-      (if (response.scope.value.isEmpty) Map.empty[String, String] else Map("scope" -> Wire[Scopes].encode(response.scope))) ++
+      (if (response.scope.value.isEmpty) Map.empty[String, String]
+       else Map("scope" -> Wire[Scopes].encode(response.scope))) ++
       response.refreshToken.map(token => "refresh_token" -> Wire[RefreshToken].encode(token)) ++
       response.issuedTokenType.map(kind => "issued_token_type" -> kind.value)
 }

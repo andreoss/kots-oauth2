@@ -59,7 +59,9 @@ class RegistrationSpec extends FunSuite {
   test("a registration with unusable metadata is refused") {
     assertEquals(
       Registration
-        .parse(body("redirect_uris" -> uris, "token_endpoint_auth_method" -> Json.fromString("private_key_jwt")))
+        .parse(
+          body("redirect_uris" -> uris, "token_endpoint_auth_method" -> Json.fromString("private_key_jwt"))
+        )
         .left
         .toOption
         .map(_.code),
@@ -76,7 +78,8 @@ class RegistrationSpec extends FunSuite {
   }
 
   test("a registration response renders the issued credentials and metadata") {
-    val parsed = Registration.parse(body("redirect_uris" -> uris, "scope" -> Json.fromString("read"))).toOption.get
+    val parsed =
+      Registration.parse(body("redirect_uris" -> uris, "scope" -> Json.fromString("read"))).toOption.get
     val rendered = ClientRegistrationResponse.render(
       ClientRegistrationResponse(
         unsafe(dev.oauth2.core.ClientId.from("client-9")),

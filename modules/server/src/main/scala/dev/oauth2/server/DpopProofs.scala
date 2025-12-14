@@ -26,10 +26,10 @@ final class DpopProofs[F[_]: Monad](
         case Right(proof) =>
           checked(proof, method, uri, now) match {
             case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, KeyThumbprint])
-            case Right(()) =>
+            case Right(())   =>
               demanded(proof.nonce).flatMap {
                 case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, KeyThumbprint])
-                case Right(()) =>
+                case Right(())   =>
                   replays.record(proof.jti, proof.issuedAt.plusSeconds(DpopProofs.WindowSeconds)).map {
                     case true  => Right(proof.thumbprint): Either[OAuth2Error, KeyThumbprint]
                     case false => Left(DpopProofs.invalid("the proof was already seen"))
@@ -57,7 +57,7 @@ final class DpopProofs[F[_]: Monad](
 
   private def demanded(carried: Option[String]): F[Either[OAuth2Error, Unit]] =
     nonce match {
-      case None => Monad[F].pure(Right(()): Either[OAuth2Error, Unit])
+      case None          => Monad[F].pure(Right(()): Either[OAuth2Error, Unit])
       case Some(current) =>
         current.map(expected =>
           Either.cond(carried.contains(expected), (), OAuth2Error.UseDpopNonce(): OAuth2Error)

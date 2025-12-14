@@ -43,7 +43,7 @@ final class TokenEndpoint[F[_]: Monad](
   ): F[Either[OAuth2Error, TokenResponse]] =
     ClientAuthInput.from(basic, parameters).toEither match {
       case Left(failures) => Monad[F].pure(Left(failures.head))
-      case Right(input) =>
+      case Right(input)   =>
         authentication.authenticate(input).flatMap {
           case Left(error)   => Monad[F].pure(Left(error))
           case Right(client) => grant(parameters, client, jkt)
@@ -72,7 +72,9 @@ final class TokenEndpoint[F[_]: Monad](
           case exchange: TokenRequest.Exchange =>
             tokens
               .exchange(exchange, client, jkt)
-              .map(_.map(issued => answered(issued).copy(issuedTokenType = Some(ExchangeTokenType.AccessToken))))
+              .map(
+                _.map(issued => answered(issued).copy(issuedTokenType = Some(ExchangeTokenType.AccessToken)))
+              )
         }
     }
   }

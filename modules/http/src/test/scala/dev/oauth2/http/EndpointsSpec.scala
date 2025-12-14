@@ -52,21 +52,30 @@ class EndpointsSpec extends FunSuite {
     document.paths.pathItems("/revocation").post.getOrElse(fail("no revocation operation in the document"))
 
   private def introspectionOperation =
-    document.paths.pathItems("/introspection").post.getOrElse(fail("no introspection operation in the document"))
+    document.paths
+      .pathItems("/introspection")
+      .post
+      .getOrElse(fail("no introspection operation in the document"))
 
   private def deviceOperation =
-    document.paths.pathItems("/device_authorization").post
+    document.paths
+      .pathItems("/device_authorization")
+      .post
       .getOrElse(fail("no device authorization operation in the document"))
 
   private def metadataOperation =
-    document.paths.pathItems("/.well-known/oauth-authorization-server").get
+    document.paths
+      .pathItems("/.well-known/oauth-authorization-server")
+      .get
       .getOrElse(fail("no metadata operation in the document"))
 
   private def jwksOperation =
     document.paths.pathItems("/jwks").get.getOrElse(fail("no jwks operation in the document"))
 
   private def resourceOperation =
-    document.paths.pathItems("/.well-known/oauth-protected-resource").get
+    document.paths
+      .pathItems("/.well-known/oauth-protected-resource")
+      .get
       .getOrElse(fail("no protected resource operation in the document"))
 
   private def accepted[A](result: DecodeResult[A]): Boolean =
@@ -126,12 +135,17 @@ class EndpointsSpec extends FunSuite {
 
   test("the form codec renders a body it can decode again") {
     val params = Map("code" -> "a b", "scope" -> "openid read")
-    assertEquals(Endpoints.formParameters.decode(Endpoints.formParameters.encode(params)), DecodeResult.Value(params))
+    assertEquals(
+      Endpoints.formParameters.decode(Endpoints.formParameters.encode(params)),
+      DecodeResult.Value(params)
+    )
   }
 
   test("the token endpoint is described as requiring client credentials") {
     assert(tokenOperation.security.nonEmpty)
-    assert(document.components.toList.flatMap(_.securitySchemes.toList).map(_._1).contains(Auth.BasicSchemeName))
+    assert(
+      document.components.toList.flatMap(_.securitySchemes.toList).map(_._1).contains(Auth.BasicSchemeName)
+    )
   }
 
   test("the token endpoint takes an http basic auth input with the basic challenge") {
@@ -191,7 +205,9 @@ class EndpointsSpec extends FunSuite {
   }
 
   test("the authorization endpoint describes the redirect and its reachable failures") {
-    val codes = authorizeOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
+    val codes = authorizeOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) =>
+      code
+    }.toSet
     assertEquals(codes, Set(302, 400, 500, 503))
   }
 
@@ -220,7 +236,9 @@ class EndpointsSpec extends FunSuite {
       registerOperation.requestBody.flatMap(_.toOption).map(_.content.keys.toList),
       Some(List("application/json"))
     )
-    val codes = registerOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
+    val codes = registerOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) =>
+      code
+    }.toSet
     assert(codes.contains(201))
     val responses = registerOperation.responses.responses.values.flatMap(_.toOption)
     assert(responses.nonEmpty)
@@ -254,13 +272,18 @@ class EndpointsSpec extends FunSuite {
 
   test("the authorization query accepts its own parameters and refuses the others") {
     val decode = Endpoints.strictQuery(Endpoints.authorizeParameters)
-    assert(accepted(decode(sttp.model.QueryParams.fromMap(Map("response_type" -> "code", "client_id" -> "c")))))
+    assert(
+      accepted(decode(sttp.model.QueryParams.fromMap(Map("response_type" -> "code", "client_id" -> "c"))))
+    )
     assert(refused(decode(sttp.model.QueryParams.fromMap(Map("code_verifier" -> "x")))))
     assert(refused(decode(sttp.model.QueryParams.fromSeq(Seq("client_id" -> "a", "client_id" -> "b")))))
   }
 
   test("the device authorization endpoint is a form post at /device_authorization") {
-    assertEquals(Endpoints.deviceAuthorization.showPathTemplate(showQueryParam = None), "/device_authorization")
+    assertEquals(
+      Endpoints.deviceAuthorization.showPathTemplate(showQueryParam = None),
+      "/device_authorization"
+    )
     assertEquals(Endpoints.deviceAuthorization.method.map(_.method), Some("POST"))
     assertEquals(
       deviceOperation.requestBody.flatMap(_.toOption).map(_.content.keys.toList),
@@ -335,7 +358,10 @@ class EndpointsSpec extends FunSuite {
   }
 
   test("the metadata endpoint is a get at the well known path") {
-    assertEquals(Endpoints.metadata.showPathTemplate(showQueryParam = None), "/.well-known/oauth-authorization-server")
+    assertEquals(
+      Endpoints.metadata.showPathTemplate(showQueryParam = None),
+      "/.well-known/oauth-authorization-server"
+    )
     assertEquals(Endpoints.metadata.method.map(_.method), Some("GET"))
     assert(metadataOperation.security.isEmpty)
   }
@@ -352,8 +378,12 @@ class EndpointsSpec extends FunSuite {
   }
 
   test("a document endpoint describes only the responses it can answer") {
-    val jwksCodes = jwksOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
-    val metadataCodes = metadataOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
+    val jwksCodes = jwksOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) =>
+      code
+    }.toSet
+    val metadataCodes = metadataOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) =>
+      code
+    }.toSet
     val resourceCodes =
       resourceOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
     assertEquals(jwksCodes, Set(200, 500, 503))
@@ -399,7 +429,10 @@ class EndpointsSpec extends FunSuite {
   test("a written error is read back as the same error") {
     val error = OAuth2Error.InvalidGrant()
     val status = sttp.model.StatusCode(error.status)
-    assertEquals(Endpoints.errorBody(status).decode(Endpoints.errorBody(status).encode(error)), DecodeResult.Value(error))
+    assertEquals(
+      Endpoints.errorBody(status).decode(Endpoints.errorBody(status).encode(error)),
+      DecodeResult.Value(error)
+    )
   }
 
   test("a body whose code belongs to another status is refused") {

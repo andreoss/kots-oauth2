@@ -58,7 +58,9 @@ class PushedAuthorizationServiceSpec extends CatsEffectSuite {
     }
     InMemoryPushedRequestStore
       .create[IO](clock)
-      .map(pushed => (new PushedAuthorizationService[IO](pushed, clock, entropy, LifetimePolicy.defaults), pushed))
+      .map(pushed =>
+        (new PushedAuthorizationService[IO](pushed, clock, entropy, LifetimePolicy.defaults), pushed)
+      )
   }
 
   test("a pushed request is stored under a one time request uri without the credentials") {

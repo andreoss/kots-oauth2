@@ -47,10 +47,10 @@ final class Discovery[F[_]: Concurrent] private (
   def key(kid: KeyId): F[Either[ParseFailure, Jwk]] =
     keys.flatMap {
       case Left(failure) => Concurrent[F].pure(Left(failure): Either[ParseFailure, Jwk])
-      case Right(set) =>
+      case Right(set)    =>
         set.find(kid) match {
           case Some(found) => Concurrent[F].pure(Right(found): Either[ParseFailure, Jwk])
-          case None =>
+          case None        =>
             published.set(None) >> keys.map(
               _.flatMap(_.find(kid).toRight(ParseFailure("Discovery", "no key for the kid")))
             )
@@ -76,7 +76,8 @@ final class Discovery[F[_]: Concurrent] private (
     }
 
   private def fetchMetadata: F[Either[ParseFailure, DiscoveredMetadata]] =
-    body(s"${issuer.value}/.well-known/oauth-authorization-server").map(_.flatMap(Discovery.metadataOf(issuer, _)))
+    body(s"${issuer.value}/.well-known/oauth-authorization-server")
+      .map(_.flatMap(Discovery.metadataOf(issuer, _)))
 
   private def fetchKeys: F[Either[ParseFailure, Jwks]] =
     metadata.flatMap {

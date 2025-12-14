@@ -33,7 +33,7 @@ final class IntrospectionEndpoint[F[_]: Monad](
   ): F[Either[OAuth2Error, IntrospectionResponse]] =
     ClientAuthInput.from(basic, parameters).toEither match {
       case Left(failures) => Monad[F].pure(Left(failures.head))
-      case Right(input) =>
+      case Right(input)   =>
         authentication.authenticate(input).flatMap {
           case Left(error)   => Monad[F].pure(Left(error))
           case Right(client) => introspect(parameters, client)
@@ -64,7 +64,7 @@ final class IntrospectionEndpoint[F[_]: Monad](
     request.hint match {
       case Some(TokenTypeHint.AccessToken)  => byAccess(request.token, clientId)
       case Some(TokenTypeHint.RefreshToken) => byRefresh(request.token, clientId)
-      case None =>
+      case None                             =>
         byRefresh(request.token, clientId).flatMap {
           case Some(record) => Monad[F].pure(Some(record))
           case None         => byAccess(request.token, clientId)

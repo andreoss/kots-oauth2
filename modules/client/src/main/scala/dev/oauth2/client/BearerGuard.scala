@@ -35,7 +35,7 @@ final class BearerGuard[F[_]: Monad](
           case Right(published) =>
             clock.instant.map { now =>
               Jwt.claims(token, published, now) match {
-                case Left(_) => Left(BearerGuard.invalidToken)
+                case Left(_)                                  => Left(BearerGuard.invalidToken)
                 case Right(claims) if claims.issuer != issuer => Left(BearerGuard.invalidToken)
                 case Right(claims) if !Scopes.isSubsetOf(required, claims.scopes) =>
                   Left(BearerGuard.insufficientScope)

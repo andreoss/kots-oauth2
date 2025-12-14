@@ -104,3 +104,5 @@ lazy val root = (project in file("."))
   .settings(commonSettings)
   .settings(name := "kots-oauth2", publish / skip := true)
   .aggregate(core, jose, store, http, server, client, host)
+
+addCommandAlias("lint", "scalafmtCheckAll; scalafmtSbtCheck; scalafixAll --check")

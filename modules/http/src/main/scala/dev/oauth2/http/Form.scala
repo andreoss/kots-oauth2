@@ -33,8 +33,8 @@ object Form {
 
   private def parameter(part: String): Either[OAuth2Error, (String, String)] =
     part.indexOf('=') match {
-      case -1 => Left(OAuth2Error.InvalidRequest(Some("parameter without a value")))
-      case 0  => Left(OAuth2Error.InvalidRequest(Some("empty parameter name")))
+      case -1    => Left(OAuth2Error.InvalidRequest(Some("parameter without a value")))
+      case 0     => Left(OAuth2Error.InvalidRequest(Some("empty parameter name")))
       case index =>
         decode(part.substring(0, index)).flatMap { name =>
           if (name.isEmpty) Left(OAuth2Error.InvalidRequest(Some("empty parameter name")))
@@ -55,5 +55,7 @@ object Form {
 
   private def decode(raw: String): Either[OAuth2Error, String] =
     try Right(URLDecoder.decode(raw, StandardCharsets.UTF_8))
-    catch { case _: IllegalArgumentException => Left(OAuth2Error.InvalidRequest(Some("malformed percent encoding"))) }
+    catch {
+      case _: IllegalArgumentException => Left(OAuth2Error.InvalidRequest(Some("malformed percent encoding")))
+    }
 }

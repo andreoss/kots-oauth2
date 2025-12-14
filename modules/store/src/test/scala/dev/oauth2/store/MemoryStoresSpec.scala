@@ -75,7 +75,14 @@ class MemoryStoresSpec extends CatsEffectSuite {
     )
 
   private def grant(name: String): Grant =
-    Grant(unsafe(GrantId.from(name)), client.id, unsafe(Subject.from("user-1")), unsafe(Scopes.parse("read")), AuthorizationDetails.empty, revoked = false)
+    Grant(
+      unsafe(GrantId.from(name)),
+      client.id,
+      unsafe(Subject.from("user-1")),
+      unsafe(Scopes.parse("read")),
+      AuthorizationDetails.empty,
+      revoked = false
+    )
 
   test("a registered client is found and an unknown one is not") {
     for {
@@ -375,8 +382,16 @@ class MemoryStoresSpec extends CatsEffectSuite {
       store <- InMemoryTokenStore.create[IO](clockOf(clock))
       _ <- store.save(token("at-1", Some("rt-1"), "grant-1"))
       _ <- store.save(token("at-2", Some("rt-2"), "grant-2"))
-      asAccess <- store.revoke(unsafe(RevocationToken.from("at-1")), Some(TokenTypeHint.AccessToken), client.id)
-      byRefresh <- store.revoke(unsafe(RevocationToken.from("at-2")), Some(TokenTypeHint.RefreshToken), client.id)
+      asAccess <- store.revoke(
+        unsafe(RevocationToken.from("at-1")),
+        Some(TokenTypeHint.AccessToken),
+        client.id
+      )
+      byRefresh <- store.revoke(
+        unsafe(RevocationToken.from("at-2")),
+        Some(TokenTypeHint.RefreshToken),
+        client.id
+      )
       foreign <- store.revoke(unsafe(RevocationToken.from("rt-2")), None, unsafe(ClientId.from("client-2")))
       unknown <- store.revoke(unsafe(RevocationToken.from("absent")), None, client.id)
       dropped <- store.findByAccess(unsafe(AccessToken.from("at-1")))

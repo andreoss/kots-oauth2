@@ -47,7 +47,10 @@ private[jose] object Signatures {
 
   private def attempt[A](reason: String)(work: => A): Either[ParseFailure, A] =
     try Right(work)
-    catch { case _: java.security.GeneralSecurityException | _: IllegalArgumentException => Left(ParseFailure("Jws", reason)) }
+    catch {
+      case _: java.security.GeneralSecurityException | _: IllegalArgumentException =>
+        Left(ParseFailure("Jws", reason))
+    }
 }
 
 private[jose] object Der {

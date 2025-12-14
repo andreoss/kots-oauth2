@@ -30,11 +30,17 @@ class RevocationSpec extends ScalaCheckSuite {
 
   test("revocation request decodes both registered hints") {
     assertEquals(valid(revocation("token_type_hint" -> "access_token")).hint, Some(TokenTypeHint.AccessToken))
-    assertEquals(valid(revocation("token_type_hint" -> "refresh_token")).hint, Some(TokenTypeHint.RefreshToken))
+    assertEquals(
+      valid(revocation("token_type_hint" -> "refresh_token")).hint,
+      Some(TokenTypeHint.RefreshToken)
+    )
   }
 
   test("revocation request refuses a missing token") {
-    assertEquals(errors(RevocationRequest.from(Map.empty[String, String])).map(_.code), List("invalid_request"))
+    assertEquals(
+      errors(RevocationRequest.from(Map.empty[String, String])).map(_.code),
+      List("invalid_request")
+    )
   }
 
   test("revocation request refuses an empty token") {

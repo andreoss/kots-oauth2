@@ -73,7 +73,8 @@ class TokenEndpointSpec extends CatsEffectSuite {
       Set(callback),
       unsafe(Scopes.parse("read")),
       method,
-      if (method == ClientAuthMethod.None) None else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
+      if (method == ClientAuthMethod.None) None
+      else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
     )
 
   private def basic(id: String, secret: String): Option[String] =
@@ -319,7 +320,10 @@ class TokenEndpointSpec extends CatsEffectSuite {
   test("an unknown grant type is refused with unsupported_grant_type") {
     for {
       endpoint <- setup()
-      result <- endpoint(basic("client-1", "s3cret"), Map("grant_type" -> "password", "client_id" -> clientId.value))
+      result <- endpoint(
+        basic("client-1", "s3cret"),
+        Map("grant_type" -> "password", "client_id" -> clientId.value)
+      )
     } yield assertEquals(code(result), Some("unsupported_grant_type"))
   }
 

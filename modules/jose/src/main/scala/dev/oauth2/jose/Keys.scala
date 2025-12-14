@@ -47,11 +47,15 @@ sealed trait Alg {
 
 object Alg {
 
-  case object RS256 extends Alg { val value: String = "RS256"; val kty: Kty = Kty.Rsa; val use: Use = Use.Sig }
+  case object RS256 extends Alg {
+    val value: String = "RS256"; val kty: Kty = Kty.Rsa; val use: Use = Use.Sig
+  }
 
   case object ES256 extends Alg { val value: String = "ES256"; val kty: Kty = Kty.Ec; val use: Use = Use.Sig }
 
-  case object EdDSA extends Alg { val value: String = "EdDSA"; val kty: Kty = Kty.Okp; val use: Use = Use.Sig }
+  case object EdDSA extends Alg {
+    val value: String = "EdDSA"; val kty: Kty = Kty.Okp; val use: Use = Use.Sig
+  }
 
   val allowed: Set[Alg] = Set(RS256, ES256, EdDSA)
 

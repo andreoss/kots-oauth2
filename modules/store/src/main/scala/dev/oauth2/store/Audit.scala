@@ -10,8 +10,7 @@ sealed abstract class AuditEvent(val name: String)
 
 object AuditEvent {
 
-  final case class Issued(clientId: ClientId, subject: Subject, grantId: GrantId)
-      extends AuditEvent("issued")
+  final case class Issued(clientId: ClientId, subject: Subject, grantId: GrantId) extends AuditEvent("issued")
 
   final case class Refreshed(clientId: ClientId, subject: Subject, grantId: GrantId)
       extends AuditEvent("refreshed")

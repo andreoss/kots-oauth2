@@ -136,7 +136,16 @@ class TokenServiceSpec extends CatsEffectSuite {
       grants <- InMemoryGrantStore.create[IO]
       devices <- InMemoryDeviceStore.create[IO](clock)
     } yield (
-      new TokenService[IO](codes, tokens, grants, devices, clock, entropy, LifetimePolicy.defaults, Some(signing)),
+      new TokenService[IO](
+        codes,
+        tokens,
+        grants,
+        devices,
+        clock,
+        entropy,
+        LifetimePolicy.defaults,
+        Some(signing)
+      ),
       tokens
     )
   }
@@ -208,16 +217,24 @@ class TokenServiceSpec extends CatsEffectSuite {
       grants <- InMemoryGrantStore.create[IO]
       devices <- InMemoryDeviceStore.create[IO](clock)
       _ <- devices.save(stored)
-    } yield (new TokenService[IO](codes, tokens, grants, devices, clock, entropy, LifetimePolicy.defaults), devices, advance)
+    } yield (
+      new TokenService[IO](codes, tokens, grants, devices, clock, entropy, LifetimePolicy.defaults),
+      devices,
+      advance
+    )
   }
 
-  private def client(id: ClientId = clientId, method: ClientAuthMethod = ClientAuthMethod.ClientSecretBasic): Client =
+  private def client(
+      id: ClientId = clientId,
+      method: ClientAuthMethod = ClientAuthMethod.ClientSecretBasic
+  ): Client =
     Client(
       id,
       Set(callback),
       unsafe(Scopes.parse("read")),
       method,
-      if (method == ClientAuthMethod.None) None else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
+      if (method == ClientAuthMethod.None) None
+      else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
     )
 
   private val boundResource: dev.oauth2.core.ResourceIndicator =
@@ -287,7 +304,10 @@ class TokenServiceSpec extends CatsEffectSuite {
       triple <- setup(record("code-1"))
       (service, _, _) = triple
       subject <- issuedSubject(service)
-      result <- service.exchange(exchangeOf(subject.accessToken, audience = Some("https://api.example")), client())
+      result <- service.exchange(
+        exchangeOf(subject.accessToken, audience = Some("https://api.example")),
+        client()
+      )
     } yield {
       val minted = result.toOption.get
       assertEquals(minted.record.subject, subject.record.subject)
@@ -305,7 +325,8 @@ class TokenServiceSpec extends CatsEffectSuite {
       (service, _, _) = triple
       subject <- issuedSubject(service)
       result <- service.exchange(
-        exchangeOf(subject.accessToken).copy(resource = Some(unsafe(dev.oauth2.core.ResourceIndicator.from("https://api.example/v1")))),
+        exchangeOf(subject.accessToken)
+          .copy(resource = Some(unsafe(dev.oauth2.core.ResourceIndicator.from("https://api.example/v1")))),
         client()
       )
     } yield assertEquals(result.toOption.get.record.audience.map(_.value), Some("https://api.example/v1"))
@@ -437,7 +458,10 @@ class TokenServiceSpec extends CatsEffectSuite {
     for {
       triple <- deviceSetup(deviceRecord())
       (service, _, _) = triple
-      result <- service.deviceCode(TokenRequest.Device(unsafe(DeviceCode.from("device-2")), clientId), client())
+      result <- service.deviceCode(
+        TokenRequest.Device(unsafe(DeviceCode.from("device-2")), clientId),
+        client()
+      )
     } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
   }
 
@@ -664,7 +688,10 @@ class TokenServiceSpec extends CatsEffectSuite {
       first <- service.authorizationCode(request("code-1", verifier), client())
       issued = first.toOption.get
       second <- service.refresh(TokenRequest.Refresh(issued.refreshToken.get, None, clientId), client())
-    } yield assertEquals(second.toOption.map(_.record.refreshExpiresAt), first.toOption.map(_.record.refreshExpiresAt))
+    } yield assertEquals(
+      second.toOption.map(_.record.refreshExpiresAt),
+      first.toOption.map(_.record.refreshExpiresAt)
+    )
   }
 
   test("refresh narrows the scope and refuses a wider one") {
@@ -678,7 +705,11 @@ class TokenServiceSpec extends CatsEffectSuite {
         client()
       )
       wider <- service.refresh(
-        TokenRequest.Refresh(narrower.toOption.get.refreshToken.get, Some(unsafe(Scopes.parse("read write"))), clientId),
+        TokenRequest.Refresh(
+          narrower.toOption.get.refreshToken.get,
+          Some(unsafe(Scopes.parse("read write"))),
+          clientId
+        ),
         client()
       )
     } yield {
@@ -728,7 +759,10 @@ class TokenServiceSpec extends CatsEffectSuite {
     for {
       triple <- setup(record("code-1"))
       (service, _, _) = triple
-      unknown <- service.refresh(TokenRequest.Refresh(unsafe(RefreshToken.from("rt-absent")), None, clientId), client())
+      unknown <- service.refresh(
+        TokenRequest.Refresh(unsafe(RefreshToken.from("rt-absent")), None, clientId),
+        client()
+      )
     } yield assertEquals(unknown.left.toOption.map(_.code), Some("invalid_grant"))
   }
 
@@ -738,7 +772,10 @@ class TokenServiceSpec extends CatsEffectSuite {
       (service, _, _) = triple
       first <- service.authorizationCode(request("code-1", verifier), client())
       issued = first.toOption.get
-      result <- service.refresh(TokenRequest.Refresh(issued.refreshToken.get, None, otherClientId), client(otherClientId))
+      result <- service.refresh(
+        TokenRequest.Refresh(issued.refreshToken.get, None, otherClientId),
+        client(otherClientId)
+      )
     } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
   }
 
@@ -778,7 +815,9 @@ class TokenServiceSpec extends CatsEffectSuite {
     for {
       triple <- setup(record("code-1"))
       (service, _, grants) = triple
-      _ <- grants.save(Grant(kept, clientId, subject, Scopes.empty, AuthorizationDetails.empty, revoked = false))
+      _ <- grants.save(
+        Grant(kept, clientId, subject, Scopes.empty, AuthorizationDetails.empty, revoked = false)
+      )
       result <- service.authorizationCode(request("code-2", verifier), client())
       grant <- grants.find(kept)
     } yield {

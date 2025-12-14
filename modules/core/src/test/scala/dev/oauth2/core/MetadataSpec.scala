@@ -20,7 +20,15 @@ class MetadataSpec extends FunSuite {
   private val keys: EndpointUri = unsafe(EndpointUri.from("https://server.example/jwks"))
 
   private val metadata: AuthorizationServerMetadata =
-    AuthorizationServerMetadata.of(issuer, authorization, token, Some(revocation), Some(introspection), Some(keys), unsafe(Scopes.parse("read write")))
+    AuthorizationServerMetadata.of(
+      issuer,
+      authorization,
+      token,
+      Some(revocation),
+      Some(introspection),
+      Some(keys),
+      unsafe(Scopes.parse("read write"))
+    )
 
   test("an endpoint uri refuses a relative reference") {
     assert(EndpointUri.from("/token").isLeft)
@@ -31,7 +39,10 @@ class MetadataSpec extends FunSuite {
   }
 
   test("an endpoint uri accepts an absolute https uri") {
-    assertEquals(EndpointUri.from("https://server.example/token").map(_.value), Right("https://server.example/token"))
+    assertEquals(
+      EndpointUri.from("https://server.example/token").map(_.value),
+      Right("https://server.example/token")
+    )
   }
 
   test("the metadata carries the issuer and every endpoint it serves") {

@@ -99,10 +99,11 @@ object Server {
     )
 
   def registrationUpdate[F[_]: Functor](logic: RegistrationManagementLogic[F]): ServerEndpoint[Any, F] =
-    ServerEndpoint.public[(String, Option[String], Map[String, Json]), OAuth2Error, Map[String, Json], Any, F](
-      Endpoints.registrationUpdate,
-      _ => input => logic.update(input._1, input._2, input._3).map(_.map(ClientRegistrationResponse.render))
-    )
+    ServerEndpoint
+      .public[(String, Option[String], Map[String, Json]), OAuth2Error, Map[String, Json], Any, F](
+        Endpoints.registrationUpdate,
+        _ => input => logic.update(input._1, input._2, input._3).map(_.map(ClientRegistrationResponse.render))
+      )
 
   def registrationDelete[F[_]](logic: RegistrationManagementLogic[F]): ServerEndpoint[Any, F] =
     ServerEndpoint.public[(String, Option[String]), OAuth2Error, Unit, Any, F](
@@ -112,7 +113,10 @@ object Server {
 
   def token[F[_]: Functor](logic: TokenLogic[F]): ServerEndpoint[Any, F] =
     ServerEndpoint
-      .public[(Option[String], Map[String, String], Option[String]), OAuth2Error, Map[String, String], Any, F](
+      .public[(Option[String], Map[String, String], Option[String]), OAuth2Error, Map[
+        String,
+        String
+      ], Any, F](
         Endpoints.token,
         _ => input => logic(input._1, input._2, input._3).map(_.map(TokenResponse.render))
       )
@@ -171,7 +175,10 @@ object Server {
           logic.report.map { report =>
             val status =
               if (report.healthy) sttp.model.StatusCode.Ok else sttp.model.StatusCode.ServiceUnavailable
-            Right((status, HealthReport.render(report))): Either[OAuth2Error, (sttp.model.StatusCode, Map[String, Json])]
+            Right((status, HealthReport.render(report))): Either[
+              OAuth2Error,
+              (sttp.model.StatusCode, Map[String, Json])
+            ]
           }
     )
 }

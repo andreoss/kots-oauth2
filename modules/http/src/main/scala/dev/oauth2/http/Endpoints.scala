@@ -89,7 +89,10 @@ object Endpoints {
         Form
           .parse(raw)
           .flatMap(params => Form.strict(params, allowed))
-          .fold(error => DecodeResult.Error(error.code, new IllegalArgumentException(error.code)), DecodeResult.Value(_))
+          .fold(
+            error => DecodeResult.Error(error.code, new IllegalArgumentException(error.code)),
+            DecodeResult.Value(_)
+          )
       )(Form.render)
 
   implicit val formParameters: Codec[String, Map[String, String], XWwwFormUrlencoded] =
@@ -121,9 +124,9 @@ object Endpoints {
     Mapping.fromDecode[Map[String, String], OAuth2Error](body => decoded(status, body))(_.body)
 
   def challengedBody(status: StatusCode): Mapping[(Option[String], Map[String, String]), OAuth2Error] =
-    Mapping.fromDecode[(Option[String], Map[String, String]), OAuth2Error](carried => decoded(status, carried._2))(error =>
-      (error.challenge, error.body)
-    )
+    Mapping.fromDecode[(Option[String], Map[String, String]), OAuth2Error](carried =>
+      decoded(status, carried._2)
+    )(error => (error.challenge, error.body))
 
   private def decoded(status: StatusCode, body: Map[String, String]): DecodeResult[OAuth2Error] =
     OAuth2Error
@@ -145,7 +148,9 @@ object Endpoints {
       oneOfVariantValueMatcher(
         status,
         noStore(
-          header[Option[String]](Endpoints.ChallengeHeader).and(jsonBody[Map[String, String]]).map(challengedBody(status))
+          header[Option[String]](Endpoints.ChallengeHeader)
+            .and(jsonBody[Map[String, String]])
+            .map(challengedBody(status))
         )
       )(matches)
     else
@@ -189,8 +194,10 @@ object Endpoints {
 
   val DpopHeader: String = "DPoP"
 
-  val token
-      : PublicEndpoint[(Option[String], Map[String, String], Option[String]), OAuth2Error, Map[String, String], Any] =
+  val token: PublicEndpoint[(Option[String], Map[String, String], Option[String]), OAuth2Error, Map[
+    String,
+    String
+  ], Any] =
     endpoint.post
       .in("token")
       .in(Auth.basic)

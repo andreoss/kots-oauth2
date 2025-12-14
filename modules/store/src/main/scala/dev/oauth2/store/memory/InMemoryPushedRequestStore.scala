@@ -41,5 +41,7 @@ final class InMemoryPushedRequestStore[F[_]: Monad] private (
 object InMemoryPushedRequestStore {
 
   def create[F[_]: cats.effect.Sync](clock: Clock[F]): F[InMemoryPushedRequestStore[F]] =
-    Ref.of[F, Map[RequestUri, PushedRequest]](Map.empty).map(state => new InMemoryPushedRequestStore(state, clock))
+    Ref
+      .of[F, Map[RequestUri, PushedRequest]](Map.empty)
+      .map(state => new InMemoryPushedRequestStore(state, clock))
 }

@@ -25,7 +25,8 @@ class AuthorizationDetailsSpec extends DisciplineSuite {
       .map(raw => Location.from(raw).toOption.get)
 
   private val genAction: Gen[Action] =
-    Gen.oneOf(Gen.const("read"), Gen.const("write"), Gen.const("delete"))
+    Gen
+      .oneOf(Gen.const("read"), Gen.const("write"), Gen.const("delete"))
       .map(raw => Action.from(raw).toOption.get)
 
   private val genFields: Gen[Map[String, String]] =
@@ -135,11 +136,13 @@ class AuthorizationDetailsSpec extends DisciplineSuite {
     val granted =
       AuthorizationDetails.of(List(AuthorizationDetail.of(t, List(l1), List(a1), Map("id" -> "1"))))
     assertEquals(
-      AuthorizationDetails.covers(granted, AuthorizationDetails.of(List(AuthorizationDetail.of(t, List(l2))))),
+      AuthorizationDetails
+        .covers(granted, AuthorizationDetails.of(List(AuthorizationDetail.of(t, List(l2))))),
       false
     )
     assertEquals(
-      AuthorizationDetails.covers(granted, AuthorizationDetails.of(List(AuthorizationDetail.of(t, Nil, List(a2))))),
+      AuthorizationDetails
+        .covers(granted, AuthorizationDetails.of(List(AuthorizationDetail.of(t, Nil, List(a2))))),
       false
     )
     assertEquals(

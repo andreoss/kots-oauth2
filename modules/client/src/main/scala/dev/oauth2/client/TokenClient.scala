@@ -99,7 +99,7 @@ final class TokenClient[F[_]: Concurrent](
       .withEntity(UrlForm(form.toSeq: _*))
     val sent = credentials.fold(base)(value => base.putHeaders(Authorization(value)))
     dpop match {
-      case None => transport.run(sent).use(answer)
+      case None         => transport.run(sent).use(answer)
       case Some(signer) =>
         signer.proof(Method.POST.name, endpoint.value).flatMap {
           case Left(failure) =>
@@ -166,12 +166,20 @@ object TokenClient {
         .left
         .map(_ => unreadable)
         .flatMap(raw => raw.toLongOption.toRight(unreadable))
-      refresh <- cursor.get[String]("refresh_token").toOption.fold(
-        Right(None): Either[OAuth2Error, Option[RefreshToken]]
-      )(raw => RefreshToken.from(raw).map(token => Some(token): Option[RefreshToken]).left.map(_ => unreadable))
-      scope <- cursor.get[String]("scope").toOption.fold(
-        Right(Scopes.empty): Either[OAuth2Error, Scopes]
-      )(raw => Scopes.parse(raw).left.map(_ => unreadable))
+      refresh <- cursor
+        .get[String]("refresh_token")
+        .toOption
+        .fold(
+          Right(None): Either[OAuth2Error, Option[RefreshToken]]
+        )(raw =>
+          RefreshToken.from(raw).map(token => Some(token): Option[RefreshToken]).left.map(_ => unreadable)
+        )
+      scope <- cursor
+        .get[String]("scope")
+        .toOption
+        .fold(
+          Right(Scopes.empty): Either[OAuth2Error, Scopes]
+        )(raw => Scopes.parse(raw).left.map(_ => unreadable))
     } yield Grant(access, tokenType, expiresIn, refresh, scope)
 
   private[client] def refusal(status: Int, text: String): Either[OAuth2Error, Grant] = {
