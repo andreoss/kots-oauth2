@@ -10,8 +10,9 @@ object ClientAuthMethod {
   case object ClientSecretBasic extends ClientAuthMethod("client_secret_basic")
   case object ClientSecretPost extends ClientAuthMethod("client_secret_post")
   case object PrivateKeyJwt extends ClientAuthMethod("private_key_jwt")
+  case object ClientSecretJwt extends ClientAuthMethod("client_secret_jwt")
 
-  val all: List[ClientAuthMethod] = List(None, ClientSecretBasic, ClientSecretPost, PrivateKeyJwt)
+  val all: List[ClientAuthMethod] = List(None, ClientSecretBasic, ClientSecretPost, PrivateKeyJwt, ClientSecretJwt)
 
   def from(raw: String): Either[ParseFailure, ClientAuthMethod] =
     all.find(_.value == raw).toRight(ParseFailure("ClientAuthMethod", "not a registered method"))

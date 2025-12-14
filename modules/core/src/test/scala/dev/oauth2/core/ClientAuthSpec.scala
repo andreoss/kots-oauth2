@@ -26,6 +26,7 @@ class ClientAuthSpec extends ScalaCheckSuite {
     assertEquals(ClientAuthMethod.from("client_secret_basic"), Right(ClientAuthMethod.ClientSecretBasic))
     assertEquals(ClientAuthMethod.from("client_secret_post"), Right(ClientAuthMethod.ClientSecretPost))
     assertEquals(ClientAuthMethod.from("private_key_jwt"), Right(ClientAuthMethod.PrivateKeyJwt))
+    assertEquals(ClientAuthMethod.from("client_secret_jwt"), Right(ClientAuthMethod.ClientSecretJwt))
   }
 
   test("method refuses an unregistered value") {

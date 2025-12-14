@@ -53,6 +53,21 @@ class RegistrationServiceSpec extends CatsEffectSuite {
     }
   }
 
+  test("a client secret jwt registration keeps the secret for mac verification") {
+    for {
+      pair <- setup
+      (service, clients) = pair
+      basic <- service.register(registration(ClientAuthMethod.ClientSecretBasic))
+      maced <- service.register(registration(ClientAuthMethod.ClientSecretJwt))
+      hashedOnly <- clients.find(basic.toOption.get.clientId)
+      kept <- clients.find(maced.toOption.get.clientId)
+    } yield {
+      assertEquals(hashedOnly.flatMap(_.secret), None)
+      assertEquals(kept.flatMap(_.secret), maced.toOption.get.secret)
+      assert(kept.flatMap(_.secret).isDefined)
+    }
+  }
+
   test("a public registration mints a client without a secret") {
     for {
       pair <- setup
