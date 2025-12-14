@@ -57,6 +57,15 @@ class JwtSpec extends FunSuite {
     assertEquals(Jwt.claims(compact, published, Start), Right(bare))
   }
 
+  test("a token with an acr claim round trips it") {
+    val stepped = claims.copy(acr = Some(unsafe(dev.oauth2.core.Acr.from("gold"))))
+    val compact = Jwt.issue(Fakes.signingKey, stepped).toOption.get
+    val payload = new String(Base64.getUrlDecoder.decode(compact.split('.')(1)), "UTF-8")
+    val cursor = io.circe.parser.parse(payload).toOption.get.hcursor
+    assertEquals(cursor.get[String]("acr").toOption, Some("gold"))
+    assertEquals(Jwt.claims(compact, published, Start), Right(stepped))
+  }
+
   test("a jws of another type is not an access token") {
     val compact = Jws
       .sign(Alg.RS256, Fakes.keyId("key-1"), Fakes.signingPair.getPrivate, """{"sub":"user-1"}""")

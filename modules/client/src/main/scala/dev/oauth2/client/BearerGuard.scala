@@ -4,6 +4,7 @@ import cats.Monad
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 
+import dev.oauth2.core.Acr
 import dev.oauth2.core.Clock
 import dev.oauth2.core.Issuer
 import dev.oauth2.core.ParseFailure
@@ -20,7 +21,8 @@ final class BearerGuard[F[_]: Monad](
 
   def verify(
       authorization: Option[String],
-      required: Scopes
+      required: Scopes,
+      acr: Option[Acr] = None
   ): F[Either[BearerGuard.Challenge, JwtClaims]] =
     authorization.filter(_.startsWith(BearerGuard.Scheme)) match {
       case None =>
@@ -37,6 +39,8 @@ final class BearerGuard[F[_]: Monad](
                 case Right(claims) if claims.issuer != issuer => Left(BearerGuard.invalidToken)
                 case Right(claims) if !Scopes.isSubsetOf(required, claims.scopes) =>
                   Left(BearerGuard.insufficientScope)
+                case Right(claims) if acr.exists(demanded => !claims.acr.contains(demanded)) =>
+                  Left(BearerGuard.stepUp(acr.toList))
                 case Right(claims) => Right(claims)
               }
             }
@@ -58,4 +62,11 @@ object BearerGuard {
 
   val insufficientScope: Challenge =
     Challenge(403, s"""Bearer realm="$Realm", error="insufficient_scope"""")
+
+  def stepUp(demanded: List[Acr]): Challenge =
+    Challenge(
+      401,
+      s"""Bearer realm="$Realm", error="insufficient_user_authentication",""" +
+        s""" acr_values="${demanded.map(_.value).mkString(" ")}""""
+    )
 }

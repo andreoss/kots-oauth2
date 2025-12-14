@@ -62,3 +62,10 @@ object Issuer {
       _ <- Either.cond(uri.getFragment == null, (), ParseFailure("Issuer", "has a fragment"))
     } yield new Issuer(raw)
 }
+
+final case class Acr private (value: String)
+
+object Acr {
+  def from(raw: String): Either[ParseFailure, Acr] =
+    Text.printable("Acr", raw).map(new Acr(_))
+}

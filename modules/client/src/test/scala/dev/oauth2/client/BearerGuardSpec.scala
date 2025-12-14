@@ -3,6 +3,7 @@ package dev.oauth2.client
 import java.time.Instant
 
 import cats.effect.IO
+import dev.oauth2.core.Acr
 import dev.oauth2.core.Audience
 import dev.oauth2.core.ClientId
 import dev.oauth2.core.Clock
@@ -98,6 +99,30 @@ class BearerGuardSpec extends CatsEffectSuite {
         assertEquals(refused.left.toOption.map(_.status), Some(403))
         assert(refused.left.toOption.exists(_.header.contains("insufficient_scope")))
       }
+  }
+
+  test("a token below the required acr is challenged for step up authentication") {
+    val gold = unsafe(Acr.from("gold"))
+    for {
+      bare <- guard().verify(bearer(claims()), Scopes.empty, Some(gold))
+      lesser <- guard().verify(
+        bearer(claims().copy(acr = Some(unsafe(Acr.from("bronze"))))),
+        Scopes.empty,
+        Some(gold)
+      )
+    } yield {
+      assertEquals(bare.left.toOption.map(_.status), Some(401))
+      assert(bare.left.toOption.exists(_.header.contains("insufficient_user_authentication")))
+      assert(bare.left.toOption.exists(_.header.contains("""acr_values="gold"""")))
+      assert(lesser.left.toOption.exists(_.header.contains("insufficient_user_authentication")))
+    }
+  }
+
+  test("a token carrying the required acr is accepted") {
+    val gold = unsafe(Acr.from("gold"))
+    guard()
+      .verify(bearer(claims().copy(acr = Some(gold))), unsafe(Scopes.parse("read")), Some(gold))
+      .map(verified => assertEquals(verified.toOption.flatMap(_.acr), Some(gold)))
   }
 
   test("an unavailable key set is challenged as invalid_token") {
