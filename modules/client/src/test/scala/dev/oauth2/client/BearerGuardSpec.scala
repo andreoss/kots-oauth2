@@ -53,8 +53,8 @@ class BearerGuardSpec extends CatsEffectSuite {
   private def bearer(minted: JwtClaims): Option[String] =
     Some("Bearer " + Jwt.issue(Fakes.signingKey, minted).toOption.get)
 
-  private def guard(now: Instant = Start): BearerGuard[IO] =
-    new BearerGuard[IO](IO.pure(Right(published)), issuer, clockAt(now))
+  private def guard(now: Instant = Start, audience: Option[Audience] = None): BearerGuard[IO] =
+    new BearerGuard[IO](IO.pure(Right(published)), issuer, clockAt(now), audience)
 
   test("a valid bearer token is accepted with its claims") {
     guard()
@@ -123,6 +123,27 @@ class BearerGuardSpec extends CatsEffectSuite {
     guard()
       .verify(bearer(claims().copy(acr = Some(gold))), unsafe(Scopes.parse("read")), Some(gold))
       .map(verified => assertEquals(verified.toOption.flatMap(_.acr), Some(gold)))
+  }
+
+  test("a token for another audience is challenged as invalid_token") {
+    guard(audience = Some(unsafe(Audience.from("https://other.example"))))
+      .verify(bearer(claims()), Scopes.empty)
+      .map { refused =>
+        assertEquals(refused.left.toOption.map(_.status), Some(401))
+        assert(refused.left.toOption.exists(_.header.contains("invalid_token")))
+      }
+  }
+
+  test("a token without an audience is challenged when the guard demands one") {
+    guard(audience = Some(unsafe(Audience.from("https://api.example"))))
+      .verify(bearer(claims().copy(audience = None)), Scopes.empty)
+      .map(refused => assert(refused.left.toOption.exists(_.header.contains("invalid_token"))))
+  }
+
+  test("a token carrying the demanded audience is accepted") {
+    guard(audience = Some(unsafe(Audience.from("https://api.example"))))
+      .verify(bearer(claims()), unsafe(Scopes.parse("read")))
+      .map(verified => assertEquals(verified.toOption.map(_.subject.value), Some("user-1")))
   }
 
   test("an unavailable key set is challenged as invalid_token") {
