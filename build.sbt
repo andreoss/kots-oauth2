@@ -6,7 +6,7 @@ val Tapir = "1.11.50"
 val Circe = "0.14.16"
 val Http4s = "0.23.30"
 
-ThisBuild / organization := "dev.oauth2"
+ThisBuild / organization := "kots.oauth2"
 ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / scalaVersion := Scala2
 ThisBuild / crossScalaVersions := Seq(Scala2, Scala3)
@@ -91,7 +91,7 @@ lazy val client = module("client")
 lazy val host = module("host")
   .dependsOn(server, client, jose % "test->test")
   .settings(
-    Compile / run / mainClass := Some("dev.oauth2.host.DevServer"),
+    Compile / run / mainClass := Some("kots.oauth2.host.DevServer"),
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % Tapir,
       "org.http4s" %% "http4s-ember-server" % Http4s,
