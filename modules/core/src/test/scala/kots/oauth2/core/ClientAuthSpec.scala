@@ -27,10 +27,15 @@ class ClientAuthSpec extends ScalaCheckSuite {
     assertEquals(ClientAuthMethod.from("client_secret_post"), Right(ClientAuthMethod.ClientSecretPost))
     assertEquals(ClientAuthMethod.from("private_key_jwt"), Right(ClientAuthMethod.PrivateKeyJwt))
     assertEquals(ClientAuthMethod.from("client_secret_jwt"), Right(ClientAuthMethod.ClientSecretJwt))
+    assertEquals(ClientAuthMethod.from("tls_client_auth"), Right(ClientAuthMethod.TlsClientAuth))
+    assertEquals(
+      ClientAuthMethod.from("self_signed_tls_client_auth"),
+      Right(ClientAuthMethod.SelfSignedTlsClientAuth)
+    )
   }
 
   test("method refuses an unregistered value") {
-    assert(ClientAuthMethod.from("tls_client_auth").isLeft)
+    assert(ClientAuthMethod.from("tls_client_auth_other").isLeft)
   }
 
   test("input carries a client assertion of the jwt bearer type") {
@@ -104,6 +109,30 @@ class ClientAuthSpec extends ScalaCheckSuite {
 
   test("input refuses a body secret that does not parse as invalid_client") {
     assert(ClientAuthInput.from(None, Map("client_secret" -> "has space")).isInvalid)
+  }
+
+  test("input carries a parsed client certificate beside the form credentials") {
+    val presented = ClientCertificate(
+      CertificateSubject.from("CN=client-1").toOption.get,
+      CertificateThumbprint.from("BemrEoEAcUobpCSYeBpZzeHt_OVDWYeWZSLeb4Y914o").toOption.get
+    )
+    val input = ClientAuthInput
+      .from(None, Map("client_id" -> id.value))
+      .toOption
+      .get
+      .copy(certificate = Some(presented))
+    assertEquals(input.certificate, Some(presented))
+    assertEquals(input.subject, Some(id))
+    assertEquals(ClientAuthInput.from(None, Map("client_id" -> id.value)).toOption.get.certificate, None)
+  }
+
+  test("certificate subject and thumbprint refuse blank or non printable values") {
+    assert(CertificateSubject.from("").isLeft)
+    assert(CertificateSubject.from("CN=a\nb").isLeft)
+    assert(CertificateSubject.from("a" * 513).isLeft)
+    assertEquals(CertificateSubject.from("CN=My Client, O=Org").map(_.value), Right("CN=My Client, O=Org"))
+    assert(CertificateThumbprint.from("").isLeft)
+    assert(CertificateThumbprint.from("with space").isLeft)
   }
 
   property("client auth method wire round trips") {

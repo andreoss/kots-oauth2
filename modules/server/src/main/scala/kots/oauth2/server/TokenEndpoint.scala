@@ -25,26 +25,44 @@ final class TokenEndpoint[F[_]: Monad](
   def apply(
       basic: Option[String],
       parameters: Map[String, String],
-      proof: Option[String] = None
+      proof: Option[String] = None,
+      certificate: Option[String] = None
   ): F[Either[OAuth2Error, TokenResponse]] =
-    (dpop, proof) match {
-      case (Some(config), Some(compact)) =>
-        config.validator.validate(compact, TokenEndpoint.ProofMethod, config.uri).flatMap {
-          case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, TokenResponse])
-          case Right(jkt)  => authenticated(basic, parameters, Some(jkt))
+    certified(certificate) match {
+      case Left(error)      => Monad[F].pure(Left(error): Either[OAuth2Error, TokenResponse])
+      case Right(presented) =>
+        (dpop, proof) match {
+          case (Some(config), Some(compact)) =>
+            config.validator.validate(compact, TokenEndpoint.ProofMethod, config.uri).flatMap {
+              case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, TokenResponse])
+              case Right(jkt)  => authenticated(basic, parameters, Some(jkt), presented)
+            }
+          case _ => authenticated(basic, parameters, None, presented)
         }
-      case _ => authenticated(basic, parameters, None)
+    }
+
+  private def certified(
+      certificate: Option[String]
+  ): Either[OAuth2Error, Option[kots.oauth2.core.ClientCertificate]] =
+    certificate match {
+      case None      => Right(None)
+      case Some(raw) =>
+        Certificates.parse(raw) match {
+          case Left(_)       => Left(OAuth2Error.InvalidClient(): OAuth2Error)
+          case Right(parsed) => Right(Some(parsed))
+        }
     }
 
   private def authenticated(
       basic: Option[String],
       parameters: Map[String, String],
-      jkt: Option[KeyThumbprint]
+      jkt: Option[KeyThumbprint],
+      certificate: Option[kots.oauth2.core.ClientCertificate]
   ): F[Either[OAuth2Error, TokenResponse]] =
     ClientAuthInput.from(basic, parameters).toEither match {
       case Left(failures) => Monad[F].pure(Left(failures.head))
       case Right(input)   =>
-        authentication.authenticate(input).flatMap {
+        authentication.authenticate(input.copy(certificate = certificate)).flatMap {
           case Left(error)   => Monad[F].pure(Left(error))
           case Right(client) => grant(parameters, client, jkt)
         }

@@ -11,9 +11,19 @@ object ClientAuthMethod {
   case object ClientSecretPost extends ClientAuthMethod("client_secret_post")
   case object PrivateKeyJwt extends ClientAuthMethod("private_key_jwt")
   case object ClientSecretJwt extends ClientAuthMethod("client_secret_jwt")
+  case object TlsClientAuth extends ClientAuthMethod("tls_client_auth")
+  case object SelfSignedTlsClientAuth extends ClientAuthMethod("self_signed_tls_client_auth")
 
   val all: List[ClientAuthMethod] =
-    List(None, ClientSecretBasic, ClientSecretPost, PrivateKeyJwt, ClientSecretJwt)
+    List(
+      None,
+      ClientSecretBasic,
+      ClientSecretPost,
+      PrivateKeyJwt,
+      ClientSecretJwt,
+      TlsClientAuth,
+      SelfSignedTlsClientAuth
+    )
 
   def from(raw: String): Either[ParseFailure, ClientAuthMethod] =
     all.find(_.value == raw).toRight(ParseFailure("ClientAuthMethod", "not a registered method"))
@@ -29,11 +39,28 @@ object ClientAssertion {
     Text.printableToken("ClientAssertion", raw).map(new ClientAssertion(_))
 }
 
+final case class CertificateSubject private (value: String)
+
+object CertificateSubject {
+  def from(raw: String): Either[ParseFailure, CertificateSubject] =
+    Text.line("CertificateSubject", raw).map(new CertificateSubject(_))
+}
+
+final case class CertificateThumbprint private (value: String)
+
+object CertificateThumbprint {
+  def from(raw: String): Either[ParseFailure, CertificateThumbprint] =
+    Text.printable("CertificateThumbprint", raw).map(new CertificateThumbprint(_))
+}
+
+final case class ClientCertificate(subject: CertificateSubject, thumbprint: CertificateThumbprint)
+
 final case class ClientAuthInput(
     basic: Option[ClientCredentials],
     clientId: Option[ClientId],
     clientSecret: Option[ClientSecret],
-    assertion: Option[ClientAssertion]
+    assertion: Option[ClientAssertion],
+    certificate: Option[ClientCertificate] = scala.None
 ) {
   def subject: Option[ClientId] = basic.map(_.id).orElse(clientId)
 }
@@ -46,7 +73,7 @@ object ClientAuthInput {
       field(params, "client_id")(ClientId.from),
       field(params, "client_secret")(ClientSecret.from),
       assertionOf(params)
-    ).mapN(ClientAuthInput.apply)
+    ).mapN(ClientAuthInput(_, _, _, _))
 
   private def assertionOf(params: Map[String, String]): ValidatedNec[OAuth2Error, Option[ClientAssertion]] =
     (params.get("client_assertion"), params.get("client_assertion_type")) match {

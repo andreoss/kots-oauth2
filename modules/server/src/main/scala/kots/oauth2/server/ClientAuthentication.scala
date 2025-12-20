@@ -170,6 +170,17 @@ final class RegisteredClientAuthentication[F[_]: Monad](
             case Some(candidate) => secret(client, candidate)
             case None            => Left(RegisteredClientAuthentication.rejected)
           }
+        case ClientAuthMethod.TlsClientAuth =>
+          (input.certificate, client.certificateSubject) match {
+            case (Some(presented), Some(registered)) if presented.subject == registered => Right(client)
+            case _ => Left(RegisteredClientAuthentication.rejected)
+          }
+        case ClientAuthMethod.SelfSignedTlsClientAuth =>
+          (input.certificate, client.certificateThumbprint) match {
+            case (Some(presented), Some(registered)) if presented.thumbprint == registered =>
+              Right(client)
+            case _ => Left(RegisteredClientAuthentication.rejected)
+          }
         case ClientAuthMethod.PrivateKeyJwt | ClientAuthMethod.ClientSecretJwt =>
           Left(RegisteredClientAuthentication.rejected)
       }

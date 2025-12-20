@@ -68,6 +68,20 @@ class RegistrationServiceSpec extends CatsEffectSuite {
     }
   }
 
+  test("a mutual tls registration mints a client without a secret") {
+    for {
+      pair <- setup
+      (service, clients) = pair
+      answered <- service.register(registration(ClientAuthMethod.TlsClientAuth))
+      selfSigned <- service.register(registration(ClientAuthMethod.SelfSignedTlsClientAuth))
+      stored <- clients.find(answered.toOption.get.clientId)
+    } yield {
+      assertEquals(answered.toOption.get.secret, None)
+      assertEquals(selfSigned.toOption.get.secret, None)
+      assertEquals(stored.flatMap(_.secretHash), None)
+    }
+  }
+
   test("a public registration mints a client without a secret") {
     for {
       pair <- setup

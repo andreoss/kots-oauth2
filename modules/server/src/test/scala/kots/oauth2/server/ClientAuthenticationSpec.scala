@@ -5,6 +5,8 @@ import java.util.Base64
 
 import cats.effect.IO
 
+import kots.oauth2.core.CertificateSubject
+import kots.oauth2.core.CertificateThumbprint
 import kots.oauth2.core.ClientAuthInput
 import kots.oauth2.core.ClientAuthMethod
 import kots.oauth2.core.ClientId
@@ -13,6 +15,7 @@ import kots.oauth2.core.ClientSecretHash
 import kots.oauth2.core.OAuth2Error
 import kots.oauth2.core.ParseFailure
 import kots.oauth2.core.Scopes
+import kots.oauth2.jose.Fakes
 import kots.oauth2.store.Client
 import kots.oauth2.store.memory.InMemoryClientStore
 
@@ -362,5 +365,58 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
       assertEquals(rejection(wrong), OAuth2Error.InvalidClient())
       assertEquals(rejection(missing), OAuth2Error.InvalidClient())
     }
+  }
+
+  private def presented(pem: String): kots.oauth2.core.ClientCertificate =
+    Certificates
+      .parse(java.net.URLEncoder.encode(pem, StandardCharsets.UTF_8.name))
+      .toOption
+      .get
+
+  private def mtls(certificate: Option[kots.oauth2.core.ClientCertificate]): ClientAuthInput =
+    input(None, Map("client_id" -> id.value)).copy(certificate = certificate)
+
+  test("a presented certificate authenticates a client registered for tls_client_auth") {
+    val registered = client(method = ClientAuthMethod.TlsClientAuth, hash = None).copy(
+      certificateSubject = Some(unsafe(CertificateSubject.from(Fakes.ClientCertificateSubject)))
+    )
+    for {
+      authentication <- service(List(registered))
+      accepted <- authentication.authenticate(mtls(Some(presented(Fakes.ClientCertificatePem))))
+      foreign <- authentication.authenticate(mtls(Some(presented(Fakes.OtherCertificatePem))))
+      absent <- authentication.authenticate(mtls(None))
+    } yield {
+      assertEquals(accepted.map(_.id), Right(id))
+      assertEquals(rejection(foreign), OAuth2Error.InvalidClient())
+      assertEquals(rejection(absent), OAuth2Error.InvalidClient())
+    }
+  }
+
+  test("a self signed certificate authenticates by its registered thumbprint") {
+    val registered = client(method = ClientAuthMethod.SelfSignedTlsClientAuth, hash = None).copy(
+      certificateThumbprint = Some(unsafe(CertificateThumbprint.from(Fakes.ClientCertificateThumbprint)))
+    )
+    for {
+      authentication <- service(List(registered))
+      accepted <- authentication.authenticate(mtls(Some(presented(Fakes.ClientCertificatePem))))
+      foreign <- authentication.authenticate(mtls(Some(presented(Fakes.OtherCertificatePem))))
+    } yield {
+      assertEquals(accepted.map(_.id), Right(id))
+      assertEquals(rejection(foreign), OAuth2Error.InvalidClient())
+    }
+  }
+
+  test("a certificate is refused for a client without registered certificate data") {
+    for {
+      authentication <- service(List(client(method = ClientAuthMethod.TlsClientAuth, hash = None)))
+      refused <- authentication.authenticate(mtls(Some(presented(Fakes.ClientCertificatePem))))
+    } yield assertEquals(rejection(refused), OAuth2Error.InvalidClient())
+  }
+
+  test("a certificate does not authenticate a client pinned to a secret method") {
+    for {
+      authentication <- service(List(client()))
+      refused <- authentication.authenticate(mtls(Some(presented(Fakes.ClientCertificatePem))))
+    } yield assertEquals(rejection(refused), OAuth2Error.InvalidClient())
   }
 }

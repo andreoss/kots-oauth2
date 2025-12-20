@@ -25,13 +25,23 @@ class ServerSpec extends FunSuite {
 
   private def success(response: TokenResponse): TokenLogic[Id] =
     new TokenLogic[Id] {
-      def apply(basic: Option[String], parameters: Map[String, String], proof: Option[String]) =
+      def apply(
+          basic: Option[String],
+          parameters: Map[String, String],
+          proof: Option[String],
+          certificate: Option[String]
+      ) =
         Right(response)
     }
 
   private def failure(error: OAuth2Error): TokenLogic[Id] =
     new TokenLogic[Id] {
-      def apply(basic: Option[String], parameters: Map[String, String], proof: Option[String]) =
+      def apply(
+          basic: Option[String],
+          parameters: Map[String, String],
+          proof: Option[String],
+          certificate: Option[String]
+      ) =
         Left(error)
     }
 
@@ -46,12 +56,15 @@ class ServerSpec extends FunSuite {
   private type BoundToken[F[_]] = ServerEndpoint[Any, F] {
     type SECURITY_INPUT = Unit
     type PRINCIPAL = Unit
-    type INPUT = (Option[String], Map[String, String], Option[String])
+    type INPUT = (Option[String], Map[String, String], Option[String], Option[String])
     type ERROR_OUTPUT = OAuth2Error
     type OUTPUT = Map[String, String]
   }
 
-  private def run(logic: TokenLogic[Id], input: (Option[String], Map[String, String], Option[String])) =
+  private def run(
+      logic: TokenLogic[Id],
+      input: (Option[String], Map[String, String], Option[String], Option[String])
+  ) =
     Server.token(logic).asInstanceOf[BoundToken[Id]].logic(IdentityMonad)(())(input)
 
   test("a token response renders its type, lifetime, scope and refresh token") {
@@ -93,7 +106,10 @@ class ServerSpec extends FunSuite {
 
   test("a answered token is rendered as the endpoint body") {
     val out =
-      run(success(TokenResponse(accessToken, 3600L, scopes, None)), (None, Map("grant_type" -> "code"), None))
+      run(
+        success(TokenResponse(accessToken, 3600L, scopes, None)),
+        (None, Map("grant_type" -> "code"), None, None)
+      )
     assertEquals(
       out,
       Right(
@@ -108,20 +124,42 @@ class ServerSpec extends FunSuite {
   }
 
   test("a refused token is carried through as the endpoint error") {
-    val out = run(failure(OAuth2Error.InvalidGrant()), (None, Map.empty[String, String], None))
+    val out = run(failure(OAuth2Error.InvalidGrant()), (None, Map.empty[String, String], None, None))
     assertEquals(out, Left(OAuth2Error.InvalidGrant()))
   }
 
   test("the token endpoint hands the dpop proof to the logic") {
     var seen: Option[String] = None
     val capturing = new TokenLogic[Id] {
-      def apply(basic: Option[String], parameters: Map[String, String], proof: Option[String]) = {
+      def apply(
+          basic: Option[String],
+          parameters: Map[String, String],
+          proof: Option[String],
+          certificate: Option[String]
+      ) = {
         seen = proof
         Right(TokenResponse(accessToken, 1L, Scopes.empty, None))
       }
     }
-    run(capturing, (None, Map("grant_type" -> "code"), Some("proof-1")))
+    run(capturing, (None, Map("grant_type" -> "code"), Some("proof-1"), None))
     assertEquals(seen, Some("proof-1"))
+  }
+
+  test("the token endpoint hands the forwarded client certificate to the logic") {
+    var seen: Option[String] = None
+    val capturing = new TokenLogic[Id] {
+      def apply(
+          basic: Option[String],
+          parameters: Map[String, String],
+          proof: Option[String],
+          certificate: Option[String]
+      ) = {
+        seen = certificate
+        Right(TokenResponse(accessToken, 1L, Scopes.empty, None))
+      }
+    }
+    run(capturing, (None, Map("grant_type" -> "code"), None, Some("pem")))
+    assertEquals(seen, Some("pem"))
   }
 
   test("a dpop token response renders its own token type") {
