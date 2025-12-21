@@ -101,6 +101,12 @@ object OAuth2Error {
       errorUri: Option[String] = None
   ) extends OAuth2Error("use_dpop_nonce", 400)
 
+  final case class RateLimited(
+      retryAfter: Long,
+      description: Option[String] = None,
+      errorUri: Option[String] = None
+  ) extends OAuth2Error("temporarily_unavailable", 429)
+
   val BasicRealm: String = "oauth2"
 
   val BasicChallenge: String = s"""Basic realm="$BasicRealm""""
@@ -125,7 +131,9 @@ object OAuth2Error {
     "use_dpop_nonce"
   )
 
-  val knownStatuses: Set[Int] = Set(400, 401, 403, 500, 503)
+  val knownStatuses: Set[Int] = Set(400, 401, 403, 429, 500, 503)
+
+  val RateLimitStatus: Int = 429
 
   def fromParseFailure(failure: ParseFailure): InvalidRequest =
     InvalidRequest(Some(s"${failure.typeName}: ${failure.reason}"))
@@ -133,7 +141,12 @@ object OAuth2Error {
   def fromWire(status: Int, body: Map[String, String]): Either[ParseFailure, OAuth2Error] =
     for {
       code <- body.get("error").toRight(ParseFailure("OAuth2Error", "no error code"))
-      error <- fromCode(code, body)
+      parsed <- fromCode(code, body)
+      error = parsed match {
+        case unavailable: TemporarilyUnavailable if status == RateLimitStatus =>
+          RateLimited(0L, unavailable.description, unavailable.errorUri)
+        case other => other
+      }
       _ <- Either.cond(
         error.status == status,
         error,

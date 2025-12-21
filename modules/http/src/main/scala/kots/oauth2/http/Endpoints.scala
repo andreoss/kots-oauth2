@@ -116,9 +116,12 @@ object Endpoints {
     StatusCode.BadRequest,
     StatusCode.Unauthorized,
     StatusCode.Forbidden,
+    StatusCode.TooManyRequests,
     StatusCode.InternalServerError,
     StatusCode.ServiceUnavailable
   )
+
+  val RetryAfterHeader: String = "Retry-After"
 
   def errorBody(status: StatusCode): Mapping[Map[String, String], OAuth2Error] =
     Mapping.fromDecode[Map[String, String], OAuth2Error](body => decoded(status, body))(_.body)
@@ -127,6 +130,20 @@ object Endpoints {
     Mapping.fromDecode[(Option[String], Map[String, String]), OAuth2Error](carried =>
       decoded(status, carried._2)
     )(error => (error.challenge, error.body))
+
+  def retriedBody(status: StatusCode): Mapping[(Option[String], Map[String, String]), OAuth2Error] =
+    Mapping.fromDecode[(Option[String], Map[String, String]), OAuth2Error] { carried =>
+      decoded(status, carried._2) match {
+        case DecodeResult.Value(limited: OAuth2Error.RateLimited) =>
+          DecodeResult.Value(
+            limited.copy(retryAfter = carried._1.flatMap(_.toLongOption).getOrElse(0L))
+          )
+        case other => other
+      }
+    } {
+      case limited: OAuth2Error.RateLimited => (Some(limited.retryAfter.toString), limited.body)
+      case error                            => (None, error.body)
+    }
 
   private def decoded(status: StatusCode, body: Map[String, String]): DecodeResult[OAuth2Error] =
     OAuth2Error
@@ -151,6 +168,15 @@ object Endpoints {
           header[Option[String]](Endpoints.ChallengeHeader)
             .and(jsonBody[Map[String, String]])
             .map(challengedBody(status))
+        )
+      )(matches)
+    else if (status == StatusCode.TooManyRequests)
+      oneOfVariantValueMatcher(
+        status,
+        noStore(
+          header[Option[String]](RetryAfterHeader)
+            .and(jsonBody[Map[String, String]])
+            .map(retriedBody(status))
         )
       )(matches)
     else
