@@ -61,7 +61,12 @@ lazy val jose = module("jose")
 
 lazy val store = module("store")
   .dependsOn(core % "compile->compile;test->test", jose % "compile->compile;test->test")
-  .settings(libraryDependencies += "org.typelevel" %% "cats-effect" % "3.6.0")
+  .settings(
+    libraryDependencies ++= Seq(
+      "org.typelevel" %% "cats-effect" % "3.6.0",
+      "com.h2database" % "h2" % "2.3.232" % Test
+    )
+  )
 
 lazy val http = module("http")
   .dependsOn(core, jose % "compile->compile;test->test")
