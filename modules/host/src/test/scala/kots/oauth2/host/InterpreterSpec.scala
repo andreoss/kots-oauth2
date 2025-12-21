@@ -1071,6 +1071,48 @@ class InterpreterSpec extends CatsEffectSuite {
     }
   }
 
+  test("a flooded token endpoint answers too many requests with a retry hint") {
+    val clock = new Clock[IO] {
+      def instant: IO[Instant] = IO.pure(Start)
+    }
+    var calls: Int = 0
+    val entropy = new Entropy[IO] {
+      def bytes(n: Int): IO[Array[Byte]] = IO {
+        calls += 1
+        Array.fill(n)(calls.toByte)
+      }
+    }
+    val form = Map("grant_type" -> "client_credentials", "client_id" -> clientId.value)
+    for {
+      codes <- InMemoryCodeStore.create[IO](clock)
+      tokens <- InMemoryTokenStore.create[IO](clock)
+      grants <- InMemoryGrantStore.create[IO]
+      devices <- InMemoryDeviceStore.create[IO](clock)
+      clients <- InMemoryClientStore.create[IO](List(registered))
+      limiter <- kots.oauth2.store.memory.InMemoryRateLimiter.create[IO](clock, 2, 60L)
+      endpoint = new TokenEndpoint[IO](
+        new RegisteredClientAuthentication[IO](clients),
+        new TokenService[IO](codes, tokens, grants, devices, clock, entropy, LifetimePolicy.defaults)
+      )
+      served = Interpreter.routes[IO](
+        List(Server.token(kots.oauth2.server.Throttle.token(limiter, endpoint)))
+      )
+      first <- served.run(post(form, Some("s3cret"))).value
+      _ <- served.run(post(form, Some("s3cret"))).value
+      third <- served.run(post(form, Some("s3cret"))).value
+      text <- body(third.get)
+    } yield {
+      assertEquals(first.get.status, Status.Ok)
+      assertEquals(third.get.status, Status.TooManyRequests)
+      assertEquals(
+        third.get.headers.headers.find(_.name.toString == Endpoints.RetryAfterHeader).map(_.value),
+        Some("60")
+      )
+      assertEquals(cacheControl(third.get), Some(Endpoints.NoStore))
+      assertEquals(field(text, "error"), "temporarily_unavailable")
+    }
+  }
+
   test("a request to another path is not served") {
     for {
       served <- routes
