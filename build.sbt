@@ -8,6 +8,8 @@ val Http4s = "0.23.30"
 
 ThisBuild / organization := "kots.oauth2"
 ThisBuild / version := "0.1.0-SNAPSHOT"
+ThisBuild / versionScheme := Some("early-semver")
+ThisBuild / licenses := List("Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0"))
 ThisBuild / scalaVersion := Scala2
 ThisBuild / crossScalaVersions := Seq(Scala2, Scala3)
 
@@ -28,8 +30,15 @@ lazy val commonSettings = Seq(
   }),
   Compile / console / scalacOptions := Seq.empty,
   Test / parallelExecution := false,
-  testFrameworks += new TestFramework("munit.Framework")
+  testFrameworks += new TestFramework("munit.Framework"),
+  mimaPreviousArtifacts := previousRelease.value
+    .map(previous => organization.value %% name.value % previous)
+    .toSet
 )
+
+lazy val previousRelease = settingKey[Option[String]]("last published version to check against")
+
+ThisBuild / previousRelease := None
 
 lazy val testSettings = Seq(
   libraryDependencies ++= Seq(
@@ -109,7 +118,11 @@ lazy val host = module("host")
 
 lazy val root = (project in file("."))
   .settings(commonSettings)
-  .settings(name := "kots-oauth2", publish / skip := true)
+  .settings(name := "kots-oauth2", publish / skip := true, mimaPreviousArtifacts := Set.empty)
   .aggregate(core, jose, store, http, server, client, host)
 
 addCommandAlias("lint", "scalafmtCheckAll; scalafmtSbtCheck; scalafixAll --check")
+
+addCommandAlias("compatibility", "+mimaReportBinaryIssues")
+
+addCommandAlias("release", "+publishLocal; compatibility")
