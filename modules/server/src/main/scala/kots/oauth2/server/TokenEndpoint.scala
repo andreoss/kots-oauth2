@@ -77,7 +77,10 @@ final class TokenEndpoint[F[_]: Monad](
     def answered(issued: IssuedToken): TokenResponse =
       if (jkt.isDefined) TokenEndpoint.render(issued).copy(tokenType = TokenResponse.DpopTokenType)
       else TokenEndpoint.render(issued)
-    TokenRequest.from(parameters).toEither match {
+    val enriched =
+      if (parameters.contains("client_id")) parameters
+      else parameters + ("client_id" -> client.id.value)
+    TokenRequest.from(enriched).toEither match {
       case Left(failures) => Monad[F].pure(Left(failures.head))
       case Right(request) =>
         request match {
