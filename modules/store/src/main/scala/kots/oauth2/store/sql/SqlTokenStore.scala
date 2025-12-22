@@ -1,8 +1,5 @@
 package kots.oauth2.store.sql
 
-import java.net.URLDecoder
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -14,15 +11,11 @@ import cats.syntax.flatMap._
 
 import kots.oauth2.core.AccessToken
 import kots.oauth2.core.AccessTokenHash
-import kots.oauth2.core.Action
 import kots.oauth2.core.Audience
-import kots.oauth2.core.AuthorizationDetail
-import kots.oauth2.core.AuthorizationDetailType
 import kots.oauth2.core.AuthorizationDetails
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.Clock
 import kots.oauth2.core.GrantId
-import kots.oauth2.core.Location
 import kots.oauth2.core.ParseFailure
 import kots.oauth2.core.RefreshToken
 import kots.oauth2.core.RefreshTokenHash
@@ -233,22 +226,13 @@ final class SqlTokenStore[F[_]: Sync] private (connect: F[Connection], clock: Cl
       insert.executeUpdate()
       ()
     } finally insert.close()
-    record.details.value.zipWithIndex.foreach { case (detail, index) =>
-      val child = connection.prepareStatement(
-        "INSERT INTO token_details(access_hash, ord, detail_type, locations, actions, fields) " +
-          "VALUES(?, ?, ?, ?, ?, ?)"
-      )
-      try {
-        child.setString(1, record.accessTokenHash.value)
-        child.setInt(2, index)
-        child.setString(3, detail.detailType.value)
-        child.setString(4, detail.locations.map(_.value).mkString(" "))
-        child.setString(5, detail.actions.map(_.value).mkString(" "))
-        child.setString(6, encodeFields(detail.fields))
-        child.executeUpdate()
-        ()
-      } finally child.close()
-    }
+    DetailRows.insert(
+      connection,
+      "token_details",
+      "access_hash",
+      record.accessTokenHash.value,
+      record.details
+    )
   }
 
   private def selectOne(connection: Connection, sql: String, values: String*): Option[TokenRecord] = {
@@ -277,55 +261,8 @@ final class SqlTokenStore[F[_]: Sync] private (connect: F[Connection], clock: Cl
       actor = Option(results.getString("actor")).map(value => required(Subject.from(value)))
     )
 
-  private def detailsOf(connection: Connection, accessHash: String): AuthorizationDetails = {
-    val select = connection.prepareStatement(
-      "SELECT detail_type, locations, actions, fields FROM token_details " +
-        "WHERE access_hash = ? ORDER BY ord"
-    )
-    try {
-      select.setString(1, accessHash)
-      val results = select.executeQuery()
-      val details = Iterator
-        .continually(results)
-        .takeWhile(_.next())
-        .map(row =>
-          AuthorizationDetail.of(
-            required(AuthorizationDetailType.from(row.getString(1))),
-            split(row.getString(2)).map(value => required(Location.from(value))),
-            split(row.getString(3)).map(value => required(Action.from(value))),
-            decodeFields(row.getString(4))
-          )
-        )
-        .toList
-      AuthorizationDetails.of(details)
-    } finally select.close()
-  }
-
-  private def split(joined: String): List[String] =
-    joined.split(' ').toList.filter(_.nonEmpty)
-
-  private def encodeFields(fields: Map[String, String]): String =
-    fields.toList.sorted
-      .map { case (name, value) =>
-        URLEncoder.encode(name, StandardCharsets.UTF_8.name) + "=" +
-          URLEncoder.encode(value, StandardCharsets.UTF_8.name)
-      }
-      .mkString("&")
-
-  private def decodeFields(joined: String): Map[String, String] =
-    joined
-      .split('&')
-      .toList
-      .filter(_.nonEmpty)
-      .map { pair =>
-        pair.split('=') match {
-          case Array(name, value) =>
-            URLDecoder.decode(name, StandardCharsets.UTF_8.name) ->
-              URLDecoder.decode(value, StandardCharsets.UTF_8.name)
-          case _ => URLDecoder.decode(pair, StandardCharsets.UTF_8.name) -> ""
-        }
-      }
-      .toMap
+  private def detailsOf(connection: Connection, accessHash: String): AuthorizationDetails =
+    DetailRows.read(connection, "token_details", "access_hash", accessHash)
 
   private def optional(statement: PreparedStatement, index: Int, value: Option[String]): Unit =
     value match {
@@ -333,8 +270,7 @@ final class SqlTokenStore[F[_]: Sync] private (connect: F[Connection], clock: Cl
       case None          => statement.setNull(index, java.sql.Types.VARCHAR)
     }
 
-  private def required[A](parsed: Either[ParseFailure, A]): A =
-    parsed.left.map(failure => new IllegalStateException(failure.toString): Throwable).toTry.get
+  private def required[A](parsed: Either[ParseFailure, A]): A = DetailRows.required(parsed)
 
   private def withTransaction[A](connection: Connection)(work: => A): A = {
     connection.setAutoCommit(false)
@@ -356,32 +292,12 @@ final class SqlTokenStore[F[_]: Sync] private (connect: F[Connection], clock: Cl
 
 object SqlTokenStore {
 
-  val migrations: List[Migration] = List(
-    Migration(
-      1,
-      "CREATE TABLE tokens(" +
-        "access_hash VARCHAR(64) PRIMARY KEY, refresh_hash VARCHAR(64), " +
-        "grant_id VARCHAR(512) NOT NULL, client_id VARCHAR(512) NOT NULL, " +
-        "subject VARCHAR(512) NOT NULL, scopes VARCHAR(2048) NOT NULL, " +
-        "issued_at TIMESTAMP NOT NULL, access_expires_at TIMESTAMP NOT NULL, " +
-        "refresh_expires_at TIMESTAMP, audience VARCHAR(512), actor VARCHAR(512));" +
-        "CREATE INDEX tokens_refresh ON tokens(refresh_hash);" +
-        "CREATE INDEX tokens_grant ON tokens(grant_id);" +
-        "CREATE TABLE token_details(" +
-        "access_hash VARCHAR(64) NOT NULL, ord INT NOT NULL, detail_type VARCHAR(512) NOT NULL, " +
-        "locations VARCHAR(2048) NOT NULL, actions VARCHAR(2048) NOT NULL, " +
-        "fields VARCHAR(4096) NOT NULL, PRIMARY KEY(access_hash, ord));" +
-        "CREATE TABLE retired_tokens(" +
-        "refresh_hash VARCHAR(64) PRIMARY KEY, grant_id VARCHAR(512) NOT NULL)"
-    )
-  )
-
   def create[F[_]: Sync](
       connect: F[Connection],
       clock: Clock[F]
   ): Either[String, F[SqlTokenStore[F]]] =
     Migrations
-      .of(connect, migrations)
+      .of(connect, Schema.migrations)
       .map(engine =>
         engine.apply.flatMap {
           case Left(reason) => Sync[F].raiseError(new IllegalStateException(reason))
