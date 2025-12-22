@@ -106,6 +106,15 @@ lazy val host = module("host")
   .dependsOn(server, client, jose % "test->test")
   .settings(
     Compile / run / mainClass := Some("kots.oauth2.host.DevServer"),
+    assembly / mainClass := Some("kots.oauth2.host.DevServer"),
+    assembly / assemblyJarName := "oauth2-host.jar",
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", "versions", _ @_*) => MergeStrategy.first
+      case PathList("META-INF", remainder @ _*) if remainder.lastOption.exists(_ == "module-info.class") =>
+        MergeStrategy.discard
+      case "module-info.class" => MergeStrategy.discard
+      case other               => (assembly / assemblyMergeStrategy).value(other)
+    },
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % Tapir,
       "org.http4s" %% "http4s-ember-server" % Http4s,
