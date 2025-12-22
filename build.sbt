@@ -102,7 +102,8 @@ lazy val host = module("host")
       "org.http4s" %% "http4s-ember-server" % Http4s,
       "org.http4s" %% "http4s-ember-client" % Http4s % Test,
       "org.typelevel" %% "cats-effect-testkit" % "3.6.0" % Test,
-      "io.circe" %% "circe-parser" % Circe % Test
+      "io.circe" %% "circe-parser" % Circe % Test,
+      "com.h2database" % "h2" % "2.3.232" % Test
     )
   )
 
