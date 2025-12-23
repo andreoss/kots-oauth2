@@ -125,6 +125,18 @@ class TokenClientSpec extends CatsEffectSuite {
     } yield assertEquals(refused, Left(OAuth2Error.InvalidGrant()))
   }
 
+  test("a numeric lifetime is parsed like the quoted form") {
+    val numeric = """{"access_token":"at-1","token_type":"Bearer","expires_in":7200}"""
+    for {
+      seen <- Ref.of[IO, Option[(Map[String, String], Option[String])]](None)
+      tokens = new TokenClient[IO](transport(seen, ok(numeric)), endpoint)
+      granted <- tokens.clientCredentials(clientId, secret, None)
+    } yield {
+      assertEquals(granted.toOption.map(_.expiresIn), Some(7200L))
+      assertEquals(granted.toOption.map(_.refreshToken), Some(None))
+    }
+  }
+
   test("an unreadable answer is a server error") {
     for {
       seen <- Ref.of[IO, Option[(Map[String, String], Option[String])]](None)

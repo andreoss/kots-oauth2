@@ -151,6 +151,17 @@ object TokenClient {
 
   private val unreadable: OAuth2Error = OAuth2Error.ServerError(Some("unreadable answer"))
 
+  private def seconds(cursor: io.circe.HCursor): Either[OAuth2Error, Long] =
+    cursor.get[Long]("expires_in") match {
+      case Right(value) => Right(value)
+      case Left(_)      =>
+        cursor
+          .get[String]("expires_in")
+          .left
+          .map(_ => unreadable)
+          .flatMap(_.toLongOption.toRight(unreadable))
+    }
+
   private[client] def grant(text: String): Either[OAuth2Error, Grant] =
     for {
       json <- io.circe.parser.parse(text).left.map(_ => unreadable)
@@ -161,11 +172,7 @@ object TokenClient {
         .map(_ => unreadable)
         .flatMap(raw => AccessToken.from(raw).left.map(_ => unreadable))
       tokenType <- cursor.get[String]("token_type").left.map(_ => unreadable)
-      expiresIn <- cursor
-        .get[String]("expires_in")
-        .left
-        .map(_ => unreadable)
-        .flatMap(raw => raw.toLongOption.toRight(unreadable))
+      expiresIn <- seconds(cursor)
       refresh <- cursor
         .get[String]("refresh_token")
         .toOption
