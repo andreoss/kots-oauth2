@@ -125,6 +125,15 @@ class TokenClientSpec extends CatsEffectSuite {
     } yield assertEquals(refused, Left(OAuth2Error.InvalidGrant()))
   }
 
+  test("an empty scope string reads as no scope at all") {
+    val bare = """{"access_token":"at-1","token_type":"bearer","expires_in":3599,"scope":""}"""
+    for {
+      seen <- Ref.of[IO, Option[(Map[String, String], Option[String])]](None)
+      tokens = new TokenClient[IO](transport(seen, ok(bare)), endpoint)
+      granted <- tokens.clientCredentials(clientId, secret, None)
+    } yield assertEquals(granted.toOption.map(_.scope), Some(kots.oauth2.core.Scopes.empty))
+  }
+
   test("a numeric lifetime is parsed like the quoted form") {
     val numeric = """{"access_token":"at-1","token_type":"Bearer","expires_in":7200}"""
     for {
