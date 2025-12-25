@@ -125,10 +125,24 @@ lazy val host = module("host")
     )
   )
 
+lazy val example = Project("example", file("example"))
+  .dependsOn(client, http, core, jose)
+  .settings(commonSettings, testSettings)
+  .settings(
+    name := "oauth2-example",
+    publish / skip := true,
+    mimaPreviousArtifacts := Set.empty,
+    coverageMinimumStmtTotal := 0,
+    libraryDependencies ++= Seq(
+      "io.circe" %% "circe-parser" % Circe,
+      "org.http4s" %% "http4s-ember-client" % Http4s
+    )
+  )
+
 lazy val root = (project in file("."))
   .settings(commonSettings)
   .settings(name := "kots-oauth2", publish / skip := true, mimaPreviousArtifacts := Set.empty)
-  .aggregate(core, jose, store, http, server, client, host)
+  .aggregate(core, jose, store, http, server, client, host, example)
 
 addCommandAlias("lint", "scalafmtCheckAll; scalafmtSbtCheck; scalafixAll --check")
 
