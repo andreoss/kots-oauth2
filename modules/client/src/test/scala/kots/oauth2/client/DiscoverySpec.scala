@@ -141,4 +141,18 @@ class DiscoverySpec extends CatsEffectSuite {
       count <- fetches.get
     } yield assertEquals(count, 4)
   }
+
+  test("a published key set keeps only the usable signing keys") {
+    val text =
+      s"""{"keys":[
+         |{"kid":"sig-1","kty":"RSA","alg":"RS256","use":"sig","n":"${Fakes.Modulus}","e":"AQAB"},
+         |{"kid":"enc-1","kty":"RSA","alg":"RSA-OAEP","use":"enc","n":"${Fakes.Modulus}","e":"AQAB"},
+         |{"kid":"odd-1","kty":"oct","alg":"HS256","k":"secret"},
+         |{"kty":"RSA","alg":"RS256","n":"${Fakes.Modulus}","e":"AQAB"}
+         |]}""".stripMargin
+    val parsed = Discovery.keys(text).toOption.get
+    assertEquals(parsed.keys.map(_.kid.value), List("sig-1"))
+    assert(Discovery.keys("""{"nokeys":true}""").isLeft)
+    assert(Discovery.keys("not json").isLeft)
+  }
 }

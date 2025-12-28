@@ -18,7 +18,8 @@ final class BearerGuard[F[_]: Monad](
     keys: F[Either[ParseFailure, Jwks]],
     issuer: Issuer,
     clock: Clock[F],
-    audience: Option[Audience] = None
+    audience: Option[Audience] = None,
+    tokenTypes: Set[String] = Set(Jwt.AccessTokenType)
 ) {
 
   def verify(
@@ -36,7 +37,7 @@ final class BearerGuard[F[_]: Monad](
             Monad[F].pure(Left(BearerGuard.invalidToken): Either[BearerGuard.Challenge, JwtClaims])
           case Right(published) =>
             clock.instant.map { now =>
-              Jwt.claims(token, published, now) match {
+              Jwt.claims(token, published, now, tokenTypes) match {
                 case Left(_)                                  => Left(BearerGuard.invalidToken)
                 case Right(claims) if claims.issuer != issuer => Left(BearerGuard.invalidToken)
                 case Right(claims) if audience.exists(demanded => !claims.audience.contains(demanded)) =>

@@ -39,9 +39,16 @@ object Jwt {
   def issue(signing: SigningKey, claims: JwtClaims): Either[ParseFailure, String] =
     Jws.sign(signing.alg, signing.kid, signing.key, render(claims), AccessTokenType)
 
-  def claims(compact: String, keys: Jwks, now: Instant): Either[ParseFailure, JwtClaims] =
+  def claims(
+      compact: String,
+      keys: Jwks,
+      now: Instant,
+      types: Set[String] = Set(AccessTokenType)
+  ): Either[ParseFailure, JwtClaims] =
     for {
-      payload <- Jws.verify(compact, keys, AccessTokenType)
+      payload <- types.toList
+        .map(typ => Jws.verify(compact, keys, typ))
+        .reduceLeft((first, second) => first.orElse(second))
       parsed <- parse(payload)
       _ <- Either.cond(now.isBefore(parsed.expiresAt), (), ParseFailure("Jwt", "expired"))
     } yield parsed
@@ -80,7 +87,9 @@ object Jwt {
       cursor = json.hcursor
       issuer <- string(cursor, "iss").flatMap(Issuer.from)
       subject <- string(cursor, "sub").flatMap(Subject.from)
-      clientId <- string(cursor, "client_id").flatMap(ClientId.from)
+      clientId <- string(cursor, "client_id")
+        .orElse(string(cursor, "azp"))
+        .flatMap(ClientId.from)
       tokenId <- string(cursor, "jti").flatMap(JwtId.from)
       issuedAt <- number(cursor, "iat")
       expiresAt <- number(cursor, "exp")

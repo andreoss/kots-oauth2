@@ -54,10 +54,18 @@ object State {
 final case class Issuer private (value: String)
 
 object Issuer {
+
+  private val LoopbackHosts: Set[String] = Set("localhost", "127.0.0.1", "[::1]")
+
   def from(raw: String): Either[ParseFailure, Issuer] =
     for {
       uri <- Either.catchNonFatal(new java.net.URI(raw)).leftMap(_ => ParseFailure("Issuer", "not a uri"))
-      _ <- Either.cond(uri.getScheme == "https", (), ParseFailure("Issuer", "not https"))
+      _ <- Either.cond(
+        uri.getScheme == "https" ||
+          (uri.getScheme == "http" && LoopbackHosts.contains(uri.getHost)),
+        (),
+        ParseFailure("Issuer", "not https")
+      )
       _ <- Either.cond(uri.getQuery == null, (), ParseFailure("Issuer", "has a query"))
       _ <- Either.cond(uri.getFragment == null, (), ParseFailure("Issuer", "has a fragment"))
     } yield new Issuer(raw)
