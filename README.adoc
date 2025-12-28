@@ -1,0 +1,138 @@
+= kots-oauth2
+
+An OAuth 2.0 authorization server and client in Scala: a pure core on Cats, tapir endpoint
+descriptions, and an http4s backend. Cross-built for Scala 2.13 and 3.
+
+== Modules
+
+[cols="1,3"]
+|===
+| Module | Contents
+
+| `core`
+| Pure model: ids, scope, errors, PKCE, tokens, metadata, form and JSON wire codecs.
+
+| `jose`
+| JWS, JWT, JWK sets, HS256, DPoP proofs.
+
+| `store`
+| Store ports with in-memory and SQL adapters, plus forward-only migrations.
+
+| `http`
+| tapir endpoint descriptions, strict form decoding, response documents.
+
+| `server`
+| Endpoint logic: authorize, token, PAR, device, introspection, revocation, registration,
+  throttling, replay and consent rules.
+
+| `client`
+| Token client, discovery, authorization URLs, device poller, refresher, DPoP signer, bearer guard.
+
+| `host`
+| Runnable server and the key and migration tools.
+|===
+
+== Build and verify
+
+[source,shell]
+----
+sbt +test            # cross-build and test
+sbt lint             # scalafmt and scalafix checks
+sbt compatibility    # binary compatibility (MiMa)
+sbt +publishLocal    # publish locally
+----
+
+== Run the server
+
+[source,shell]
+----
+sbt host/run                # http://localhost:8080
+./bin/container             # assembly + docker compose up --build
+sbt "host/runMain kots.oauth2.host.KeysTool"     # key generation
+sbt "host/runMain kots.oauth2.host.MigrateTool"  # schema migrations
+----
+
+Served endpoints: `/authorize`, `/token`, `/par`, `/device_authorization`, `/introspection`,
+`/revocation`, `/register`, `/jwks`, `/health`, `/ready`,
+`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`.
+
+== Client
+
+[source,scala]
+----
+import kots.oauth2.client.*
+import kots.oauth2.core.*
+
+def uri(raw: String): EndpointUri = EndpointUri.from(raw).fold(f => sys.error(f.reason), identity)
+
+val tokens = new TokenClient[IO](http, uri("https://issuer.example/token"), dpop)
+
+val grant   = tokens.clientCredentials(clientId, secret, Scopes.parse("read write").toOption)
+val code    = tokens.authorizationCode(code, verifier, redirectUri, clientId, secret)
+val renewed = tokens.refresh(refreshToken, clientId, secret)
+val device  = tokens.device(deviceCode, clientId, secret)
+----
+
+Authorization requests and discovery:
+
+[source,scala]
+----
+val urls     = new AuthorizationUrls[IO](entropy, uri("https://issuer.example/authorize"))
+val ticket   = urls.begin(clientId, redirectUri, scope)          // state + PKCE verifier
+val redirect = ticket.map(_.location)                            // state + PKCE challenge
+
+val found = Discovery.create[IO](http, issuer, clock, ttl)
+val meta  = found.flatMap(_.metadata)
+val keys  = found.flatMap(_.keys)
+----
+
+Refreshing and polling:
+
+[source,scala]
+----
+val refresher = Refresher.create[IO](token => tokens.refresh(token, clientId, secret))
+val kept      = refresher.flatMap(_.refresh(refreshToken))        // retries transient failures
+
+val waited = DevicePoller.await[IO](interval)                     // honours slow_down
+----
+
+== Server
+
+Endpoint logic is effect-polymorphic and served as tapir server endpoints:
+
+[source,scala]
+----
+import kots.oauth2.http.Server
+import sttp.tapir.server.http4s.Http4sServerInterpreter
+
+val routes = Http4sServerInterpreter[IO]().toRoutes(
+  List(
+    Server.token(new TokenEndpoint[IO](authentication, service)),
+    Server.introspection(new IntrospectionEndpoint[IO](authentication, tokens, grants)),
+    Server.metadata(document),
+    Server.jwks(keys.current)
+  )
+)
+----
+
+== Examples
+
+`example/src/main/scala/kots/oauth2/example/ProviderExample.scala`::
+  Minimal provider client: read a metadata document, then take a client credentials grant.
+
+`example/src/test/scala/kots/oauth2/example/ProviderExampleSpec.scala`::
+  Offline checks on provider documents, including unreadable and relative endpoints.
+
+`example/src/test/scala/kots/oauth2/example/HydraSpec.scala`, `KeycloakSpec.scala`::
+  End-to-end runs against independent authorization servers in testcontainers;
+  enabled with `OAUTH2_E2E=1 sbt example/test`.
+
+`example/interop/main.go`::
+  Independent Go client (`golang.org/x/oauth2`) taking a grant from this server.
+
+`references/`::
+  Vendored third-party client and server implementations used as an interop oracle.
+
+== Licence
+
+LGPL-3
