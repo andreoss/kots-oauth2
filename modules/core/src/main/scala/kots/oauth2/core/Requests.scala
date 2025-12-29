@@ -187,8 +187,8 @@ object TokenRequest {
       kind: Option[ExchangeTokenType]
   ): ValidatedNec[OAuth2Error, Option[AccessToken]] =
     (token, kind) match {
-      case (Some(value), Some(_)) => (Some(value): Option[AccessToken]).validNec
-      case (None, None)           => (None: Option[AccessToken]).validNec
+      case (Some(value), Some(_)) => value.some.validNec
+      case (None, None)           => none[AccessToken].validNec
       case _                      =>
         (OAuth2Error.InvalidRequest(
           Some("actor_token and actor_token_type go together")

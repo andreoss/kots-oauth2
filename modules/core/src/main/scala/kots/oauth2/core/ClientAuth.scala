@@ -77,11 +77,11 @@ object ClientAuthInput {
 
   private def assertionOf(params: Map[String, String]): ValidatedNec[OAuth2Error, Option[ClientAssertion]] =
     (params.get("client_assertion"), params.get("client_assertion_type")) match {
-      case (scala.None, scala.None)                => (scala.None: Option[ClientAssertion]).validNec
+      case (scala.None, scala.None)                => none[ClientAssertion].validNec
       case (Some(raw), Some(ClientAssertion.Type)) =>
         ClientAssertion
           .from(raw)
-          .map(value => Some(value): Option[ClientAssertion])
+          .map(_.some)
           .leftMap(_ => OAuth2Error.InvalidClient(): OAuth2Error)
           .toValidatedNec
       case _ => (OAuth2Error.InvalidClient(): OAuth2Error).invalidNec
