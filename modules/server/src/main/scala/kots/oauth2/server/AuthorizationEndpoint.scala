@@ -1,8 +1,7 @@
 package kots.oauth2.server
 
+import cats.syntax.all._
 import cats.Monad
-import cats.syntax.flatMap._
-import cats.syntax.functor._
 
 import kots.oauth2.core.AuthorizationCode
 import kots.oauth2.core.AuthorizationDetails
@@ -26,6 +25,9 @@ final class AuthorizationEndpoint[F[_]: Monad](
     pushed: Option[PushedRequestStore[F]] = None
 ) extends AuthorizeLogic[F] {
 
+  private def invalid(reason: String): F[Either[OAuth2Error, AuthorizationRedirect]] =
+    (OAuth2Error.InvalidRequest(Some(reason)): OAuth2Error).asLeft[AuthorizationRedirect].pure[F]
+
   def apply(parameters: Map[String, String]): F[Either[OAuth2Error, AuthorizationRedirect]] =
     parameters.get("request_uri") match {
       case None      => handle(parameters)
@@ -37,7 +39,7 @@ final class AuthorizationEndpoint[F[_]: Monad](
       parameters: Map[String, String]
   ): F[Either[OAuth2Error, AuthorizationRedirect]] =
     if ((parameters.keySet -- AuthorizationEndpoint.PushedParameters).nonEmpty)
-      Monad[F].pure(Left(OAuth2Error.InvalidRequest(Some("request_uri stands alone")): OAuth2Error))
+      invalid("request_uri stands alone")
     else
       (
         RequestUri
@@ -46,37 +48,35 @@ final class AuthorizationEndpoint[F[_]: Monad](
           .map(_ => OAuth2Error.InvalidRequest(Some("not a request_uri")): OAuth2Error),
         pushed
       ) match {
-        case (Left(error), _) => Monad[F].pure(Left(error))
+        case (Left(error), _) => error.asLeft.pure[F]
         case (_, None)        =>
-          Monad[F].pure(Left(OAuth2Error.InvalidRequest(Some("request_uri is not supported")): OAuth2Error))
+          invalid("request_uri is not supported")
         case (Right(uri), Some(store)) =>
           store.consume(uri).flatMap {
             case Some(record) if parameters.get("client_id").contains(record.clientId.value) =>
               handle(record.parameters)
             case _ =>
-              Monad[F].pure(Left(OAuth2Error.InvalidRequest(Some("unknown request_uri")): OAuth2Error))
+              invalid("unknown request_uri")
           }
       }
 
   private def handle(parameters: Map[String, String]): F[Either[OAuth2Error, AuthorizationRedirect]] =
     AuthorizationRequest.from(parameters).toEither match {
-      case Left(failures) => Monad[F].pure(Left(failures.head))
+      case Left(failures) => failures.head.asLeft.pure[F]
       case Right(request) =>
         clients.find(request.clientId).flatMap {
           case None =>
-            Monad[F].pure(Left(OAuth2Error.InvalidRequest(Some("client is not registered")): OAuth2Error))
+            invalid("client is not registered")
           case Some(client) =>
             service.target(client, request.redirectUri) match {
-              case Left(error)   => Monad[F].pure(Left(error))
+              case Left(error)   => error.asLeft.pure[F]
               case Right(target) =>
                 login.subject.flatMap {
                   case None =>
-                    Monad[F].pure(
-                      Right(
-                        AuthorizationEndpoint
-                          .refused(target, OAuth2Error.AccessDenied(), request.state, issuer)
-                      )
-                    )
+                    AuthorizationEndpoint
+                      .refused(target, OAuth2Error.AccessDenied(), request.state, issuer)
+                      .asRight
+                      .pure[F]
                   case Some(subject) =>
                     service.issue(request, client, subject, AuthorizationDetails.empty).map {
                       case Right(code) =>

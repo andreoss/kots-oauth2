@@ -32,7 +32,7 @@ final class DeviceAuthorizationService[F[_]: Monad](
   ): F[Either[OAuth2Error, DeviceAuthorizationResponse]] =
     request.scope match {
       case Some(scopes) if !client.allowsScopes(scopes) =>
-        Monad[F].pure(Left(OAuth2Error.InvalidScope(): OAuth2Error))
+        (OAuth2Error.InvalidScope(): OAuth2Error).asLeft.pure[F]
       case requested =>
         for {
           now <- clock.instant
@@ -45,7 +45,7 @@ final class DeviceAuthorizationService[F[_]: Monad](
               .leftMap(DeviceAuthorizationService.failure)
           ).mapN((_, _))
           result <- minted.fold(
-            error => Monad[F].pure(Left(error): Either[OAuth2Error, DeviceAuthorizationResponse]),
+            error => error.asLeft[DeviceAuthorizationResponse].pure[F],
             { case (deviceCode, userCode) =>
               val lifetime = LifetimePolicy.of(policy, TokenType.DeviceCode)
               devices

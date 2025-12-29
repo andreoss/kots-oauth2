@@ -1,5 +1,6 @@
 package kots.oauth2.server
 
+import cats.syntax.all._
 import cats.Monad
 
 import kots.oauth2.core.OAuth2Error
@@ -16,7 +17,7 @@ final class RegistrationEndpoint[F[_]: Monad](
 
   def apply(body: Map[String, Json]): F[Either[OAuth2Error, ClientRegistrationResponse]] =
     Registration.parse(body) match {
-      case Left(error)         => Monad[F].pure(Left(error))
+      case Left(error)         => error.asLeft.pure[F]
       case Right(registration) => service.register(registration)
     }
 
@@ -29,7 +30,7 @@ final class RegistrationEndpoint[F[_]: Monad](
       body: Map[String, Json]
   ): F[Either[OAuth2Error, ClientRegistrationResponse]] =
     Registration.parse(body) match {
-      case Left(error)         => Monad[F].pure(Left(error))
+      case Left(error)         => error.asLeft.pure[F]
       case Right(registration) => service.update(clientId, token, registration)
     }
 

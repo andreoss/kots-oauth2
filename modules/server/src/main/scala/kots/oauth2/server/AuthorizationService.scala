@@ -39,10 +39,10 @@ final class AuthorizationService[F[_]: Monad](
       details: AuthorizationDetails
   ): F[Either[OAuth2Error, AuthorizationCode]] =
     validate(request, client).fold(
-      errors => Monad[F].pure(Left(errors.head)),
+      errors => errors.head.asLeft.pure[F],
       { case (redirectUri, scopes, pkce) =>
         consent.decide(request.clientId, subject, scopes).flatMap {
-          case false => Monad[F].pure(Left(OAuth2Error.AccessDenied(): OAuth2Error))
+          case false => (OAuth2Error.AccessDenied(): OAuth2Error).asLeft.pure[F]
           case true  => mint(request.clientId, redirectUri, subject, scopes, details, pkce, request.resource)
         }
       }
@@ -100,7 +100,7 @@ final class AuthorizationService[F[_]: Monad](
           OAuth2Error.ServerError(Some(s"${failure.typeName}: ${failure.reason}")): OAuth2Error
         )
       issued <- parsed.fold(
-        error => Monad[F].pure(Left(error)),
+        error => error.asLeft.pure[F],
         code =>
           codes
             .save(
