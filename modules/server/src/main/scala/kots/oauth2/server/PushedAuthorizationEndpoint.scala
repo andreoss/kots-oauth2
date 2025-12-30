@@ -22,7 +22,11 @@ final class PushedAuthorizationEndpoint[F[_]: Monad](
       case Right(input)   =>
         authentication.authenticate(input).flatMap {
           case Left(error)   => error.asLeft.pure[F]
-          case Right(client) => service.push(parameters, client)
+          case Right(client) =>
+            ClientIdentity.named(parameters, client) match {
+              case Left(error)     => error.asLeft[PushedAuthorizationResponse].pure[F]
+              case Right(enriched) => service.push(enriched, client)
+            }
         }
     }
 }
