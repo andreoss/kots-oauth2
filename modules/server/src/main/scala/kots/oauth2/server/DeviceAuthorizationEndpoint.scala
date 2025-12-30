@@ -24,9 +24,13 @@ final class DeviceAuthorizationEndpoint[F[_]: Monad](
         authentication.authenticate(input).flatMap {
           case Left(error)   => error.asLeft.pure[F]
           case Right(client) =>
-            DeviceAuthorizationRequest.from(parameters).toEither match {
-              case Left(failures) => failures.head.asLeft.pure[F]
-              case Right(request) => service.authorize(request, client)
+            ClientIdentity.named(parameters, client) match {
+              case Left(error)     => error.asLeft[DeviceAuthorizationResponse].pure[F]
+              case Right(enriched) =>
+                DeviceAuthorizationRequest.from(enriched).toEither match {
+                  case Left(failures) => failures.head.asLeft.pure[F]
+                  case Right(request) => service.authorize(request, client)
+                }
             }
         }
     }

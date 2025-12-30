@@ -1195,4 +1195,31 @@ class InterpreterSpec extends CatsEffectSuite {
       text <- body(answered.get)
     } yield assert(member(text, "expires_in").exists(_.isNumber), text)
   }
+
+  test("a device authorization serves a client that authenticated without naming itself") {
+    for {
+      pair <- application
+      (served, _, _, _) = pair
+      answered <- served.run(postTo("/device_authorization", Map("scope" -> "read"), Some("s3cret"))).value
+      response = answered.get
+      text <- body(response)
+    } yield {
+      assertEquals(response.status, Status.Ok)
+      assert(field(text, "device_code").nonEmpty, text)
+    }
+  }
+
+  test("a body client id naming another client is refused at both endpoints") {
+    for {
+      pair <- application
+      (served, _, _, _) = pair
+      device <- served
+        .run(postTo("/device_authorization", Map("client_id" -> "other-client"), Some("s3cret")))
+        .value
+      token <- served.run(post(exchange + ("client_id" -> "other-client"), Some("s3cret"))).value
+    } yield {
+      assertEquals(device.get.status, Status.Unauthorized)
+      assertEquals(token.get.status, Status.Unauthorized)
+    }
+  }
 }

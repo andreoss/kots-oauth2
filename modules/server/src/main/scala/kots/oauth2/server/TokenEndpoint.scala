@@ -76,10 +76,10 @@ final class TokenEndpoint[F[_]: Monad](
     def answered(issued: IssuedToken): TokenResponse =
       if (jkt.isDefined) TokenEndpoint.render(issued).copy(tokenType = TokenResponse.DpopTokenType)
       else TokenEndpoint.render(issued)
-    val enriched =
-      if (parameters.contains("client_id")) parameters
-      else parameters + ("client_id" -> client.id.value)
-    TokenRequest.from(enriched).toEither match {
+    ClientIdentity.named(parameters, client) match {
+      case Left(error)     => error.asLeft[TokenResponse].pure[F]
+      case Right(enriched) =>
+        TokenRequest.from(enriched).toEither match {
       case Left(failures) => failures.head.asLeft.pure[F]
       case Right(request) =>
         request match {
@@ -99,6 +99,7 @@ final class TokenEndpoint[F[_]: Monad](
               )
           case idjag: TokenRequest.IdJag =>
             tokens.idJag(idjag, client, jkt, x5t).map(_.map(answered))
+        }
         }
     }
   }
