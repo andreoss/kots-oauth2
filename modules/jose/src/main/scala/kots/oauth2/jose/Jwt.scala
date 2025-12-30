@@ -39,6 +39,8 @@ object Jwt {
 
   val AccessTokenType: String = "at+jwt"
 
+  val IdentityAssertionTyp: String = "oauth-id-jag+jwt"
+
   def issue(signing: SigningKey, claims: JwtClaims): Either[ParseFailure, String] =
     Jws.sign(signing.alg, signing.kid, signing.key, render(claims), AccessTokenType)
 
@@ -55,6 +57,11 @@ object Jwt {
         .reduceLeft((first, second) => first.orElse(second))
       parsed <- parse(payload)
       _ <- Either.cond(now.minus(skew).isBefore(parsed.expiresAt), (), ParseFailure("Jwt", "expired"))
+      _ <- Either.cond(
+        !now.plus(skew).isBefore(parsed.issuedAt),
+        (),
+        ParseFailure("Jwt", "issued in the future")
+      )
       _ <- parsed.notBefore match {
         case None        => Right(())
         case Some(valid) =>

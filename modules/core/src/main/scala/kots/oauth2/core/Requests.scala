@@ -22,9 +22,10 @@ object GrantType {
   case object ClientCredentials extends GrantType("client_credentials")
   case object DeviceCode extends GrantType("urn:ietf:params:oauth:grant-type:device_code")
   case object TokenExchange extends GrantType("urn:ietf:params:oauth:grant-type:token-exchange")
+  case object IdJag extends GrantType("urn:ietf:params:oauth:grant-type:jwt-bearer")
 
   val all: List[GrantType] =
-    List(AuthorizationCode, RefreshToken, ClientCredentials, DeviceCode, TokenExchange)
+    List(AuthorizationCode, RefreshToken, ClientCredentials, DeviceCode, TokenExchange, IdJag)
 
   def from(raw: String): Either[ParseFailure, GrantType] =
     all.find(_.value == raw).toRight(ParseFailure("GrantType", "not a registered grant type"))
@@ -119,6 +120,13 @@ object TokenRequest {
       clientId: ClientId
   ) extends TokenRequest
 
+  final case class IdJag(
+      assertion: IdentityAssertion,
+      scope: Option[Scopes],
+      resource: Option[ResourceIndicator],
+      clientId: ClientId
+  ) extends TokenRequest
+
   def from(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
     Params
       .required(params, "grant_type")(raw =>
@@ -130,6 +138,7 @@ object TokenRequest {
         case GrantType.ClientCredentials => clientCredentials(params)
         case GrantType.DeviceCode        => device(params)
         case GrantType.TokenExchange     => exchange(params)
+        case GrantType.IdJag             => idJag(params)
       }
 
   private def authorizationCode(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
@@ -182,6 +191,14 @@ object TokenRequest {
       Exchange(subjectToken, actorToken, audience, resource, scope, clientId)
     }
 
+  private def idJag(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
+    (
+      Params.field(params, "assertion")(IdentityAssertion.from),
+      Params.fieldOpt(params, "scope")(Scopes.parse),
+      Params.fieldOpt(params, "resource")(ResourceIndicator.from),
+      Params.field(params, "client_id")(ClientId.from)
+    ).mapN(IdJag.apply)
+
   private def actor(
       token: Option[AccessToken],
       kind: Option[ExchangeTokenType]
@@ -205,6 +222,19 @@ object ExchangeTokenType {
 
   def from(raw: String): Either[ParseFailure, ExchangeTokenType] =
     all.find(_.value == raw).toRight(ParseFailure("ExchangeTokenType", "not a supported token type"))
+}
+
+final case class IdentityAssertion private (value: String)
+
+object IdentityAssertion {
+  def from(raw: String): Either[ParseFailure, IdentityAssertion] = {
+    val parts = raw.split('.')
+    Either.cond(
+      parts.length == 3 && parts.forall(_.nonEmpty),
+      new IdentityAssertion(raw),
+      ParseFailure("IdentityAssertion", "not a compact jws")
+    )
+  }
 }
 
 final case class DeviceAuthorizationRequest(

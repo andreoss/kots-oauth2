@@ -102,6 +102,33 @@ class JwtSpec extends FunSuite {
     )
   }
 
+  test("a token issued in the future is refused within a bounded skew only") {
+    val future = claims.copy(issuedAt = Start.plusSeconds(120L))
+    val compact = Jwt.issue(Fakes.signingKey, future).toOption.get
+    assert(Jwt.claims(compact, published, Start).isLeft)
+    assertEquals(
+      Jwt.claims(compact, published, Start, Set(Jwt.AccessTokenType), java.time.Duration.ofSeconds(120L)),
+      Right(future)
+    )
+  }
+
+  test("an identity assertion round trips its claims and type") {
+    val compact = Jws
+      .sign(
+        Alg.RS256,
+        Fakes.keyId("key-1"),
+        Fakes.signingPair.getPrivate,
+        Jwt.render(claims),
+        Jwt.IdentityAssertionTyp
+      )
+      .toOption
+      .get
+    assertEquals(
+      Jwt.claims(compact, published, Start, Set(Jwt.IdentityAssertionTyp)),
+      Right(claims)
+    )
+  }
+
   test("a key bound token round trips the confirmation thumbprint") {
     val bound = claims.copy(jkt = Dpop.thumbprint(Fakes.signingJwk).toOption)
     val compact = Jwt.issue(Fakes.signingKey, bound).toOption.get
