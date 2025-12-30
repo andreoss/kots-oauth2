@@ -273,6 +273,9 @@ class InterpreterSpec extends CatsEffectSuite {
       .flatMap(_.hcursor.get[String](name).toOption)
       .getOrElse(sys.error(s"no $name in $text"))
 
+  private def member(text: String, name: String): Option[io.circe.Json] =
+    io.circe.parser.parse(text).toOption.flatMap(_.hcursor.downField(name).focus)
+
   private def revoke(token: String, hint: String): Map[String, String] =
     Map("token" -> token, "token_type_hint" -> hint)
 
@@ -455,7 +458,7 @@ class InterpreterSpec extends CatsEffectSuite {
       text <- body(response)
     } yield {
       assertEquals(response.status, Status.Ok)
-      assertEquals(field(text, "active"), "true")
+      assertEquals(member(text, "active"), Some(io.circe.Json.True))
       assertEquals(field(text, "client_id"), clientId.value)
       assertEquals(field(text, "scope"), "read")
       assertEquals(field(text, "token_type"), "Bearer")
@@ -470,7 +473,7 @@ class InterpreterSpec extends CatsEffectSuite {
       text <- body(response)
     } yield {
       assertEquals(response.status, Status.Ok)
-      assertEquals(field(text, "active"), "false")
+      assertEquals(member(text, "active"), Some(io.circe.Json.False))
       assert(!text.contains("client_id"))
     }
   }
@@ -485,7 +488,7 @@ class InterpreterSpec extends CatsEffectSuite {
         .run(postTo("/introspection", revoke(refresh, "refresh_token"), Some("s3cret")))
         .value
       text <- body(introspected.get)
-    } yield assertEquals(field(text, "active"), "false")
+    } yield assertEquals(member(text, "active"), Some(io.circe.Json.False))
   }
 
   test("introspection without credentials is answered with unauthorized") {
@@ -964,8 +967,8 @@ class InterpreterSpec extends CatsEffectSuite {
       assert(field(text, "device_code").nonEmpty)
       assert(field(text, "user_code").contains("-"))
       assertEquals(field(text, "verification_uri"), verification.value)
-      assertEquals(field(text, "expires_in"), "1800")
-      assertEquals(field(text, "interval"), "5")
+      assertEquals(member(text, "expires_in"), Some(io.circe.Json.fromLong(1800L)))
+      assertEquals(member(text, "interval"), Some(io.circe.Json.fromLong(5L)))
       assertEquals(cacheControl(response), Some(Endpoints.NoStore))
     }
   }
@@ -1120,5 +1123,76 @@ class InterpreterSpec extends CatsEffectSuite {
         .run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/other")))
         .value
     } yield assertEquals(answered, None)
+  }
+
+  test("the token response renders expires_in as a number") {
+    for {
+      served <- routes
+      answered <- served.run(post(exchange, Some("s3cret"))).value
+      text <- body(answered.get)
+    } yield assert(member(text, "expires_in").exists(_.isNumber), text)
+  }
+
+  test("the device response renders expires_in and interval as numbers") {
+    for {
+      pair <- application
+      (served, _, _, _) = pair
+      answered <- served
+        .run(postTo("/device_authorization", Map("client_id" -> clientId.value), Some("s3cret")))
+        .value
+      text <- body(answered.get)
+    } yield {
+      assert(member(text, "expires_in").exists(_.isNumber), text)
+      assert(member(text, "interval").exists(_.isNumber), text)
+    }
+  }
+
+  test("introspection renders active as a boolean") {
+    for {
+      served <- routes
+      answered <- served.run(postTo("/introspection", revoke("absent", "access_token"), Some("s3cret"))).value
+      text <- body(answered.get)
+    } yield assert(member(text, "active").exists(_.isBoolean), text)
+  }
+
+  test("introspection renders exp, iat and nbf as numeric dates") {
+    for {
+      served <- routes
+      answered <- served.run(post(exchange, Some("s3cret"))).value
+      issued <- body(answered.get).map(field(_, "access_token"))
+      introspected <- served
+        .run(postTo("/introspection", revoke(issued, "access_token"), Some("s3cret")))
+        .value
+      text <- body(introspected.get)
+    } yield {
+      assert(member(text, "exp").exists(_.isNumber), text)
+      assert(member(text, "iat").exists(_.isNumber), text)
+      assert(member(text, "nbf").exists(_.isNumber), text)
+    }
+  }
+
+  test("the pushed authorization response renders expires_in as a number") {
+    for {
+      tuple <- application
+      (served, _, _, _) = tuple
+      answered <- served
+        .run(
+          postTo(
+            "/par",
+            Map(
+              "response_type" -> "code",
+              "client_id" -> clientId.value,
+              "redirect_uri" -> "https://client.example/cb",
+              "scope" -> "read",
+              "state" -> "xyz",
+              "code_challenge" -> challenge.value,
+              "code_challenge_method" -> "S256"
+            ),
+            Some("s3cret")
+          )
+        )
+        .value
+      text <- body(answered.get)
+    } yield assert(member(text, "expires_in").exists(_.isNumber), text)
   }
 }

@@ -229,7 +229,7 @@ object Endpoints {
   val token: PublicEndpoint[
     (Option[String], Map[String, String], Option[String], Option[String]),
     OAuth2Error,
-    Map[String, String],
+    Map[String, Json],
     Any
   ] =
     endpoint.post
@@ -238,7 +238,7 @@ object Endpoints {
       .in(formBody[Map[String, String]])
       .in(header[Option[String]](DpopHeader))
       .in(header[Option[String]](ClientCertHeader))
-      .out(noStore(jsonBody[Map[String, String]]))
+      .out(noStore(jsonBody[Map[String, Json]]))
       .errorOut(errors)
 
   lazy val revocation: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Unit, Any] =
@@ -249,12 +249,12 @@ object Endpoints {
   val DeviceAuthorizationPath: String = "device_authorization"
 
   lazy val deviceAuthorization
-      : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+      : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, Json], Any] =
     DeviceAuthorization.endpoint
 
   val ParPath: String = "par"
 
-  lazy val par: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+  lazy val par: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, Json], Any] =
     PushedAuthorization.endpoint
 
   val RegisterPath: String = "register"
@@ -293,7 +293,7 @@ object Endpoints {
       .errorOut(errors)
 
   lazy val introspection
-      : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+      : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, Json], Any] =
     Introspection.endpoint
 
   val WellKnownPath: List[String] = List(".well-known", "oauth-authorization-server")
@@ -376,12 +376,12 @@ private[http] object PushedAuthorization {
   implicit val formParameters: Codec[String, Map[String, String], XWwwFormUrlencoded] =
     Endpoints.strictForm(Endpoints.parParameters)
 
-  val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+  val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, Json], Any] =
     sttp.tapir.endpoint.post
       .in(Endpoints.ParPath)
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
-      .out(statusCode(StatusCode.Created).and(Endpoints.noStore(jsonBody[Map[String, String]])))
+      .out(statusCode(StatusCode.Created).and(Endpoints.noStore(jsonBody[Map[String, Json]])))
       .errorOut(Endpoints.errors)
 }
 
@@ -390,12 +390,12 @@ private[http] object DeviceAuthorization {
   implicit val formParameters: Codec[String, Map[String, String], XWwwFormUrlencoded] =
     Endpoints.strictForm(Endpoints.deviceAuthorizationParameters)
 
-  val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+  val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, Json], Any] =
     sttp.tapir.endpoint.post
       .in(Endpoints.DeviceAuthorizationPath)
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
-      .out(Endpoints.noStore(jsonBody[Map[String, String]]))
+      .out(Endpoints.noStore(jsonBody[Map[String, Json]]))
       .errorOut(Endpoints.errors)
 }
 
@@ -404,11 +404,11 @@ private[http] object Introspection {
   implicit val formParameters: Codec[String, Map[String, String], XWwwFormUrlencoded] =
     Endpoints.strictForm(Endpoints.introspectionParameters)
 
-  val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+  val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, Json], Any] =
     sttp.tapir.endpoint.post
       .in(Endpoints.IntrospectionPath)
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
-      .out(Endpoints.noStore(jsonBody[Map[String, String]]))
+      .out(Endpoints.noStore(jsonBody[Map[String, Json]]))
       .errorOut(Endpoints.errors)
 }

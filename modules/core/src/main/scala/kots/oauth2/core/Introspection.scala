@@ -16,17 +16,13 @@ object IntrospectionRequest {
     ).mapN(IntrospectionRequest.apply)
 }
 
-sealed abstract class IntrospectionResponse(val active: Boolean) {
-  def body: Map[String, String]
-}
+sealed abstract class IntrospectionResponse(val active: Boolean)
 
 object IntrospectionResponse {
 
   val ActiveFlag: String = "active"
 
-  case object Inactive extends IntrospectionResponse(false) {
-    def body: Map[String, String] = Map(ActiveFlag -> "false")
-  }
+  case object Inactive extends IntrospectionResponse(false)
 
   final case class Active(
       kind: TokenTypeHint,
@@ -36,21 +32,7 @@ object IntrospectionResponse {
       issuedAt: Instant,
       expiresAt: Instant,
       notBefore: Instant
-  ) extends IntrospectionResponse(true) {
-
-    def body: Map[String, String] =
-      Map(
-        ActiveFlag -> "true",
-        "client_id" -> Wire[ClientId].encode(clientId),
-        "username" -> Wire[Subject].encode(username),
-        "token_type" -> Active.tokenType(kind),
-        "exp" -> expiresAt.getEpochSecond.toString,
-        "iat" -> issuedAt.getEpochSecond.toString,
-        "nbf" -> notBefore.getEpochSecond.toString,
-        "sub" -> Wire[Subject].encode(username)
-      ) ++ (if (scopes.value.isEmpty) Map.empty[String, String]
-            else Map("scope" -> Wire[Scopes].encode(scopes)))
-  }
+  ) extends IntrospectionResponse(true)
 
   object Active {
 

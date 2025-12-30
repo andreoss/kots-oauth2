@@ -4,6 +4,7 @@ import kots.oauth2.core.DeviceCode
 import kots.oauth2.core.EndpointUri
 import kots.oauth2.core.UserCode
 import kots.oauth2.core.Wire
+import io.circe.Json
 
 final case class DeviceAuthorizationResponse(
     deviceCode: DeviceCode,
@@ -15,12 +16,12 @@ final case class DeviceAuthorizationResponse(
 
 object DeviceAuthorizationResponse {
 
-  def render(response: DeviceAuthorizationResponse): Map[String, String] =
+  def render(response: DeviceAuthorizationResponse): Map[String, Json] =
     Map(
-      "device_code" -> Wire[DeviceCode].encode(response.deviceCode),
-      "user_code" -> Wire[UserCode].encode(response.userCode),
-      "verification_uri" -> response.verificationUri.value,
-      "expires_in" -> response.expiresIn.toString,
-      "interval" -> response.interval.toString
+      "device_code" -> Json.fromString(Wire[DeviceCode].encode(response.deviceCode)),
+      "user_code" -> Json.fromString(Wire[UserCode].encode(response.userCode)),
+      "verification_uri" -> Json.fromString(response.verificationUri.value),
+      "expires_in" -> Json.fromLong(response.expiresIn),
+      "interval" -> Json.fromLong(response.interval)
     )
 }

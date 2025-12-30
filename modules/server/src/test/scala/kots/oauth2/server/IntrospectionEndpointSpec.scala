@@ -113,16 +113,17 @@ class IntrospectionEndpointSpec extends CatsEffectSuite {
       pair <- setup()
       (endpoint, _) = pair
       result <- introspect(endpoint, "at-1", Some("access_token"))
-      body = result.toOption.get.body
+      body = kots.oauth2.http.IntrospectionDocument.render(result.toOption.get)
     } yield {
       assert(result.toOption.get.active)
-      assertEquals(body("client_id"), "client-1")
-      assertEquals(body("username"), "user-1")
-      assertEquals(body("sub"), "user-1")
-      assertEquals(body("scope"), "read")
-      assertEquals(body("token_type"), "Bearer")
-      assertEquals(body("exp"), Start.plusSeconds(3600L).getEpochSecond.toString)
-      assertEquals(body("iat"), Start.getEpochSecond.toString)
+      assertEquals(body("active"), io.circe.Json.True)
+      assertEquals(body("client_id"), io.circe.Json.fromString("client-1"))
+      assertEquals(body("username"), io.circe.Json.fromString("user-1"))
+      assertEquals(body("sub"), io.circe.Json.fromString("user-1"))
+      assertEquals(body("scope"), io.circe.Json.fromString("read"))
+      assertEquals(body("token_type"), io.circe.Json.fromString("Bearer"))
+      assertEquals(body("exp"), io.circe.Json.fromLong(Start.plusSeconds(3600L).getEpochSecond))
+      assertEquals(body("iat"), io.circe.Json.fromLong(Start.getEpochSecond))
     }
   }
 
@@ -131,10 +132,10 @@ class IntrospectionEndpointSpec extends CatsEffectSuite {
       pair <- setup()
       (endpoint, _) = pair
       result <- introspect(endpoint, "rt-1", Some("refresh_token"))
-      body = result.toOption.get.body
+      body = kots.oauth2.http.IntrospectionDocument.render(result.toOption.get)
     } yield {
-      assertEquals(body("token_type"), "refresh_token")
-      assertEquals(body("exp"), Start.plusSeconds(7200L).getEpochSecond.toString)
+      assertEquals(body("token_type"), io.circe.Json.fromString("refresh_token"))
+      assertEquals(body("exp"), io.circe.Json.fromLong(Start.plusSeconds(7200L).getEpochSecond))
     }
   }
 
@@ -145,8 +146,14 @@ class IntrospectionEndpointSpec extends CatsEffectSuite {
       refresh <- introspect(endpoint, "rt-1")
       access <- introspect(endpoint, "at-1")
     } yield {
-      assertEquals(refresh.toOption.get.body("token_type"), "refresh_token")
-      assertEquals(access.toOption.get.body("token_type"), "Bearer")
+      assertEquals(
+        kots.oauth2.http.IntrospectionDocument.render(refresh.toOption.get)("token_type"),
+        io.circe.Json.fromString("refresh_token")
+      )
+      assertEquals(
+        kots.oauth2.http.IntrospectionDocument.render(access.toOption.get)("token_type"),
+        io.circe.Json.fromString("Bearer")
+      )
     }
   }
 
@@ -157,7 +164,6 @@ class IntrospectionEndpointSpec extends CatsEffectSuite {
       result <- introspect(endpoint, "at-1", Some("refresh_token"))
     } yield {
       assert(!result.toOption.get.active)
-      assertEquals(result.toOption.get.body, Map("active" -> "false"))
     }
   }
 
@@ -168,7 +174,6 @@ class IntrospectionEndpointSpec extends CatsEffectSuite {
       result <- introspect(endpoint, "absent")
     } yield {
       assert(!result.toOption.get.active)
-      assertEquals(result.toOption.get.body, Map("active" -> "false"))
     }
   }
 
