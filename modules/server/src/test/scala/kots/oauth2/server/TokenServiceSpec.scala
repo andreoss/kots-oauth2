@@ -33,6 +33,8 @@ import kots.oauth2.store.Grant
 import kots.oauth2.store.memory.InMemoryCodeStore
 import kots.oauth2.store.memory.InMemoryDeviceStore
 import kots.oauth2.store.memory.InMemoryGrantStore
+import kots.oauth2.store.memory.InMemoryReplayStore
+import kots.oauth2.store.memory.InMemoryAuditLog
 import kots.oauth2.store.memory.InMemoryTokenStore
 import munit.CatsEffectSuite
 
@@ -838,5 +840,265 @@ class TokenServiceSpec extends CatsEffectSuite {
       assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
       assertEquals(grant.map(_.revoked), Some(false))
     }
+  }
+
+  private val serverIssuer: kots.oauth2.core.Issuer =
+    unsafe(kots.oauth2.core.Issuer.from("https://server.example"))
+
+  private val identityIssuer: kots.oauth2.core.Issuer =
+    unsafe(kots.oauth2.core.Issuer.from("https://idp.example"))
+
+  private val identityJwks: kots.oauth2.jose.Jwks =
+    kots.oauth2.jose.Jwks(List(kots.oauth2.jose.Fakes.signingJwk))
+
+  private def identityClaims(
+      audience: Option[String] = Some("https://server.example"),
+      scope: Option[String] = Some("read"),
+      client: Option[ClientId] = Some(clientId),
+      issuer: String = "https://idp.example",
+      jti: String = "assertion-1",
+      issuedAt: Instant = Start,
+      expiresAt: Instant = Start.plusSeconds(600L)
+  ): kots.oauth2.jose.JwtClaims =
+    kots.oauth2.jose.JwtClaims(
+      issuer = unsafe(kots.oauth2.core.Issuer.from(issuer)),
+      subject = subject,
+      audience = audience.map(raw => unsafe(kots.oauth2.core.Audience.from(raw))),
+      clientId = client.getOrElse(otherClientId),
+      scopes = scope.fold(Scopes.empty)(raw => unsafe(Scopes.parse(raw))),
+      issuedAt = issuedAt,
+      expiresAt = expiresAt,
+      tokenId = unsafe(kots.oauth2.core.JwtId.from(jti))
+    )
+
+  private def signed(
+      claims: kots.oauth2.jose.JwtClaims,
+      typ: String = kots.oauth2.jose.Jwt.IdentityAssertionTyp,
+      key: java.security.PrivateKey = kots.oauth2.jose.Fakes.signingPair.getPrivate
+  ): String =
+    kots.oauth2.jose.Jws
+      .sign(
+        kots.oauth2.jose.Alg.RS256,
+        kots.oauth2.jose.Fakes.keyId("key-1"),
+        key,
+        kots.oauth2.jose.Jwt.render(claims),
+        typ
+      )
+      .toOption
+      .get
+
+  private def idjag(
+      assertion: String,
+      scope: Option[String] = None,
+      resource: Option[kots.oauth2.core.ResourceIndicator] = None
+  ): TokenRequest.IdJag =
+    TokenRequest.IdJag(
+      unsafe(kots.oauth2.core.IdentityAssertion.from(assertion)),
+      scope.map(raw => unsafe(Scopes.parse(raw))),
+      resource,
+      clientId
+    )
+
+  private def idjagSetup(
+      configured: Boolean = true,
+      audit: Option[InMemoryAuditLog[IO]] = None,
+      trusted: Map[kots.oauth2.core.Issuer, kots.oauth2.jose.Jwks] = Map(identityIssuer -> identityJwks)
+  ): IO[(TokenService[IO], InMemoryReplayStore[IO])] = {
+    val clock = new Clock[IO] {
+      def instant: IO[Instant] = IO.pure(Start)
+    }
+    var calls: Int = 0
+    val entropy = new Entropy[IO] {
+      def bytes(n: Int): IO[Array[Byte]] = IO {
+        calls += 1
+        Array.fill(n)(calls.toByte)
+      }
+    }
+    for {
+      codes <- InMemoryCodeStore.create[IO](clock)
+      tokens <- InMemoryTokenStore.create[IO](clock)
+      grants <- InMemoryGrantStore.create[IO]
+      devices <- InMemoryDeviceStore.create[IO](clock)
+      replays <- InMemoryReplayStore.create[IO](clock)
+    } yield (
+      new TokenService[IO](
+        codes,
+        tokens,
+        grants,
+        devices,
+        clock,
+        entropy,
+        LifetimePolicy.defaults,
+        audit = audit,
+        identityAssertions =
+          if (configured)
+            Some(
+              TokenService.IdentityAssertions(
+                serverIssuer,
+                AssertionIssuers.static[IO](trusted),
+                replays,
+                clock
+              )
+            )
+          else None
+      ),
+      replays
+    )
+  }
+
+  test("a valid identity assertion issues an access token for its subject") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(idjag(signed(identityClaims())), client())
+    } yield {
+      val issued = result.toOption.get
+      assertEquals(issued.record.subject, subject)
+      assertEquals(issued.record.clientId, clientId)
+      assertEquals(issued.record.scopes, unsafe(Scopes.parse("read")))
+      assertEquals(issued.refreshToken, None)
+    }
+  }
+
+  test("an identity assertion is scoped by the intersection of request and grant") {
+    val granted = client().copy(scopes = unsafe(Scopes.parse("read write")))
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      wide <- service.idJag(idjag(signed(identityClaims(scope = Some("read write"))), scope = None), granted)
+      narrow <- service.idJag(
+        idjag(signed(identityClaims(scope = Some("read write"), jti = "assertion-2")), scope = Some("read")),
+        granted
+      )
+    } yield {
+      assertEquals(wide.toOption.get.record.scopes, unsafe(Scopes.parse("read write")))
+      assertEquals(narrow.toOption.get.record.scopes, unsafe(Scopes.parse("read")))
+    }
+  }
+
+  test("an identity assertion refuses a requested scope outside the grant") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(
+        idjag(signed(identityClaims(scope = Some("read"))), scope = Some("read write")),
+        client()
+      )
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_scope"))
+  }
+
+  test("an identity assertion is bound to the requested resource") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(idjag(signed(identityClaims()), resource = Some(boundResource)), client())
+    } yield assertEquals(result.toOption.get.record.audience.map(_.value), Some("https://api.example"))
+  }
+
+  test("an unregistered identity issuer is an invalid grant") {
+    for {
+      pair <- idjagSetup(trusted = Map.empty)
+      (service, _) = pair
+      result <- service.idJag(idjag(signed(identityClaims())), client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("an identity assertion for another audience is refused") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(
+        idjag(signed(identityClaims(audience = Some("https://other.example")))),
+        client()
+      )
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("an identity assertion naming another client is refused") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(idjag(signed(identityClaims(client = Some(otherClientId)))), client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("a replayed identity assertion is refused and audited") {
+    for {
+      audit <- InMemoryAuditLog.create[IO]
+      pair <- idjagSetup(audit = Some(audit))
+      (service, _) = pair
+      first <- service.idJag(idjag(signed(identityClaims())), client())
+      second <- service.idJag(idjag(signed(identityClaims())), client())
+      events <- audit.events
+    } yield {
+      assertEquals(first.isRight, true)
+      assertEquals(second.left.toOption.map(_.code), Some("invalid_grant"))
+      assertEquals(
+        events.last,
+        (kots.oauth2.store.AuditEvent.AuthenticationFailed(Some(clientId)): kots.oauth2.store.AuditEvent)
+      )
+    }
+  }
+
+  test("an identity assertion within the bounded skew is accepted") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(
+        idjag(signed(identityClaims(expiresAt = Start.plusSeconds(30L), jti = "assertion-2"))),
+        client()
+      )
+    } yield assertEquals(result.isRight, true)
+  }
+
+  test("an expired identity assertion is refused") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(
+        idjag(signed(identityClaims(expiresAt = Start.minusSeconds(300L)))),
+        client()
+      )
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("an identity assertion issued in the future is refused") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(idjag(signed(identityClaims(issuedAt = Start.plusSeconds(240L)))), client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("an access token typed assertion is refused") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(
+        idjag(signed(identityClaims(), typ = kots.oauth2.jose.Jwt.AccessTokenType)),
+        client()
+      )
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("an identity assertion signed by another key is refused") {
+    val otherPair = java.security.KeyPairGenerator.getInstance("RSA")
+    otherPair.initialize(2048)
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(
+        idjag(signed(identityClaims(), key = otherPair.generateKeyPair.getPrivate)),
+        client()
+      )
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("an unconfigured identity assertion chain refuses every assertion") {
+    for {
+      pair <- idjagSetup(configured = false)
+      (service, _) = pair
+      result <- service.idJag(idjag(signed(identityClaims())), client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
   }
 }
