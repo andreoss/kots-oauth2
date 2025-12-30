@@ -66,6 +66,42 @@ class JwtSpec extends FunSuite {
     assertEquals(Jwt.claims(compact, published, Start), Right(stepped))
   }
 
+  test("a token with a notBefore claim renders and round trips it") {
+    val stepped = claims.copy(notBefore = Some(Start.plusSeconds(120L)))
+    val compact = Jwt.issue(Fakes.signingKey, stepped).toOption.get
+    val payload = new String(Base64.getUrlDecoder.decode(compact.split('.')(1)), "UTF-8")
+    val cursor = io.circe.parser.parse(payload).toOption.get.hcursor
+    assertEquals(cursor.get[Long]("nbf").toOption, Some(Start.plusSeconds(120L).getEpochSecond))
+    assertEquals(Jwt.claims(compact, published, Start.plusSeconds(200L)), Right(stepped))
+  }
+
+  test("a token that is not yet valid is refused and accepted at its notBefore") {
+    val stepped = claims.copy(notBefore = Some(Start.plusSeconds(120L)))
+    val compact = Jwt.issue(Fakes.signingKey, stepped).toOption.get
+    assert(Jwt.claims(compact, published, Start).isLeft)
+    assertEquals(Jwt.claims(compact, published, Start.plusSeconds(120L)), Right(stepped))
+  }
+
+  test("an expired token is refused within a bounded skew only") {
+    val compact = Jwt.issue(Fakes.signingKey, claims).toOption.get
+    val later = Start.plusSeconds(3600L)
+    assert(Jwt.claims(compact, published, later).isLeft)
+    assertEquals(
+      Jwt.claims(compact, published, later, Set(Jwt.AccessTokenType), java.time.Duration.ofSeconds(60L)),
+      Right(claims)
+    )
+  }
+
+  test("a not yet valid token within the bounded skew is accepted") {
+    val stepped = claims.copy(notBefore = Some(Start.plusSeconds(120L)))
+    val compact = Jwt.issue(Fakes.signingKey, stepped).toOption.get
+    assert(Jwt.claims(compact, published, Start).isLeft)
+    assertEquals(
+      Jwt.claims(compact, published, Start, Set(Jwt.AccessTokenType), java.time.Duration.ofSeconds(120L)),
+      Right(stepped)
+    )
+  }
+
   test("a key bound token round trips the confirmation thumbprint") {
     val bound = claims.copy(jkt = Dpop.thumbprint(Fakes.signingJwk).toOption)
     val compact = Jwt.issue(Fakes.signingKey, bound).toOption.get

@@ -31,7 +31,8 @@ final case class JwtClaims(
     tokenId: JwtId,
     acr: Option[Acr] = None,
     jkt: Option[KeyThumbprint] = None,
-    x5t: Option[CertificateThumbprint] = None
+    x5t: Option[CertificateThumbprint] = None,
+    notBefore: Option[Instant] = None
 )
 
 object Jwt {
@@ -45,14 +46,20 @@ object Jwt {
       compact: String,
       keys: Jwks,
       now: Instant,
-      types: Set[String] = Set(AccessTokenType)
+      types: Set[String] = Set(AccessTokenType),
+      skew: java.time.Duration = java.time.Duration.ZERO
   ): Either[ParseFailure, JwtClaims] =
     for {
       payload <- types.toList
         .map(typ => Jws.verify(compact, keys, typ))
         .reduceLeft((first, second) => first.orElse(second))
       parsed <- parse(payload)
-      _ <- Either.cond(now.isBefore(parsed.expiresAt), (), ParseFailure("Jwt", "expired"))
+      _ <- Either.cond(now.minus(skew).isBefore(parsed.expiresAt), (), ParseFailure("Jwt", "expired"))
+      _ <- parsed.notBefore match {
+        case None        => Right(())
+        case Some(valid) =>
+          Either.cond(!now.plus(skew).isBefore(valid), (), ParseFailure("Jwt", "not yet valid"))
+      }
     } yield parsed
 
   def render(claims: JwtClaims): String =
@@ -66,6 +73,7 @@ object Jwt {
           "iat" -> Json.fromLong(claims.issuedAt.getEpochSecond),
           "exp" -> Json.fromLong(claims.expiresAt.getEpochSecond)
         ) ++
+          claims.notBefore.map(value => "nbf" -> Json.fromLong(value.getEpochSecond)) ++
           claims.audience.map(value => "aud" -> Json.fromString(value.value)) ++
           claims.acr.map(value => "acr" -> Json.fromString(value.value)) ++
           confirmation(claims) ++
@@ -95,6 +103,10 @@ object Jwt {
       tokenId <- string(cursor, "jti").flatMap(JwtId.from)
       issuedAt <- number(cursor, "iat")
       expiresAt <- number(cursor, "exp")
+      notBefore <- cursor
+        .get[Long]("nbf")
+        .toOption
+        .traverse(seconds => (Right(Instant.ofEpochSecond(seconds)): Either[ParseFailure, Instant]))
       audience <- cursor.get[String]("aud").toOption.traverse(Audience.from)
       scopes <- cursor.get[String]("scope").toOption.traverse(Scopes.parse).map(_.getOrElse(Scopes.empty))
       acr <- cursor.get[String]("acr").toOption.traverse(Acr.from)
@@ -115,7 +127,8 @@ object Jwt {
       tokenId,
       acr,
       jkt,
-      x5t
+      x5t,
+      notBefore
     )
 
   private def string(cursor: io.circe.HCursor, name: String): Either[ParseFailure, String] =
