@@ -2,9 +2,7 @@ package kots.oauth2.server
 
 import cats.Monad
 import cats.syntax.all._
-import java.nio.charset.StandardCharsets
 import java.time.Instant
-import java.util.Base64
 
 import kots.oauth2.core.AccessToken
 import kots.oauth2.core.AccessTokenHash
@@ -16,6 +14,7 @@ import kots.oauth2.core.ClientId
 import kots.oauth2.core.Clock
 import kots.oauth2.core.Entropy
 import kots.oauth2.core.GrantId
+import kots.oauth2.core.GrantType
 import kots.oauth2.core.IdentityAssertion
 import kots.oauth2.core.Issuer
 import kots.oauth2.core.JwtId
@@ -32,6 +31,7 @@ import kots.oauth2.core.Scopes
 import kots.oauth2.core.Subject
 import kots.oauth2.core.TokenRequest
 import kots.oauth2.core.TokenType
+import kots.oauth2.jose.Jws
 import kots.oauth2.jose.Jwt
 import kots.oauth2.jose.JwtClaims
 import kots.oauth2.jose.SigningKey
@@ -117,6 +117,7 @@ final class TokenService[F[_]: Monad](
                     requested.getOrElse(client.scopes),
                     AuthorizationDetails.empty,
                     None,
+                    GrantType.ClientCredentials,
                     audience,
                     jkt = jkt,
                     x5t = x5t
@@ -168,6 +169,7 @@ final class TokenService[F[_]: Monad](
                             record.scopes,
                             AuthorizationDetails.empty,
                             refreshExpiresAt,
+                            GrantType.DeviceCode,
                             audience,
                             jkt = jkt,
                             x5t = x5t
@@ -213,29 +215,26 @@ final class TokenService[F[_]: Monad](
                 else if (claims.clientId != client.id)
                   TokenService.rejected.asLeft[IssuedToken].pure[F]
                 else
-                  config.replays.record(claims.tokenId, claims.expiresAt).flatMap {
-                    case false =>
-                      auditLog
-                        .record(AuditEvent.AuthenticationFailed(Some(client.id)))
-                        .as(TokenService.rejected.asLeft[IssuedToken]: Either[OAuth2Error, IssuedToken])
-                    case true =>
-                      replayed(request, client, claims, now, jkt, x5t)
+                  assertedMint(request, client, claims, now, jkt, x5t) match {
+                    case Left(error) => error.asLeft[IssuedToken].pure[F]
+                    case Right(mint) => recorded(mint, claims, client, config)
                   }
             }
         }
     }
 
-  private def replayed(
-      request: TokenRequest.IdJag,
-      client: Client,
+  private def recorded(
+      mint: TokenService.Mint,
       claims: JwtClaims,
-      now: Instant,
-      jkt: Option[KeyThumbprint],
-      x5t: Option[CertificateThumbprint]
+      client: Client,
+      config: TokenService.IdentityAssertions[F]
   ): F[Either[OAuth2Error, IssuedToken]] =
-    assertedMint(request, client, claims, now, jkt, x5t) match {
-      case Left(error) => error.asLeft[IssuedToken].pure[F]
-      case Right(mint) => issue(mint)
+    config.replays.record(claims.tokenId, claims.expiresAt).flatMap {
+      case false =>
+        auditLog
+          .record(AuditEvent.AssertionReplayed(client.id))
+          .as(TokenService.rejected.asLeft[IssuedToken]: Either[OAuth2Error, IssuedToken])
+      case true => issue(mint)
     }
 
   private def verified(
@@ -250,23 +249,10 @@ final class TokenService[F[_]: Monad](
       .map(_ => TokenService.rejected)
 
   private def issuerOf(assertion: IdentityAssertion): Either[OAuth2Error, Issuer] =
-    assertion.value.split('.') match {
-      case Array(_, payload, _) =>
-        for {
-          decoded <- bytesOf(payload)
-          json <- io.circe.parser
-            .parse(new String(decoded, StandardCharsets.UTF_8))
-            .left
-            .map(_ => TokenService.rejected)
-          value <- json.hcursor.get[String]("iss").left.map(_ => TokenService.rejected)
-          issuer <- Issuer.from(value).left.map(_ => TokenService.rejected)
-        } yield issuer
-      case _ => Left(TokenService.rejected)
-    }
-
-  private def bytesOf(raw: String): Either[OAuth2Error, Array[Byte]] =
-    try Right(Base64.getUrlDecoder.decode(raw))
-    catch { case _: IllegalArgumentException => Left(TokenService.rejected) }
+    Jws
+      .unverified(assertion.value, "iss")
+      .flatMap(Issuer.from)
+      .leftMap(_ => TokenService.rejected)
 
   private def assertedMint(
       request: TokenRequest.IdJag,
@@ -278,7 +264,7 @@ final class TokenService[F[_]: Monad](
   ): Either[OAuth2Error, TokenService.Mint] =
     for {
       audience <- bound(request.resource)
-      granted = Scopes.intersect(client.scopes, claims.scopes)
+      granted = if (claims.scopes.value.isEmpty) client.scopes else Scopes.intersect(client.scopes, claims.scopes)
       scopes <- request.scope match {
         case None         => Right(granted)
         case Some(wanted) =>
@@ -296,6 +282,7 @@ final class TokenService[F[_]: Monad](
       scopes = scopes,
       details = AuthorizationDetails.empty,
       refreshExpiresAt = None,
+      grant = GrantType.IdJag,
       audience = audience,
       jkt = jkt,
       x5t = x5t
@@ -357,6 +344,7 @@ final class TokenService[F[_]: Monad](
                       requested.getOrElse(record.scopes),
                       record.details,
                       record.refreshExpiresAt,
+                      GrantType.RefreshToken,
                       narrowed.orElse(record.audience),
                       jkt = jkt,
                       x5t = x5t
@@ -395,6 +383,7 @@ final class TokenService[F[_]: Monad](
               record.scopes,
               record.details,
               refreshExpiresAt,
+              GrantType.AuthorizationCode,
               audience,
               jkt = jkt,
               x5t = x5t
@@ -435,6 +424,7 @@ final class TokenService[F[_]: Monad](
                           requested.getOrElse(subjectRecord.scopes),
                           subjectRecord.details,
                           None,
+                          GrantType.TokenExchange,
                           audience,
                           actor,
                           jkt = jkt,
@@ -510,7 +500,7 @@ final class TokenService[F[_]: Monad](
             actor = mint.actor
           )
           val event =
-            if (mint.grantId.isEmpty) AuditEvent.Issued(mint.clientId, mint.subject, grantId)
+            if (mint.grantId.isEmpty) AuditEvent.Issued(mint.clientId, mint.subject, grantId, mint.grant)
             else AuditEvent.Refreshed(mint.clientId, mint.subject, grantId)
           grants
             .save(Grant(grantId, mint.clientId, mint.subject, mint.scopes, mint.details, revoked = false))
@@ -586,6 +576,7 @@ object TokenService {
       scopes: Scopes,
       details: AuthorizationDetails,
       refreshExpiresAt: Option[Instant],
+      grant: GrantType,
       audience: Option[Audience] = None,
       actor: Option[Subject] = None,
       acr: Option[kots.oauth2.core.Acr] = None,

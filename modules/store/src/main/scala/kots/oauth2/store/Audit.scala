@@ -4,13 +4,15 @@ import cats.Applicative
 
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.GrantId
+import kots.oauth2.core.GrantType
 import kots.oauth2.core.Subject
 
 sealed abstract class AuditEvent(val name: String)
 
 object AuditEvent {
 
-  final case class Issued(clientId: ClientId, subject: Subject, grantId: GrantId) extends AuditEvent("issued")
+  final case class Issued(clientId: ClientId, subject: Subject, grantId: GrantId, grant: GrantType)
+      extends AuditEvent("issued")
 
   final case class Refreshed(clientId: ClientId, subject: Subject, grantId: GrantId)
       extends AuditEvent("refreshed")
@@ -21,6 +23,8 @@ object AuditEvent {
 
   final case class AuthenticationFailed(clientId: Option[ClientId])
       extends AuditEvent("authentication_failed")
+
+  final case class AssertionReplayed(clientId: ClientId) extends AuditEvent("assertion_replayed")
 }
 
 trait AuditLog[F[_]] {
