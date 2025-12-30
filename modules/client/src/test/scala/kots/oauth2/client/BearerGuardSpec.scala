@@ -79,7 +79,7 @@ class BearerGuardSpec extends CatsEffectSuite {
   test("a garbage, expired or foreign token is challenged as invalid_token") {
     for {
       garbage <- guard().verify(Some("Bearer not.a.jwt"), Scopes.empty)
-      expired <- guard(Start.plusSeconds(3600L)).verify(bearer(claims()), Scopes.empty)
+      expired <- guard(Start.plusSeconds(3720L)).verify(bearer(claims()), Scopes.empty)
       foreign <- guard().verify(
         bearer(claims(issuedBy = unsafe(Issuer.from("https://other.example")))),
         Scopes.empty
@@ -177,5 +177,16 @@ class BearerGuardSpec extends CatsEffectSuite {
     new BearerGuard[IO](IO.pure(Left(ParseFailure("Discovery", "down"))), issuer, clockAt(Start))
       .verify(bearer(claims()), Scopes.empty)
       .map(refused => assert(refused.left.toOption.exists(_.header.contains("invalid_token"))))
+  }
+
+  test("a token minted ahead of the verifier clock is tolerated within the skew") {
+    val minted = claims().copy(notBefore = Some(Start))
+    for {
+      tolerated <- guard(now = Start.minusSeconds(5L)).verify(bearer(minted), Scopes.empty)
+      refused <- guard(now = Start.minusSeconds(120L)).verify(bearer(minted), Scopes.empty)
+    } yield {
+      assertEquals(tolerated.toOption.map(_.subject.value), Some("user-1"))
+      assert(refused.left.toOption.exists(_.header.contains("invalid_token")))
+    }
   }
 }

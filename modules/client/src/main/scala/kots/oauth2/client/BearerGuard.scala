@@ -1,5 +1,7 @@
 package kots.oauth2.client
 
+import java.time.Duration
+
 import cats.syntax.all._
 import cats.Monad
 
@@ -18,7 +20,8 @@ final class BearerGuard[F[_]: Monad](
     issuer: Issuer,
     clock: Clock[F],
     audience: Option[Audience] = None,
-    tokenTypes: Set[String] = Set(Jwt.AccessTokenType)
+    tokenTypes: Set[String] = Set(Jwt.AccessTokenType),
+    skew: Duration = BearerGuard.DefaultSkew
 ) {
 
   def verify(
@@ -36,7 +39,7 @@ final class BearerGuard[F[_]: Monad](
             BearerGuard.invalidToken.asLeft[JwtClaims].pure[F]
           case Right(published) =>
             clock.instant.map { now =>
-              Jwt.claims(token, published, now, tokenTypes) match {
+              Jwt.claims(token, published, now, tokenTypes, skew) match {
                 case Left(_)                                  => Left(BearerGuard.invalidToken)
                 case Right(claims) if claims.issuer != issuer => Left(BearerGuard.invalidToken)
                 case Right(claims) if audience.exists(demanded => !claims.audience.contains(demanded)) =>
@@ -53,6 +56,8 @@ final class BearerGuard[F[_]: Monad](
 }
 
 object BearerGuard {
+
+  val DefaultSkew: Duration = Duration.ofSeconds(60L)
 
   val Scheme: String = "Bearer "
 
