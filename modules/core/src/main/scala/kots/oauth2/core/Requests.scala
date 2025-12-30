@@ -124,7 +124,8 @@ object TokenRequest {
       assertion: IdentityAssertion,
       scope: Option[Scopes],
       resource: Option[ResourceIndicator],
-      clientId: ClientId
+      clientId: ClientId,
+      details: Option[AuthorizationDetailsDocument] = None
   ) extends TokenRequest
 
   def from(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
@@ -196,7 +197,8 @@ object TokenRequest {
       Params.field(params, "assertion")(IdentityAssertion.from),
       Params.fieldOpt(params, "scope")(Scopes.parse),
       Params.fieldOpt(params, "resource")(ResourceIndicator.from),
-      Params.field(params, "client_id")(ClientId.from)
+      Params.field(params, "client_id")(ClientId.from),
+      Params.fieldOpt(params, "authorization_details")(AuthorizationDetailsDocument.from)
     ).mapN(IdJag.apply)
 
   private def actor(
@@ -222,6 +224,19 @@ object ExchangeTokenType {
 
   def from(raw: String): Either[ParseFailure, ExchangeTokenType] =
     all.find(_.value == raw).toRight(ParseFailure("ExchangeTokenType", "not a supported token type"))
+}
+
+final case class AuthorizationDetailsDocument private (value: String)
+
+object AuthorizationDetailsDocument {
+  def from(raw: String): Either[ParseFailure, AuthorizationDetailsDocument] = {
+    val trimmed = raw.trim
+    Either.cond(
+      trimmed.startsWith("[") && trimmed.endsWith("]"),
+      new AuthorizationDetailsDocument(trimmed),
+      ParseFailure("AuthorizationDetailsDocument", "not a json array")
+    )
+  }
 }
 
 final case class IdentityAssertion private (value: String)

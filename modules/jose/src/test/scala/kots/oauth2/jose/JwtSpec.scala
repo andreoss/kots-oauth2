@@ -223,4 +223,27 @@ class JwtSpec extends FunSuite {
     )
     assertEquals(Jwt.claims(compact, published, Start), Right(many))
   }
+
+  test("authorization details round trip through the claims") {
+    val detailed = claims.copy(
+      details = kots.oauth2.core.AuthorizationDetails.of(
+        List(
+          kots.oauth2.core.AuthorizationDetail.of(
+            unsafe(kots.oauth2.core.AuthorizationDetailType.from("account")),
+            List(unsafe(kots.oauth2.core.Location.from("https://api.example"))),
+            List(unsafe(kots.oauth2.core.Action.from("read"))),
+            Map("identifier" -> "1")
+          )
+        )
+      )
+    )
+    val compact = Jwt.issue(Fakes.signingKey, detailed).toOption.get
+    assertEquals(Jwt.claims(compact, published, Start), Right(detailed))
+  }
+
+  test("a claim set without authorization details omits them") {
+    val compact = Jwt.issue(Fakes.signingKey, claims).toOption.get
+    val payload = new String(Base64.getUrlDecoder.decode(compact.split('.')(1)), "UTF-8")
+    assert(!payload.contains("authorization_details"))
+  }
 }

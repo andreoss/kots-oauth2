@@ -426,6 +426,28 @@ class RequestsSpec extends ScalaCheckSuite {
     assertEquals(errors(malformed).map(_.code), List("invalid_request"))
   }
 
+  test("token request decodes the authorization details of a jwt bearer grant") {
+    val decoded = TokenRequest.from(
+      Map(
+        "grant_type" -> "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion" -> "a.b.c",
+        "client_id" -> Client,
+        "authorization_details" -> """[{"type":"account"}]"""
+      )
+    )
+    val request = valid(decoded).asInstanceOf[TokenRequest.IdJag]
+    assertEquals(request.details.map(_.value), Some("""[{"type":"account"}]"""))
+    val malformed = TokenRequest.from(
+      Map(
+        "grant_type" -> "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion" -> "a.b.c",
+        "client_id" -> Client,
+        "authorization_details" -> "{}"
+      )
+    )
+    assertEquals(errors(malformed).map(_.code), List("invalid_request"))
+  }
+
   test("token exchange refuses a token type outside the allow-list") {
     val decoded = TokenRequest.from(
       Map(
