@@ -118,34 +118,33 @@ class DevelopmentSpec extends CatsEffectSuite {
       server <- Development.server[IO](Port.fromInt(28100).get, None, "http://localhost:28100")
       client <- EmberClientBuilder.default[IO].build
     } yield (server, client)
-    bound.use {
-      case (server, client) =>
-          val base = s"http://localhost:${server.address.getPort}"
-          for {
-            metadata <- client.expect[String](
-              Request[IO](
-                uri = Uri.unsafeFromString(s"$base/.well-known/oauth-authorization-server"),
-                headers = org.http4s.Headers(accepts)
+    bound.use { case (server, client) =>
+      val base = s"http://localhost:${server.address.getPort}"
+      for {
+        metadata <- client.expect[String](
+          Request[IO](
+            uri = Uri.unsafeFromString(s"$base/.well-known/oauth-authorization-server"),
+            headers = org.http4s.Headers(accepts)
+          )
+        )
+        token <- client
+          .run(
+            Request[IO](
+              method = Method.POST,
+              uri = Uri.unsafeFromString(field(metadata, "token_endpoint")),
+              headers = org.http4s.Headers(
+                Authorization(
+                  BasicCredentials(Development.SeedClientId, Development.SeedClientSecret)
+                ),
+                accepts
               )
-            )
-            token <- client
-              .run(
-                Request[IO](
-                  method = Method.POST,
-                  uri = Uri.unsafeFromString(field(metadata, "token_endpoint")),
-                  headers = org.http4s.Headers(
-                    Authorization(
-                      BasicCredentials(Development.SeedClientId, Development.SeedClientSecret)
-                    ),
-                    accepts
-                  )
-                ).withEntity(UrlForm("grant_type" -> "client_credentials"))
-              )
-              .use(response => IO.pure(response.status))
-        } yield {
-          assertEquals(field(metadata, "issuer"), base)
-          assertEquals(token, Status.Ok)
-        }
+            ).withEntity(UrlForm("grant_type" -> "client_credentials"))
+          )
+          .use(response => IO.pure(response.status))
+      } yield {
+        assertEquals(field(metadata, "issuer"), base)
+        assertEquals(token, Status.Ok)
+      }
     }
   }
 

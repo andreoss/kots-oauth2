@@ -80,26 +80,28 @@ final class TokenEndpoint[F[_]: Monad](
       case Left(error)     => error.asLeft[TokenResponse].pure[F]
       case Right(enriched) =>
         TokenRequest.from(enriched).toEither match {
-      case Left(failures) => failures.head.asLeft.pure[F]
-      case Right(request) =>
-        request match {
-          case code: TokenRequest.Code =>
-            tokens.authorizationCode(code, client, jkt, x5t).map(_.map(answered))
-          case refresh: TokenRequest.Refresh =>
-            tokens.refresh(refresh, client, jkt, x5t).map(_.map(answered))
-          case credentials: TokenRequest.ClientCredentials =>
-            tokens.clientCredentials(credentials, client, jkt, x5t).map(_.map(answered))
-          case device: TokenRequest.Device =>
-            tokens.deviceCode(device, client, jkt, x5t).map(_.map(answered))
-          case exchange: TokenRequest.Exchange =>
-            tokens
-              .exchange(exchange, client, jkt, x5t)
-              .map(
-                _.map(issued => answered(issued).copy(issuedTokenType = Some(ExchangeTokenType.AccessToken)))
-              )
-          case idjag: TokenRequest.IdJag =>
-            tokens.idJag(idjag, client, jkt, x5t).map(_.map(answered))
-        }
+          case Left(failures) => failures.head.asLeft.pure[F]
+          case Right(request) =>
+            request match {
+              case code: TokenRequest.Code =>
+                tokens.authorizationCode(code, client, jkt, x5t).map(_.map(answered))
+              case refresh: TokenRequest.Refresh =>
+                tokens.refresh(refresh, client, jkt, x5t).map(_.map(answered))
+              case credentials: TokenRequest.ClientCredentials =>
+                tokens.clientCredentials(credentials, client, jkt, x5t).map(_.map(answered))
+              case device: TokenRequest.Device =>
+                tokens.deviceCode(device, client, jkt, x5t).map(_.map(answered))
+              case exchange: TokenRequest.Exchange =>
+                tokens
+                  .exchange(exchange, client, jkt, x5t)
+                  .map(
+                    _.map(issued =>
+                      answered(issued).copy(issuedTokenType = Some(ExchangeTokenType.AccessToken))
+                    )
+                  )
+              case idjag: TokenRequest.IdJag =>
+                tokens.idJag(idjag, client, jkt, x5t).map(_.map(answered))
+            }
         }
     }
   }

@@ -40,9 +40,8 @@ class StrictReaderSpec extends CatsEffectSuite {
         ).withEntity(UrlForm(fields: _*))
       )
       .use(response =>
-        response.bodyText.compile.string.map(text =>
-          response.status -> io.circe.parser.parse(text).getOrElse(Json.Null)
-        )
+        response.bodyText.compile.string
+          .map(text => response.status -> io.circe.parser.parse(text).getOrElse(Json.Null))
       )
 
   private def number(document: Json, name: String): Option[Long] =
