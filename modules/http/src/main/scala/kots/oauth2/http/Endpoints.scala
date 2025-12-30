@@ -37,6 +37,8 @@ object Endpoints {
     "client_secret",
     "client_assertion",
     "client_assertion_type",
+    "assertion",
+    "authorization_details",
     "scope"
   )
 
