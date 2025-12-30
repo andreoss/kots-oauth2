@@ -222,6 +222,8 @@ object Endpoints {
 
   val ClientCertHeader: String = "X-Client-Cert"
 
+  val TokenPath: String = "token"
+
   val token: PublicEndpoint[
     (Option[String], Map[String, String], Option[String], Option[String]),
     OAuth2Error,
@@ -229,7 +231,7 @@ object Endpoints {
     Any
   ] =
     endpoint.post
-      .in("token")
+      .in(TokenPath)
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
       .in(header[Option[String]](DpopHeader))
@@ -239,6 +241,8 @@ object Endpoints {
 
   lazy val revocation: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Unit, Any] =
     Revocation.endpoint
+
+  val RevocationPath: String = "revocation"
 
   val DeviceAuthorizationPath: String = "device_authorization"
 
@@ -324,6 +328,8 @@ object Endpoints {
 
   val JwksPath: String = "jwks"
 
+  val IntrospectionPath: String = "introspection"
+
   val JwkSetMediaType: String = "application/jwk-set+json"
 
   private[http] final case class JwkSetJson() extends CodecFormat {
@@ -356,7 +362,7 @@ private[http] object Revocation {
 
   val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Unit, Any] =
     sttp.tapir.endpoint.post
-      .in("revocation")
+      .in(Endpoints.RevocationPath)
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
       .out(Endpoints.noStore(statusCode(StatusCode.Ok)))
@@ -398,7 +404,7 @@ private[http] object Introspection {
 
   val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     sttp.tapir.endpoint.post
-      .in("introspection")
+      .in(Endpoints.IntrospectionPath)
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
       .out(Endpoints.noStore(jsonBody[Map[String, String]]))

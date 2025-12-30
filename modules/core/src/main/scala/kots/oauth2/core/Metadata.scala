@@ -17,7 +17,10 @@ final case class AuthorizationServerMetadata(
     grantTypesSupported: Set[GrantType],
     tokenEndpointAuthMethodsSupported: Set[ClientAuthMethod],
     codeChallengeMethodsSupported: Set[CodeChallengeMethod],
-    scopesSupported: Scopes
+    scopesSupported: Scopes,
+    registrationEndpoint: Option[EndpointUri] = None,
+    deviceAuthorizationEndpoint: Option[EndpointUri] = None,
+    pushedAuthorizationRequestEndpoint: Option[EndpointUri] = None
 )
 
 object AuthorizationServerMetadata {
@@ -29,7 +32,10 @@ object AuthorizationServerMetadata {
       revocationEndpoint: Option[EndpointUri],
       introspectionEndpoint: Option[EndpointUri],
       jwksUri: Option[EndpointUri],
-      scopesSupported: Scopes
+      scopesSupported: Scopes,
+      registrationEndpoint: Option[EndpointUri] = None,
+      deviceAuthorizationEndpoint: Option[EndpointUri] = None,
+      pushedAuthorizationRequestEndpoint: Option[EndpointUri] = None
   ): AuthorizationServerMetadata =
     AuthorizationServerMetadata(
       issuer,
@@ -42,6 +48,9 @@ object AuthorizationServerMetadata {
       GrantType.all.toSet,
       ClientAuthMethod.all.toSet,
       Set(CodeChallengeMethod.S256),
-      scopesSupported
+      scopesSupported,
+      registrationEndpoint,
+      deviceAuthorizationEndpoint,
+      pushedAuthorizationRequestEndpoint
     )
 }

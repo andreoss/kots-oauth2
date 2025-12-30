@@ -18,6 +18,12 @@ object Metadata {
 
   val JwksUri: String = "jwks_uri"
 
+  val RegistrationEndpoint: String = "registration_endpoint"
+
+  val DeviceAuthorizationEndpoint: String = "device_authorization_endpoint"
+
+  val PushedAuthorizationRequestEndpoint: String = "pushed_authorization_request_endpoint"
+
   val ResponseTypesSupported: String = "response_types_supported"
 
   val GrantTypesSupported: String = "grant_types_supported"
@@ -48,7 +54,14 @@ object Metadata {
     ) ++
       metadata.revocationEndpoint.map(uri => RevocationEndpoint -> Json.fromString(uri.value)) ++
       metadata.introspectionEndpoint.map(uri => IntrospectionEndpoint -> Json.fromString(uri.value)) ++
-      metadata.jwksUri.map(uri => JwksUri -> Json.fromString(uri.value))
+      metadata.jwksUri.map(uri => JwksUri -> Json.fromString(uri.value)) ++
+      metadata.registrationEndpoint.map(uri => RegistrationEndpoint -> Json.fromString(uri.value)) ++
+      metadata.deviceAuthorizationEndpoint.map(uri =>
+        DeviceAuthorizationEndpoint -> Json.fromString(uri.value)
+      ) ++
+      metadata.pushedAuthorizationRequestEndpoint.map(uri =>
+        PushedAuthorizationRequestEndpoint -> Json.fromString(uri.value)
+      )
 
   def renderResource(metadata: ProtectedResourceMetadata): Map[String, Json] =
     Map(
