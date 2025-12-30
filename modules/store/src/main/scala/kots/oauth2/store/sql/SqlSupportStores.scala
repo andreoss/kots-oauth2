@@ -289,12 +289,12 @@ final class SqlAuditLog[F[_]: Sync] private (connect: F[Connection])
     def grantType: GrantType =
       DetailRows.required(GrantType.from(results.getString("grant_type")))
     results.getString("name") match {
-      case "issued"       => AuditEvent.Issued(client, subject, grant, grantType)
-      case "refreshed"    => AuditEvent.Refreshed(client, subject, grant)
-      case "revoked"      => AuditEvent.Revoked(client, grant)
-      case "introspected" => AuditEvent.Introspected(client, results.getBoolean("active"))
+      case "issued"             => AuditEvent.Issued(client, subject, grant, grantType)
+      case "refreshed"          => AuditEvent.Refreshed(client, subject, grant)
+      case "revoked"            => AuditEvent.Revoked(client, grant)
+      case "introspected"       => AuditEvent.Introspected(client, results.getBoolean("active"))
       case "assertion_replayed" => AuditEvent.AssertionReplayed(client)
-      case _              =>
+      case _                    =>
         AuditEvent.AuthenticationFailed(
           Option(results.getString("client_id")).map(raw => DetailRows.required(ClientId.from(raw)))
         )

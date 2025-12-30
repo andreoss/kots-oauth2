@@ -85,7 +85,8 @@ object Jwt {
           claims.notBefore.map(value => "nbf" -> Json.fromLong(value.getEpochSecond)) ++
           audienceOf(claims.audience) ++
           claims.acr.map(value => "acr" -> Json.fromString(value.value)) ++
-          (if (claims.details.value.isEmpty) Nil else List(Details.Claim -> Details.render(claims.details))) ++
+          (if (claims.details.value.isEmpty) Nil
+           else List(Details.Claim -> Details.render(claims.details))) ++
           confirmation(claims) ++
           (if (claims.scopes.value.isEmpty) Nil
            else

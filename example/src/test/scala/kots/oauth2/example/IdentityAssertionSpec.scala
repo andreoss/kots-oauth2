@@ -74,7 +74,8 @@ class IdentityAssertionSpec extends CatsEffectSuite {
     })(root =>
       IO.blocking {
         Files.walk(root).sorted(java.util.Comparator.reverseOrder()).forEach(path => Files.delete(path))
-      }.attempt.void
+      }.attempt
+        .void
     )
 
   private def provider(root: Path): Resource[IO, String] =
