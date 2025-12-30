@@ -23,7 +23,7 @@ final case class SigningKey(kid: KeyId, alg: Alg, key: PrivateKey)
 final case class JwtClaims(
     issuer: Issuer,
     subject: Subject,
-    audience: Option[Audience],
+    audience: List[Audience],
     clientId: ClientId,
     scopes: Scopes,
     issuedAt: Instant,
@@ -81,7 +81,7 @@ object Jwt {
           "exp" -> Json.fromLong(claims.expiresAt.getEpochSecond)
         ) ++
           claims.notBefore.map(value => "nbf" -> Json.fromLong(value.getEpochSecond)) ++
-          claims.audience.map(value => "aud" -> Json.fromString(value.value)) ++
+          audienceOf(claims.audience) ++
           claims.acr.map(value => "acr" -> Json.fromString(value.value)) ++
           confirmation(claims) ++
           (if (claims.scopes.value.isEmpty) Nil
@@ -91,6 +91,13 @@ object Jwt {
       .noSpaces
 
   val CertificateConfirmation: String = "x5t#S256"
+
+  private def audienceOf(audience: List[Audience]): List[(String, Json)] =
+    audience match {
+      case Nil        => Nil
+      case one :: Nil => List("aud" -> Json.fromString(one.value))
+      case many       => List("aud" -> Json.fromValues(many.map(value => Json.fromString(value.value))))
+    }
 
   private def confirmation(claims: JwtClaims): Option[(String, Json)] = {
     val members = claims.jkt.map(value => "jkt" -> Json.fromString(value.value)).toList ++
@@ -114,7 +121,7 @@ object Jwt {
         .get[Long]("nbf")
         .toOption
         .traverse(seconds => (Right(Instant.ofEpochSecond(seconds)): Either[ParseFailure, Instant]))
-      audience <- cursor.get[String]("aud").toOption.traverse(Audience.from)
+      audience <- audiences(cursor)
       scopes <- cursor.get[String]("scope").toOption.traverse(Scopes.parse).map(_.getOrElse(Scopes.empty))
       acr <- cursor.get[String]("acr").toOption.traverse(Acr.from)
       jkt <- cursor.downField("cnf").get[String]("jkt").toOption.traverse(KeyThumbprint.from)
@@ -137,6 +144,15 @@ object Jwt {
       x5t,
       notBefore
     )
+
+  private def audiences(cursor: io.circe.HCursor): Either[ParseFailure, List[Audience]] =
+    cursor
+      .get[String]("aud")
+      .toOption
+      .map(List(_))
+      .orElse(cursor.get[List[String]]("aud").toOption)
+      .getOrElse(Nil)
+      .traverse(Audience.from)
 
   private def string(cursor: io.circe.HCursor, name: String): Either[ParseFailure, String] =
     cursor.get[String](name).left.map(_ => ParseFailure("Jwt", s"no $name claim"))

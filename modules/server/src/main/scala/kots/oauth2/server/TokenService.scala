@@ -208,7 +208,7 @@ final class TokenService[F[_]: Monad](
             verified(request.assertion, keys, config, now) match {
               case Left(error)   => error.asLeft[IssuedToken].pure[F]
               case Right(claims) =>
-                if (claims.audience.map(_.value).forall(_ != config.issuer.value))
+                if (!claims.audience.exists(_.value == config.issuer.value))
                   TokenService.rejected.asLeft[IssuedToken].pure[F]
                 else if (claims.clientId != client.id)
                   TokenService.rejected.asLeft[IssuedToken].pure[F]
@@ -537,7 +537,7 @@ final class TokenService[F[_]: Monad](
             JwtClaims(
               issuer = signing.issuer,
               subject = mint.subject,
-              audience = audienceOf(signing, mint),
+              audience = audienceOf(signing, mint).toList,
               clientId = mint.clientId,
               scopes = mint.scopes,
               issuedAt = mint.now,

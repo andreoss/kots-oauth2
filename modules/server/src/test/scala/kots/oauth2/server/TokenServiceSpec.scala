@@ -179,7 +179,7 @@ class TokenServiceSpec extends CatsEffectSuite {
       val minted = issued.toOption.get
       val published = kots.oauth2.jose.Jwks(List(kots.oauth2.jose.Fakes.signingJwk))
       val parsed = kots.oauth2.jose.Jwt.claims(minted.accessToken.value, published, Start).toOption.get
-      assertEquals(parsed.audience.map(_.value), Some("https://server.example"))
+      assertEquals(parsed.audience.map(_.value), List("https://server.example"))
       assertEquals(parsed.notBefore, Some(parsed.issuedAt))
     }
   }
@@ -863,7 +863,7 @@ class TokenServiceSpec extends CatsEffectSuite {
     kots.oauth2.jose.JwtClaims(
       issuer = unsafe(kots.oauth2.core.Issuer.from(issuer)),
       subject = subject,
-      audience = audience.map(raw => unsafe(kots.oauth2.core.Audience.from(raw))),
+      audience = audience.map(raw => unsafe(kots.oauth2.core.Audience.from(raw))).toList,
       clientId = client.getOrElse(otherClientId),
       scopes = scope.fold(Scopes.empty)(raw => unsafe(Scopes.parse(raw))),
       issuedAt = issuedAt,
@@ -1100,5 +1100,33 @@ class TokenServiceSpec extends CatsEffectSuite {
       (service, _) = pair
       result <- service.idJag(idjag(signed(identityClaims())), client())
     } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  private def withAudiences(claims: kots.oauth2.jose.JwtClaims, values: List[String]): String = {
+    val rendered = kots.oauth2.jose.Jwt.render(claims)
+    val array = values.map(value => "\"" + value + "\"").mkString("[", ",", "]")
+    rendered.dropRight(1) + ",\"aud\":" + array + "}"
+  }
+
+  test("an identity assertion naming this server among its audiences is accepted") {
+    val payload = withAudiences(
+      identityClaims(audience = None),
+      List("https://other.example", "https://server.example")
+    )
+    val assertion = kots.oauth2.jose.Jws
+      .sign(
+        kots.oauth2.jose.Alg.RS256,
+        kots.oauth2.jose.Fakes.keyId("key-1"),
+        kots.oauth2.jose.Fakes.signingPair.getPrivate,
+        payload,
+        kots.oauth2.jose.Jwt.IdentityAssertionTyp
+      )
+      .toOption
+      .get
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(idjag(assertion), client())
+    } yield assertEquals(result.toOption.map(_.record.subject), Some(subject))
   }
 }

@@ -42,7 +42,7 @@ class BearerGuardSpec extends CatsEffectSuite {
     JwtClaims(
       issuer = issuedBy,
       subject = unsafe(Subject.from("user-1")),
-      audience = Some(unsafe(Audience.from("https://api.example"))),
+      audience = List(unsafe(Audience.from("https://api.example"))),
       clientId = unsafe(ClientId.from("client-1")),
       scopes = unsafe(Scopes.parse(scopes)),
       issuedAt = Start,
@@ -136,7 +136,7 @@ class BearerGuardSpec extends CatsEffectSuite {
 
   test("a token without an audience is challenged when the guard demands one") {
     guard(audience = Some(unsafe(Audience.from("https://api.example"))))
-      .verify(bearer(claims().copy(audience = None)), Scopes.empty)
+      .verify(bearer(claims().copy(audience = Nil)), Scopes.empty)
       .map(refused => assert(refused.left.toOption.exists(_.header.contains("invalid_token"))))
   }
 
