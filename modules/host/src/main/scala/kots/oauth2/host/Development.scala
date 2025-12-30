@@ -28,6 +28,7 @@ import kots.oauth2.core.RedirectUri
 import kots.oauth2.core.ResourceIndicator
 import kots.oauth2.core.Scopes
 import kots.oauth2.core.Subject
+import kots.oauth2.http.Endpoints
 import kots.oauth2.http.Server
 import kots.oauth2.jose.Alg
 import kots.oauth2.jose.Jwk
@@ -44,10 +45,12 @@ import kots.oauth2.server.RegistrationEndpoint
 import kots.oauth2.server.RegistrationService
 import kots.oauth2.server.RevocationEndpoint
 import kots.oauth2.server.SessionLogin
+import kots.oauth2.server.Throttle
 import kots.oauth2.server.TokenEndpoint
 import kots.oauth2.server.TokenService
 import kots.oauth2.store.Client
 import kots.oauth2.store.ConsentRecord
+import kots.oauth2.store.memory.InMemoryAuditLog
 import kots.oauth2.store.memory.InMemoryClientStore
 import kots.oauth2.store.memory.InMemoryCodeStore
 import kots.oauth2.store.memory.InMemoryConsentStore
@@ -56,6 +59,7 @@ import kots.oauth2.store.memory.InMemoryGrantStore
 import kots.oauth2.store.memory.InMemoryKeyStore
 import kots.oauth2.store.memory.InMemoryMetrics
 import kots.oauth2.store.memory.InMemoryPushedRequestStore
+import kots.oauth2.store.memory.InMemoryRateLimiter
 import kots.oauth2.store.memory.InMemoryReplayStore
 import kots.oauth2.store.memory.InMemoryTokenStore
 import org.http4s.HttpRoutes
@@ -110,14 +114,18 @@ object Development {
       ClientAuthMethod.ClientSecretBasic,
       Some(ClientSecretHash.of(unsafe(ClientSecret.from(SeedClientSecret))))
     )
+    def endpoint(path: String): EndpointUri = unsafe(EndpointUri.from(s"$SeedIssuer/$path"))
     val metadata = AuthorizationServerMetadata.of(
       issuer,
-      unsafe(EndpointUri.from(s"$SeedIssuer/authorize")),
-      unsafe(EndpointUri.from(s"$SeedIssuer/token")),
-      Some(unsafe(EndpointUri.from(s"$SeedIssuer/revocation"))),
-      Some(unsafe(EndpointUri.from(s"$SeedIssuer/introspection"))),
-      Some(unsafe(EndpointUri.from(s"$SeedIssuer/jwks"))),
-      scopes
+      endpoint(Endpoints.AuthorizePath),
+      endpoint(Endpoints.TokenPath),
+      Some(endpoint(Endpoints.RevocationPath)),
+      Some(endpoint(Endpoints.IntrospectionPath)),
+      Some(endpoint(Endpoints.JwksPath)),
+      scopes,
+      registrationEndpoint = Some(endpoint(Endpoints.RegisterPath)),
+      deviceAuthorizationEndpoint = Some(endpoint(Endpoints.DeviceAuthorizationPath)),
+      pushedAuthorizationRequestEndpoint = Some(endpoint(Endpoints.ParPath))
     )
     val resource = ProtectedResourceMetadata(
       unsafe(ResourceIndicator.from("https://api.example")),
@@ -145,9 +153,12 @@ object Development {
       _ <- consents.grant(ConsentRecord(clientId, subject, scopes))
       login <- SessionLogin.create[F]
       _ <- login.login(subject)
+      audit <- InMemoryAuditLog.create[F]
+      limiter <- InMemoryRateLimiter.create[F](clock, 1000, 60)
       authentication = new RegisteredClientAuthentication[F](
         clients,
-        Some(RegisteredClientAuthentication.Assertions(issuer, replays, clock))
+        Some(RegisteredClientAuthentication.Assertions(issuer, replays, clock)),
+        Some(audit)
       )
       signing = TokenService.Signing(issuer, SigningKey(published.kid, Alg.RS256, pair.getPrivate))
       service = new TokenService[F](
@@ -158,7 +169,8 @@ object Development {
         clock,
         entropy,
         LifetimePolicy.defaults,
-        Some(signing)
+        Some(signing),
+        Some(audit)
       )
       registration = new RegistrationEndpoint[F](new RegistrationService[F](clients, entropy))
     } yield assembledOf(
@@ -184,18 +196,26 @@ object Development {
           Server.registrationRead(registration),
           Server.registrationUpdate(registration),
           Server.registrationDelete(registration),
-          Server.token(new TokenEndpoint[F](authentication, service)),
-          Server.revocation(new RevocationEndpoint[F](authentication, tokens, grants)),
-          Server.introspection(new IntrospectionEndpoint[F](authentication, tokens, grants)),
+          Server.token(Throttle.token(limiter, new TokenEndpoint[F](authentication, service))),
+          Server.revocation(new RevocationEndpoint[F](authentication, tokens, grants, Some(audit))),
+          Server.introspection(
+            Throttle.introspection(
+              limiter,
+              new IntrospectionEndpoint[F](authentication, tokens, grants, Some(audit))
+            )
+          ),
           Server.deviceAuthorization(
-            new DeviceAuthorizationEndpoint[F](
-              authentication,
-              new DeviceAuthorizationService[F](
-                devices,
-                clock,
-                entropy,
-                LifetimePolicy.defaults,
-                unsafe(EndpointUri.from(s"$SeedIssuer/device"))
+            Throttle.device(
+              limiter,
+              new DeviceAuthorizationEndpoint[F](
+                authentication,
+                new DeviceAuthorizationService[F](
+                  devices,
+                  clock,
+                  entropy,
+                  LifetimePolicy.defaults,
+                  endpoint(Endpoints.DeviceAuthorizationPath)
+                )
               )
             )
           ),

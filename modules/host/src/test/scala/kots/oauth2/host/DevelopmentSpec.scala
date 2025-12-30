@@ -54,6 +54,18 @@ class DevelopmentSpec extends CatsEffectSuite {
         jwks <- client.status(Request[IO](uri = Uri.unsafeFromString(s"$base/jwks")))
       } yield {
         assertEquals(field(metadata, "issuer"), Development.SeedIssuer)
+        assertEquals(
+          field(metadata, "jwks_uri"),
+          s"${Development.SeedIssuer}/${kots.oauth2.http.Endpoints.JwksPath}"
+        )
+        assertEquals(
+          field(metadata, "registration_endpoint"),
+          s"${Development.SeedIssuer}/${kots.oauth2.http.Endpoints.RegisterPath}"
+        )
+        assertEquals(
+          field(metadata, "device_authorization_endpoint"),
+          s"${Development.SeedIssuer}/${kots.oauth2.http.Endpoints.DeviceAuthorizationPath}"
+        )
         assert(field(token, "access_token").count(_ == '.') == 2)
         assertEquals(jwks, Status.Ok)
       }
