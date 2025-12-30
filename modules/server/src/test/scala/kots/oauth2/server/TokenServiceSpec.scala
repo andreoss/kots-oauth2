@@ -1045,7 +1045,7 @@ class TokenServiceSpec extends CatsEffectSuite {
       pair <- idjagSetup()
       (service, _) = pair
       result <- service.idJag(
-        idjag(signed(identityClaims(expiresAt = Start.plusSeconds(30L), jti = "assertion-2"))),
+        idjag(signed(identityClaims(expiresAt = Start.minusSeconds(30L), jti = "assertion-2"))),
         client()
       )
     } yield assertEquals(result.isRight, true)
