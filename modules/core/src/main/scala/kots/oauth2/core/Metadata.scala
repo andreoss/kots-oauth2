@@ -25,6 +25,8 @@ final case class AuthorizationServerMetadata(
 
 object AuthorizationServerMetadata {
 
+  val DefaultGrantTypes: Set[GrantType] = GrantType.all.toSet - GrantType.IdJag
+
   def of(
       issuer: Issuer,
       authorizationEndpoint: EndpointUri,
@@ -35,7 +37,8 @@ object AuthorizationServerMetadata {
       scopesSupported: Scopes,
       registrationEndpoint: Option[EndpointUri] = None,
       deviceAuthorizationEndpoint: Option[EndpointUri] = None,
-      pushedAuthorizationRequestEndpoint: Option[EndpointUri] = None
+      pushedAuthorizationRequestEndpoint: Option[EndpointUri] = None,
+      grantTypesSupported: Set[GrantType] = DefaultGrantTypes
   ): AuthorizationServerMetadata =
     AuthorizationServerMetadata(
       issuer,
@@ -45,7 +48,7 @@ object AuthorizationServerMetadata {
       introspectionEndpoint,
       jwksUri,
       ResponseType.all.toSet,
-      GrantType.all.toSet,
+      grantTypesSupported,
       ClientAuthMethod.all.toSet,
       Set(CodeChallengeMethod.S256),
       scopesSupported,

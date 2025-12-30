@@ -204,7 +204,7 @@ class ServerSpec extends FunSuite {
     )
     assertEquals(
       rendered(Metadata.GrantTypesSupported).asArray.get.map(_.asString.get).toSet,
-      kots.oauth2.core.GrantType.all.map(_.value).toSet
+      kots.oauth2.core.AuthorizationServerMetadata.DefaultGrantTypes.map(_.value)
     )
     assertEquals(
       rendered(Metadata.TokenEndpointAuthMethodsSupported).asArray.get.map(_.asString.get).toSet,
