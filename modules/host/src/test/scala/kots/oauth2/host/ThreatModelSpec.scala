@@ -15,6 +15,10 @@ class ThreatModelSpec extends FunSuite {
 
   private val interpreter = new InterpreterSpec
 
+  private val rotation = new KeyCommandSpec
+
+  private val keys = new kots.oauth2.jose.KeysSpec
+
   private val model: List[Threat] = List(
     Threat(
       "authorization code replay",
@@ -99,6 +103,90 @@ class ThreatModelSpec extends FunSuite {
       "authentication failures reveal nothing and are refused uniformly",
       interpreter,
       "a form post with a wrong secret is answered with unauthorized"
+    ),
+    Threat(
+      "malformed credential parsing",
+      "a credential that does not decode is refused with the challenge of the error model",
+      interpreter,
+      "a malformed basic header is answered with unauthorized and the challenge"
+    ),
+    Threat(
+      "stale code redemption",
+      "expiry is checked at redemption, not only at issuance",
+      negative,
+      "an expired code is refused"
+    ),
+    Threat(
+      "pkce bypass by omission",
+      "no client is issued a code without a proof of possession, public or confidential",
+      negative,
+      "an authorization request without a code challenge is refused"
+    ),
+    Threat(
+      "stolen refresh token reuse",
+      "rotation retires the presented token and a reuse revokes the grant it belongs to",
+      negative,
+      "a retired refresh token is refused and revokes its grant"
+    ),
+    Threat(
+      "stolen client assertion",
+      "an assertion is accepted once: its identifier is remembered until it expires",
+      negative,
+      "a replayed client assertion is refused"
+    ),
+    Threat(
+      "grant type smuggling",
+      "the grant registry answers anything it does not serve as unsupported",
+      negative,
+      "an unsupported grant type is refused without a token"
+    ),
+    Threat(
+      "credential disclosure through errors",
+      "a refusal names the error only and never echoes the secret, the code or the token",
+      negative,
+      "a refused request never echoes the secret or the token"
+    ),
+    Threat(
+      "anonymous token scanning",
+      "introspection is served only to an authenticated caller",
+      interpreter,
+      "introspection without credentials is answered with unauthorized"
+    ),
+    Threat(
+      "introspection as an oracle",
+      "a token the server does not know answers inactive and nothing else",
+      interpreter,
+      "an unknown token is introspected as inactive"
+    ),
+    Threat(
+      "revocation as an oracle",
+      "revocation is idempotent: an unknown token answers the same empty success",
+      interpreter,
+      "an unknown token is revoked with an empty success"
+    ),
+    Threat(
+      "a revoked token still honoured",
+      "revocation reaches every token of the grant, not only the one presented",
+      interpreter,
+      "a revoked token is introspected as inactive"
+    ),
+    Threat(
+      "private key material published",
+      "the key set is rendered from an allow-list of public parameters",
+      interpreter,
+      "the key set is served at /jwks with the public parameters only"
+    ),
+    Threat(
+      "malformed key material accepted",
+      "public parameters are validated for decodability, not for the alphabet alone",
+      keys,
+      "a public parameter whose length cannot decode is refused"
+    ),
+    Threat(
+      "long lived signing key",
+      "keys carry an identifier and a rotation retires the current one and mints its successor",
+      rotation,
+      "a rotation retires the current key and mints a successor"
     )
   )
 
@@ -116,8 +204,10 @@ class ThreatModelSpec extends FunSuite {
   test("the model is free of duplicates and spans the negative tier") {
     assertEquals(model.map(_.threat).distinct.size, model.size)
     assertEquals(model.map(_.test).distinct.size, model.size)
-    assert(model.size >= 14)
+    assert(model.size >= 28)
     assert(model.exists(_.suite eq negative))
     assert(model.exists(_.suite eq interpreter))
+    assert(model.exists(_.suite eq rotation))
+    assert(model.exists(_.suite eq keys))
   }
 }
