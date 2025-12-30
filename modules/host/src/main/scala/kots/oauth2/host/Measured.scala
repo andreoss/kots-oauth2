@@ -1,10 +1,9 @@
 package kots.oauth2.host
 
+import cats.syntax.all._
 import cats.data.Kleisli
 import cats.data.OptionT
 import cats.effect.Temporal
-import cats.syntax.flatMap._
-import cats.syntax.functor._
 
 import kots.oauth2.store.Metrics
 import kots.oauth2.store.Observation
@@ -28,7 +27,7 @@ object Measured {
                       (finished - begun).toNanos
                     )
                   )
-                  .as(Some(response): Option[Response[F]])
+                  .as(response.some)
               }
             case None => Temporal[F].pure(None: Option[Response[F]])
           }

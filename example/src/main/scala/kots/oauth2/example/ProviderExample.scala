@@ -1,8 +1,7 @@
 package kots.oauth2.example
 
+import cats.syntax.all._
 import cats.effect.Concurrent
-import cats.syntax.flatMap._
-import cats.syntax.functor._
 
 import kots.oauth2.client.TokenClient
 import kots.oauth2.core.ClientId
@@ -60,7 +59,7 @@ final class ProviderExample[F[_]: Concurrent](transport: Client[F]) {
       scope: Option[Scopes] = None
   ): F[Either[OAuth2Error, TokenClient.Grant]] =
     discover(configuration).flatMap {
-      case Left(error)     => Concurrent[F].pure(Left(error): Either[OAuth2Error, TokenClient.Grant])
+      case Left(error)     => error.asLeft[TokenClient.Grant].pure[F]
       case Right(document) => credentials(document.tokenEndpoint, clientId, secret, scope)
     }
 }
