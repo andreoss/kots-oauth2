@@ -20,6 +20,7 @@ import kots.oauth2.core.ClientSecret
 import kots.oauth2.core.ClientSecretHash
 import kots.oauth2.core.EndpointUri
 import kots.oauth2.core.Entropy
+import kots.oauth2.core.GrantType
 import kots.oauth2.core.Issuer
 import kots.oauth2.core.LifetimePolicy
 import kots.oauth2.core.ParseFailure
@@ -41,6 +42,7 @@ import kots.oauth2.server.IntrospectionEndpoint
 import kots.oauth2.server.PushedAuthorizationEndpoint
 import kots.oauth2.server.PushedAuthorizationService
 import kots.oauth2.server.RegisteredClientAuthentication
+import kots.oauth2.server.AssertionIssuers
 import kots.oauth2.server.RegistrationEndpoint
 import kots.oauth2.server.RegistrationService
 import kots.oauth2.server.RevocationEndpoint
@@ -97,9 +99,11 @@ object Development {
       }
     }
 
-  def routes[F[_]: Async]: F[HttpRoutes[F]] = assembled[F].map { case (bound, _) => bound }
+  def routes[F[_]: Async]: F[HttpRoutes[F]] = assembled[F]().map { case (bound, _) => bound }
 
-  def assembled[F[_]: Async]: F[(HttpRoutes[F], List[F[Int]])] = {
+  def assembled[F[_]: Async](
+      issuers: Option[AssertionIssuers[F]] = None
+  ): F[(HttpRoutes[F], List[F[Int]])] = {
     val clock = systemClock[F]
     def unsafe[A](parsed: Either[ParseFailure, A]): A =
       parsed.fold(failure => sys.error(failure.toString), identity)
@@ -125,7 +129,9 @@ object Development {
       scopes,
       registrationEndpoint = Some(endpoint(Endpoints.RegisterPath)),
       deviceAuthorizationEndpoint = Some(endpoint(Endpoints.DeviceAuthorizationPath)),
-      pushedAuthorizationRequestEndpoint = Some(endpoint(Endpoints.ParPath))
+      pushedAuthorizationRequestEndpoint = Some(endpoint(Endpoints.ParPath)),
+      grantTypesSupported =
+        if (issuers.isEmpty) AuthorizationServerMetadata.DefaultGrantTypes else GrantType.all.toSet
     )
     val resource = ProtectedResourceMetadata(
       unsafe(ResourceIndicator.from("https://api.example")),
@@ -170,7 +176,8 @@ object Development {
         entropy,
         LifetimePolicy.defaults,
         Some(signing),
-        Some(audit)
+        Some(audit),
+        issuers.map(TokenService.IdentityAssertions(issuer, _, replays, clock))
       )
       registration = new RegistrationEndpoint[F](new RegistrationService[F](clients, entropy))
     } yield assembledOf(
@@ -245,9 +252,12 @@ object Development {
   val SweepInterval: scala.concurrent.duration.FiniteDuration =
     scala.concurrent.duration.DurationInt(60).seconds
 
-  def server[F[_]: Async: fs2.io.net.Network](port: Port): Resource[F, org.http4s.server.Server] =
+  def server[F[_]: Async: fs2.io.net.Network](
+      port: Port,
+      issuers: Option[AssertionIssuers[F]] = None
+  ): Resource[F, org.http4s.server.Server] =
     Resource
-      .eval(assembled[F])
+      .eval(assembled[F](issuers))
       .flatMap { case (bound, sweeps) =>
         Resource.eval(InMemoryMetrics.create[F]).flatMap { metrics =>
           Resource.eval(secureEntropy[F]).flatMap { entropy =>
