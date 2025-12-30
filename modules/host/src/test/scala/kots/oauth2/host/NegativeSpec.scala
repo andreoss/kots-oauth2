@@ -12,6 +12,7 @@ import kots.oauth2.core.AuthorizationCode
 import kots.oauth2.core.AuthorizationDetails
 import kots.oauth2.core.ClientAuthMethod
 import kots.oauth2.core.ClientId
+import kots.oauth2.core.ClientAssertion
 import kots.oauth2.core.ClientSecret
 import kots.oauth2.core.ClientSecretHash
 import kots.oauth2.core.Clock
@@ -33,6 +34,7 @@ import kots.oauth2.jose.Alg
 import kots.oauth2.jose.Dpop
 import kots.oauth2.jose.Fakes
 import kots.oauth2.jose.Jwks
+import kots.oauth2.jose.Jws
 import kots.oauth2.server.AuthorizationEndpoint
 import kots.oauth2.server.AuthorizationService
 import kots.oauth2.server.DpopProofs
@@ -129,6 +131,17 @@ class NegativeSpec extends CatsEffectSuite {
     )
   )
 
+  private val jwtId: ClientId = unsafe(ClientId.from("client-jwt"))
+
+  private val jwtClient: Client = Client(
+    jwtId,
+    Set.empty,
+    unsafe(Scopes.parse("read")),
+    ClientAuthMethod.PrivateKeyJwt,
+    None,
+    keys = Jwks(List(Fakes.signingJwk))
+  )
+
   private def application: IO[
     (HttpRoutes[IO], Ref[IO, Instant], SessionLogin[IO], InMemoryConsentStore[IO])
   ] =
@@ -146,10 +159,13 @@ class NegativeSpec extends CatsEffectSuite {
       grants <- InMemoryGrantStore.create[IO]
       devices <- InMemoryDeviceStore.create[IO](clock)
       replays <- InMemoryReplayStore.create[IO](clock)
-      clients <- InMemoryClientStore.create[IO](List(registered, mtlsClient))
+      clients <- InMemoryClientStore.create[IO](List(registered, mtlsClient, jwtClient))
       consents <- InMemoryConsentStore.create[IO]
       login <- SessionLogin.create[IO]
-      authentication = new RegisteredClientAuthentication[IO](clients)
+      authentication = new RegisteredClientAuthentication[IO](
+        clients,
+        Some(RegisteredClientAuthentication.Assertions(issuer, replays, clock))
+      )
       service = new TokenService[IO](
         codes,
         tokens,
@@ -187,6 +203,15 @@ class NegativeSpec extends CatsEffectSuite {
       headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)) ++
         Headers(Authorization(BasicCredentials(clientId.value, "s3cret"))) ++
         Headers(proof.toList.map(value => Header.Raw(CIString("DPoP"), value))),
+      body = Stream.emits(Form.render(form).getBytes(StandardCharsets.UTF_8).toSeq).covary[IO]
+    )
+
+  private def postWith(form: Map[String, String], secret: String): Request[IO] =
+    Request[IO](
+      method = Method.POST,
+      uri = Uri.unsafeFromString(TokenUri),
+      headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)) ++
+        Headers(Authorization(BasicCredentials(clientId.value, secret))),
       body = Stream.emits(Form.render(form).getBytes(StandardCharsets.UTF_8).toSeq).covary[IO]
     )
 
@@ -438,6 +463,122 @@ class NegativeSpec extends CatsEffectSuite {
         Some(Fakes.ClientCertificateThumbprint)
       )
       assertEquals(claimsOf(plainToken).x5t, None)
+    }
+  }
+
+  test("an authorization request without a code challenge is refused") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      tuple <- application
+      (served, _, login, consents) = tuple
+      _ <- consents.grant(ConsentRecord(clientId, user, unsafe(Scopes.parse("read"))))
+      _ <- login.login(user)
+      answered <- served.run(authorize(requested - "code_challenge")).value
+      response = answered.get
+      text <- body(response)
+    } yield {
+      assertEquals(response.status, Status.BadRequest)
+      assertEquals(field(text, "error"), "invalid_request")
+      assertEquals(location(response), None)
+    }
+  }
+
+  test("a refused request never echoes the secret or the token") {
+    for {
+      tuple <- application
+      (served, _, _, _) = tuple
+      refused <- served.run(postWith(exchange, "not-the-secret")).value
+      refusedText <- body(refused.get)
+      unknown <- served.run(introspect("token-never-issued")).value
+      unknownText <- body(unknown.get)
+    } yield {
+      assertEquals(refused.get.status, Status.Unauthorized)
+      assertEquals(field(refusedText, "error"), "invalid_client")
+      assert(!refusedText.contains("s3cret"))
+      assert(!refusedText.contains("not-the-secret"))
+      assert(!refusedText.contains(recorded.code.value))
+      assert(!unknownText.contains("token-never-issued"))
+    }
+  }
+
+  test("a retired refresh token is refused and revokes its grant") {
+    val renewal = Map("grant_type" -> "refresh_token", "client_id" -> clientId.value)
+    for {
+      tuple <- application
+      (served, _, _, _) = tuple
+      issued <- served.run(post(exchange)).value
+      issuedText <- body(issued.get)
+      presented = field(issuedText, "refresh_token")
+      rotated <- served.run(post(renewal.updated("refresh_token", presented))).value
+      rotatedText <- body(rotated.get)
+      reused <- served.run(post(renewal.updated("refresh_token", presented))).value
+      reusedText <- body(reused.get)
+      after <- served.run(introspect(field(rotatedText, "access_token"))).value
+      afterText <- body(after.get)
+    } yield {
+      assertEquals(rotated.get.status, Status.Ok)
+      assertEquals(reused.get.status, Status.BadRequest)
+      assertEquals(field(reusedText, "error"), "invalid_grant")
+      assertEquals(field(afterText, "active"), "false")
+    }
+  }
+
+  test("an unsupported grant type is refused without a token") {
+    for {
+      tuple <- application
+      (served, _, _, _) = tuple
+      answered <- served
+        .run(post(Map("grant_type" -> "password", "client_id" -> clientId.value)))
+        .value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.BadRequest)
+      assertEquals(field(text, "error"), "unsupported_grant_type")
+    }
+  }
+
+  test("a replayed client assertion is refused") {
+    def assertion(jti: String): String = {
+      val payload = Json.obj(
+        "iss" -> Json.fromString(jwtId.value),
+        "sub" -> Json.fromString(jwtId.value),
+        "aud" -> Json.fromString(issuer.value),
+        "exp" -> Json.fromLong(Start.plusSeconds(300L).getEpochSecond),
+        "jti" -> Json.fromString(jti)
+      )
+      unsafe(Jws.sign(Alg.RS256, Fakes.keyId("key-1"), Fakes.signingPair.getPrivate, payload.noSpaces))
+    }
+    def asserted(jti: String): Request[IO] =
+      Request[IO](
+        method = Method.POST,
+        uri = Uri.unsafeFromString(TokenUri),
+        headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)),
+        body = Stream
+          .emits(
+            Form
+              .render(
+                Map(
+                  "grant_type" -> "client_credentials",
+                  "client_id" -> jwtId.value,
+                  "client_assertion" -> assertion(jti),
+                  "client_assertion_type" -> ClientAssertion.Type
+                )
+              )
+              .getBytes(StandardCharsets.UTF_8)
+              .toSeq
+          )
+          .covary[IO]
+      )
+    for {
+      tuple <- application
+      (served, _, _, _) = tuple
+      first <- served.run(asserted("assertion-1")).value
+      second <- served.run(asserted("assertion-1")).value
+      text <- body(second.get)
+    } yield {
+      assertEquals(first.get.status, Status.Ok)
+      assertEquals(second.get.status, Status.Unauthorized)
+      assertEquals(field(text, "error"), "invalid_client")
     }
   }
 
