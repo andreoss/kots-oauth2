@@ -49,7 +49,9 @@ lazy val core =
 
 lazy val jose = module("jose").dependsOn(core)
 
-lazy val store = module("store").dependsOn(core)
+lazy val store = module("store")
+  .dependsOn(core % "compile->compile;test->test")
+  .settings(libraryDependencies += "org.typelevel" %% "cats-effect" % "3.6.0")
 
 lazy val http = module("http").dependsOn(core)
 

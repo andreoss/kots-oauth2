@@ -1,0 +1,39 @@
+package dev.oauth2.store.memory
+
+import cats.Monad
+import cats.effect.kernel.Ref
+import cats.syntax.flatMap._
+import cats.syntax.functor._
+
+import dev.oauth2.core.AuthorizationCode
+import dev.oauth2.core.Clock
+import dev.oauth2.store.CodeRecord
+import dev.oauth2.store.CodeStore
+
+final class InMemoryCodeStore[F[_]: Monad] private (
+    state: Ref[F, Map[AuthorizationCode, CodeRecord]],
+    clock: Clock[F]
+) extends CodeStore[F] {
+
+  def save(record: CodeRecord): F[Unit] =
+    state.update(_.updated(record.code, record))
+
+  def consume(code: AuthorizationCode): F[Option[CodeRecord]] =
+    clock.instant.flatMap { now =>
+      state.modify { codes =>
+        codes.get(code) match {
+          case Some(record) if !record.isExpired(now) => (codes - code, Some(record))
+          case Some(_)                                => (codes - code, None)
+          case None                                  => (codes, None)
+        }
+      }
+    }
+}
+
+object InMemoryCodeStore {
+
+  def create[F[_]: cats.effect.Sync](clock: Clock[F]): F[InMemoryCodeStore[F]] =
+    Ref.of[F, Map[AuthorizationCode, CodeRecord]](Map.empty).map { state =>
+      new InMemoryCodeStore(state, clock)
+    }
+}
