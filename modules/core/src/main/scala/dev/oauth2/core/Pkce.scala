@@ -45,3 +45,28 @@ object CodeChallengeMethod {
 }
 
 final case class Pkce(challenge: CodeChallenge, method: CodeChallengeMethod)
+
+object Pkce {
+
+  def verify(pkce: Pkce, verifier: CodeVerifier): Either[OAuth2Error, Unit] =
+    pkce.method match {
+      case CodeChallengeMethod.Plain =>
+        Left(OAuth2Error.InvalidGrant(Some("plain is not supported")))
+      case CodeChallengeMethod.S256 =>
+        Either.cond(
+          java.security.MessageDigest.isEqual(
+            s256(verifier).getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+            pkce.challenge.value.getBytes(java.nio.charset.StandardCharsets.US_ASCII)
+          ),
+          (),
+          OAuth2Error.InvalidGrant(Some("code_verifier does not match code_challenge"))
+        )
+    }
+
+  private def s256(verifier: CodeVerifier): String =
+    java.util.Base64.getUrlEncoder.withoutPadding.encodeToString(
+      java.security.MessageDigest
+        .getInstance("SHA-256")
+        .digest(verifier.value.getBytes(java.nio.charset.StandardCharsets.US_ASCII))
+    )
+}
