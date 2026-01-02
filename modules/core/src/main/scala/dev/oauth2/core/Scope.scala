@@ -23,6 +23,12 @@ object Scopes {
   def from(values: Iterable[String]): Either[ParseFailure, Scopes] =
     values.toVector.traverse(Scope.from).map(v => new Scopes(v.toSet))
 
+  def parse(raw: String): Either[ParseFailure, Scopes] = {
+    val parts = raw.split(" ", -1).toVector
+    if (parts.exists(_.isEmpty)) Left(ParseFailure("Scopes", "empty token"))
+    else from(parts)
+  }
+
   def of(values: Iterable[Scope]): Scopes = new Scopes(values.toSet)
 
   implicit val monoid: Monoid[Scopes] = new Monoid[Scopes] {
