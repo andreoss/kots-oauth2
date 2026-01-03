@@ -1,6 +1,8 @@
 package dev.oauth2.store
 
+import dev.oauth2.core.ClientAuthMethod
 import dev.oauth2.core.ClientId
+import dev.oauth2.core.ClientSecretHash
 import dev.oauth2.core.RedirectUri
 import dev.oauth2.core.Scopes
 
@@ -8,8 +10,11 @@ final case class Client(
     id: ClientId,
     redirectUris: Set[RedirectUri],
     scopes: Scopes,
-    confidential: Boolean
+    authMethod: ClientAuthMethod,
+    secretHash: Option[ClientSecretHash]
 ) {
+  def confidential: Boolean = authMethod != ClientAuthMethod.None
+
   def allowsRedirect(candidate: RedirectUri): Boolean =
     RedirectUri.matches(redirectUris, candidate)
 

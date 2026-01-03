@@ -7,7 +7,10 @@ import cats.effect.IO
 import dev.oauth2.core.AccessToken
 import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.AuthorizationDetails
+import dev.oauth2.core.ClientAuthMethod
 import dev.oauth2.core.ClientId
+import dev.oauth2.core.ClientSecret
+import dev.oauth2.core.ClientSecretHash
 import dev.oauth2.core.Clock
 import dev.oauth2.core.GrantId
 import dev.oauth2.core.ParseFailure
@@ -37,7 +40,8 @@ class MemoryStoresSpec extends CatsEffectSuite {
     id = unsafe(ClientId.from("client-1")),
     redirectUris = Set.empty,
     scopes = unsafe(Scopes.parse("read")),
-    confidential = true
+    authMethod = ClientAuthMethod.ClientSecretBasic,
+    secretHash = Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
   )
 
   private def code(name: String, expiresAt: Instant): CodeRecord =

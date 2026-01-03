@@ -66,4 +66,7 @@ object Wire {
   implicit val responseType: Wire[ResponseType] = instance(_.value, ResponseType.from)
 
   implicit val grantType: Wire[GrantType] = instance(_.value, GrantType.from)
+
+  implicit val clientAuthMethod: Wire[ClientAuthMethod] =
+    instance(_.value, ClientAuthMethod.from)
 }
