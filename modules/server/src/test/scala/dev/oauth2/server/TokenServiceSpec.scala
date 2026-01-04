@@ -14,6 +14,7 @@ import dev.oauth2.core.CodeChallenge
 import dev.oauth2.core.CodeChallengeMethod
 import dev.oauth2.core.CodeVerifier
 import dev.oauth2.core.Entropy
+import dev.oauth2.core.GrantId
 import dev.oauth2.core.Lifetime
 import dev.oauth2.core.LifetimePolicy
 import dev.oauth2.core.ParseFailure
@@ -24,6 +25,7 @@ import dev.oauth2.core.Subject
 import dev.oauth2.core.TokenRequest
 import dev.oauth2.store.Client
 import dev.oauth2.store.CodeRecord
+import dev.oauth2.store.Grant
 import dev.oauth2.store.memory.InMemoryCodeStore
 import dev.oauth2.store.memory.InMemoryGrantStore
 import dev.oauth2.store.memory.InMemoryTokenStore
@@ -245,5 +247,46 @@ class TokenServiceSpec extends CatsEffectSuite {
       result <- service.authorizationCode(request("code-1", verifier), client())
       grant <- grants.find(result.toOption.get.grantId)
     } yield assertEquals(grant.map(_.revoked), Some(false))
+  }
+
+  test("exchange refuses a replayed code") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      first <- service.authorizationCode(request("code-1", verifier), client())
+      second <- service.authorizationCode(request("code-1", verifier), client())
+    } yield {
+      assert(first.isRight)
+      assertEquals(second.left.toOption.map(_.code), Some("invalid_grant"))
+    }
+  }
+
+  test("a replayed code revokes the grant it issued") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, tokens, grants) = triple
+      first <- service.authorizationCode(request("code-1", verifier), client())
+      minted = first.toOption.get
+      _ <- service.authorizationCode(request("code-1", verifier), client())
+      grant <- grants.find(minted.grantId)
+      stored <- tokens.findByAccess(minted.accessToken)
+    } yield {
+      assertEquals(grant.map(_.revoked), Some(true))
+      assertEquals(stored, None)
+    }
+  }
+
+  test("an unknown code revokes nothing") {
+    val kept = unsafe(GrantId.from("grant-1"))
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, grants) = triple
+      _ <- grants.save(Grant(kept, clientId, subject, Scopes.empty, AuthorizationDetails.empty, revoked = false))
+      result <- service.authorizationCode(request("code-2", verifier), client())
+      grant <- grants.find(kept)
+    } yield {
+      assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+      assertEquals(grant.map(_.revoked), Some(false))
+    }
   }
 }

@@ -97,6 +97,32 @@ class MemoryStoresSpec extends CatsEffectSuite {
     }
   }
 
+  test("a redeemed code remembers the grant it issued") {
+    val grant = unsafe(GrantId.from("grant-1"))
+    for {
+      clock <- IO(new TestClock(start, Duration.ofSeconds(60L)))
+      store <- InMemoryCodeStore.create[IO](clockOf(clock))
+      before <- store.redeemed(unsafe(AuthorizationCode.from("code-1")))
+      _ <- store.redeem(unsafe(AuthorizationCode.from("code-1")), grant)
+      after <- store.redeemed(unsafe(AuthorizationCode.from("code-1")))
+    } yield {
+      assertEquals(before, None)
+      assertEquals(after, Some(grant))
+    }
+  }
+
+  test("a code redeemed twice keeps the last grant") {
+    val first = unsafe(GrantId.from("grant-1"))
+    val second = unsafe(GrantId.from("grant-2"))
+    for {
+      clock <- IO(new TestClock(start, Duration.ofSeconds(60L)))
+      store <- InMemoryCodeStore.create[IO](clockOf(clock))
+      _ <- store.redeem(unsafe(AuthorizationCode.from("code-1")), first)
+      _ <- store.redeem(unsafe(AuthorizationCode.from("code-1")), second)
+      found <- store.redeemed(unsafe(AuthorizationCode.from("code-1")))
+    } yield assertEquals(found, Some(second))
+  }
+
   test("an unknown code is never consumed") {
     for {
       clock <- IO(new TestClock(start, Duration.ofSeconds(60L)))

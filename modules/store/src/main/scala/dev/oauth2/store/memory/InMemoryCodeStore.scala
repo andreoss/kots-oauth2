@@ -7,11 +7,13 @@ import cats.syntax.functor._
 
 import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.Clock
+import dev.oauth2.core.GrantId
 import dev.oauth2.store.CodeRecord
 import dev.oauth2.store.CodeStore
 
 final class InMemoryCodeStore[F[_]: Monad] private (
     state: Ref[F, Map[AuthorizationCode, CodeRecord]],
+    issued: Ref[F, Map[AuthorizationCode, GrantId]],
     clock: Clock[F]
 ) extends CodeStore[F] {
 
@@ -28,12 +30,19 @@ final class InMemoryCodeStore[F[_]: Monad] private (
         }
       }
     }
+
+  def redeem(code: AuthorizationCode, grant: GrantId): F[Unit] =
+    issued.update(_.updated(code, grant))
+
+  def redeemed(code: AuthorizationCode): F[Option[GrantId]] =
+    issued.get.map(_.get(code))
 }
 
 object InMemoryCodeStore {
 
   def create[F[_]: cats.effect.Sync](clock: Clock[F]): F[InMemoryCodeStore[F]] =
-    Ref.of[F, Map[AuthorizationCode, CodeRecord]](Map.empty).map { state =>
-      new InMemoryCodeStore(state, clock)
-    }
+    for {
+      state <- Ref.of[F, Map[AuthorizationCode, CodeRecord]](Map.empty)
+      issued <- Ref.of[F, Map[AuthorizationCode, GrantId]](Map.empty)
+    } yield new InMemoryCodeStore(state, issued, clock)
 }

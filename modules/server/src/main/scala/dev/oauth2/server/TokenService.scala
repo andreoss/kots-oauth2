@@ -4,6 +4,7 @@ import cats.Monad
 import cats.syntax.all._
 
 import dev.oauth2.core.AccessToken
+import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.Clock
 import dev.oauth2.core.Entropy
 import dev.oauth2.core.GrantId
@@ -37,12 +38,18 @@ final class TokenService[F[_]: Monad](
       client: Client
   ): F[Either[OAuth2Error, TokenRecord]] =
     codes.consume(request.code).flatMap {
-      case None => Monad[F].pure(Left(TokenService.rejected))
+      case None       => replay(request.code)
       case Some(record) =>
         check(record, request, client).fold(
           error => Monad[F].pure(Left(error)),
           _ => issue(record, client)
         )
+    }
+
+  private def replay(code: AuthorizationCode): F[Either[OAuth2Error, TokenRecord]] =
+    codes.redeemed(code).flatMap {
+      case None        => Monad[F].pure(Left(TokenService.rejected))
+      case Some(grant) => grants.revoke(grant) >> tokens.revokeGrant(grant).as(Left(TokenService.rejected))
     }
 
   private def check(
@@ -93,7 +100,8 @@ final class TokenService[F[_]: Monad](
           )
           grants
             .save(Grant(grantId, record.clientId, record.subject, record.scopes, record.details, revoked = false))
-            .flatMap(_ => tokens.save(minted).as(Right(minted)))
+            .flatMap(_ => tokens.save(minted))
+            .flatMap(_ => codes.redeem(record.code, grantId).as(Right(minted)))
         }
       )
     } yield result
