@@ -51,5 +51,9 @@ trait TokenStore[F[_]] {
 
   def drop(refreshToken: RefreshToken): F[Unit]
 
+  def retire(refreshToken: RefreshToken, grantId: GrantId): F[Unit]
+
+  def rotated(refreshToken: RefreshToken): F[Option[GrantId]]
+
   def revokeGrant(grantId: GrantId): F[Unit]
 }

@@ -286,6 +286,35 @@ class MemoryStoresSpec extends CatsEffectSuite {
     }
   }
 
+  test("a retired refresh token is not found and remembers its grant") {
+    val grant = unsafe(GrantId.from("grant-1"))
+    for {
+      clock <- IO(new TestClock(start, Duration.ofSeconds(60L)))
+      store <- InMemoryTokenStore.create[IO](clockOf(clock))
+      _ <- store.save(token("at-1", Some("rt-1"), "grant-1"))
+      _ <- store.retire(unsafe(RefreshToken.from("rt-1")), grant)
+      found <- store.findByRefresh(unsafe(RefreshToken.from("rt-1")))
+      remembered <- store.rotated(unsafe(RefreshToken.from("rt-1")))
+      other <- store.rotated(unsafe(RefreshToken.from("rt-2")))
+    } yield {
+      assertEquals(found, None)
+      assertEquals(remembered, Some(grant))
+      assertEquals(other, None)
+    }
+  }
+
+  test("a retired refresh token is remembered once for the grant it issued") {
+    val first = unsafe(GrantId.from("grant-1"))
+    val second = unsafe(GrantId.from("grant-2"))
+    for {
+      clock <- IO(new TestClock(start, Duration.ofSeconds(60L)))
+      store <- InMemoryTokenStore.create[IO](clockOf(clock))
+      _ <- store.retire(unsafe(RefreshToken.from("rt-1")), first)
+      _ <- store.retire(unsafe(RefreshToken.from("rt-1")), second)
+      remembered <- store.rotated(unsafe(RefreshToken.from("rt-1")))
+    } yield assertEquals(remembered, Some(second))
+  }
+
   test("revoking a grant removes every token of that grant and keeps the others") {
     for {
       clock <- IO(new TestClock(start, Duration.ofSeconds(60L)))
