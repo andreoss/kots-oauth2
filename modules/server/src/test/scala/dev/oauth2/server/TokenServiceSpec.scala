@@ -125,14 +125,28 @@ class TokenServiceSpec extends CatsEffectSuite {
       result <- service.authorizationCode(request("code-1", verifier), client())
       minted = result.toOption.get
       stored <- tokens.findByAccess(minted.accessToken)
-      grant <- grants.find(minted.grantId)
+      grant <- grants.find(minted.record.grantId)
     } yield {
       assert(result.isRight)
-      assertEquals(minted.subject, subject)
-      assertEquals(minted.scopes, unsafe(Scopes.parse("read")))
+      assertEquals(minted.record.subject, subject)
+      assertEquals(minted.record.scopes, unsafe(Scopes.parse("read")))
       assert(minted.refreshToken.isDefined)
       assert(stored.isDefined)
       assert(grant.isDefined)
+    }
+  }
+
+  test("exchange stores only the hash of the issued tokens") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, tokens, _) = triple
+      result <- service.authorizationCode(request("code-1", verifier), client())
+      stored <- tokens.findByAccess(result.toOption.get.accessToken)
+      byRefresh <- tokens.findByRefresh(result.toOption.get.refreshToken.get)
+    } yield {
+      assertNotEquals(stored.map(_.accessTokenHash.value), result.toOption.map(_.accessToken.value))
+      assert(stored.exists(_.matchesAccess(result.toOption.get.accessToken)))
+      assert(byRefresh.exists(_.matchesRefresh(result.toOption.get.refreshToken.get)))
     }
   }
 
@@ -146,8 +160,8 @@ class TokenServiceSpec extends CatsEffectSuite {
       (service, _, _) = triple
       result <- service.authorizationCode(request("code-1", verifier), client())
     } yield {
-      assertEquals(result.toOption.map(_.accessExpiresAt), Some(Start.plusSeconds(60L)))
-      assertEquals(result.toOption.map(_.refreshExpiresAt), Some(Some(Start.plusSeconds(120L))))
+      assertEquals(result.toOption.map(_.record.accessExpiresAt), Some(Start.plusSeconds(60L)))
+      assertEquals(result.toOption.map(_.record.refreshExpiresAt), Some(Some(Start.plusSeconds(120L))))
     }
   }
 
@@ -245,7 +259,7 @@ class TokenServiceSpec extends CatsEffectSuite {
       triple <- setup(record("code-1"))
       (service, _, grants) = triple
       result <- service.authorizationCode(request("code-1", verifier), client())
-      grant <- grants.find(result.toOption.get.grantId)
+      grant <- grants.find(result.toOption.get.record.grantId)
     } yield assertEquals(grant.map(_.revoked), Some(false))
   }
 
@@ -268,7 +282,7 @@ class TokenServiceSpec extends CatsEffectSuite {
       first <- service.authorizationCode(request("code-1", verifier), client())
       minted = first.toOption.get
       _ <- service.authorizationCode(request("code-1", verifier), client())
-      grant <- grants.find(minted.grantId)
+      grant <- grants.find(minted.record.grantId)
       stored <- tokens.findByAccess(minted.accessToken)
     } yield {
       assertEquals(grant.map(_.revoked), Some(true))

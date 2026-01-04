@@ -5,6 +5,7 @@ import java.time.Instant
 
 import cats.effect.IO
 import dev.oauth2.core.AccessToken
+import dev.oauth2.core.AccessTokenHash
 import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.AuthorizationDetails
 import dev.oauth2.core.ClientAuthMethod
@@ -15,6 +16,7 @@ import dev.oauth2.core.Clock
 import dev.oauth2.core.GrantId
 import dev.oauth2.core.ParseFailure
 import dev.oauth2.core.RefreshToken
+import dev.oauth2.core.RefreshTokenHash
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
 import dev.oauth2.core.TestClock
@@ -58,8 +60,8 @@ class MemoryStoresSpec extends CatsEffectSuite {
 
   private def token(access: String, refresh: Option[String], grant: String): TokenRecord =
     TokenRecord(
-      accessToken = unsafe(AccessToken.from(access)),
-      refreshToken = refresh.map(raw => unsafe(RefreshToken.from(raw))),
+      accessTokenHash = AccessTokenHash.of(unsafe(AccessToken.from(access))),
+      refreshTokenHash = refresh.map(raw => RefreshTokenHash.of(unsafe(RefreshToken.from(raw)))),
       grantId = unsafe(GrantId.from(grant)),
       clientId = client.id,
       subject = unsafe(Subject.from("user-1")),
@@ -193,8 +195,35 @@ class MemoryStoresSpec extends CatsEffectSuite {
       byAccess <- store.findByAccess(unsafe(AccessToken.from("at-1")))
       byRefresh <- store.findByRefresh(unsafe(RefreshToken.from("rt-1")))
     } yield {
-      assertEquals(byAccess.map(_.accessToken.value), Some("at-1"))
-      assertEquals(byRefresh.map(_.refreshToken.map(_.value)), Some(Some("rt-1")))
+      assertEquals(byAccess.map(_.grantId.value), Some("grant-1"))
+      assertEquals(byRefresh.map(_.grantId.value), Some("grant-1"))
+    }
+  }
+
+  test("a stored record carries the hash and not the token itself") {
+    val record = token("at-1", Some("rt-1"), "grant-1")
+    for {
+      clock <- IO(new TestClock(start, Duration.ofSeconds(60L)))
+      store <- InMemoryTokenStore.create[IO](clockOf(clock))
+      _ <- store.save(record)
+      found <- store.findByAccess(unsafe(AccessToken.from("at-1")))
+    } yield {
+      assertNotEquals(found.map(_.accessTokenHash.value), Some("at-1"))
+      assert(found.exists(_.matchesAccess(unsafe(AccessToken.from("at-1")))))
+      assert(found.exists(_.matchesRefresh(unsafe(RefreshToken.from("rt-1")))))
+    }
+  }
+
+  test("a token is not found by another token") {
+    for {
+      clock <- IO(new TestClock(start, Duration.ofSeconds(60L)))
+      store <- InMemoryTokenStore.create[IO](clockOf(clock))
+      _ <- store.save(token("at-1", Some("rt-1"), "grant-1"))
+      byAccess <- store.findByAccess(unsafe(AccessToken.from("at-2")))
+      byRefresh <- store.findByRefresh(unsafe(RefreshToken.from("rt-2")))
+    } yield {
+      assertEquals(byAccess, None)
+      assertEquals(byRefresh, None)
     }
   }
 

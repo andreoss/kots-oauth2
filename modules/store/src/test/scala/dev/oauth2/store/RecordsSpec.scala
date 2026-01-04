@@ -3,6 +3,7 @@ package dev.oauth2.store
 import java.time.Instant
 
 import dev.oauth2.core.AccessToken
+import dev.oauth2.core.AccessTokenHash
 import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.AuthorizationDetails
 import dev.oauth2.core.ClientAuthMethod
@@ -16,6 +17,7 @@ import dev.oauth2.core.GrantId
 import dev.oauth2.core.Pkce
 import dev.oauth2.core.RedirectUri
 import dev.oauth2.core.RefreshToken
+import dev.oauth2.core.RefreshTokenHash
 import dev.oauth2.core.Scope
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
@@ -58,8 +60,8 @@ class RecordsSpec extends ScalaCheckSuite {
   )
 
   private val token = TokenRecord(
-    accessToken = unsafe(AccessToken.from("at-1")),
-    refreshToken = Some(unsafe(RefreshToken.from("rt-1"))),
+    accessTokenHash = AccessTokenHash.of(unsafe(AccessToken.from("at-1"))),
+    refreshTokenHash = Some(RefreshTokenHash.of(unsafe(RefreshToken.from("rt-1")))),
     grantId = unsafe(GrantId.from("grant-1")),
     clientId = client.id,
     subject = unsafe(Subject.from("user-1")),
@@ -113,6 +115,21 @@ class RecordsSpec extends ScalaCheckSuite {
     val expiry = expiresAt.plusSeconds(3600L)
     assertEquals(token.isRefreshExpired(expiry.minusNanos(1L)), false)
     assertEquals(token.isRefreshExpired(expiry), true)
+  }
+
+  test("a record matches only its own access token") {
+    assert(token.matchesAccess(unsafe(AccessToken.from("at-1"))))
+    assertEquals(token.matchesAccess(unsafe(AccessToken.from("at-2"))), false)
+  }
+
+  test("a record matches only its own refresh token") {
+    assert(token.matchesRefresh(unsafe(RefreshToken.from("rt-1"))))
+    assertEquals(token.matchesRefresh(unsafe(RefreshToken.from("rt-2"))), false)
+  }
+
+  test("a record without a refresh token matches no refresh token") {
+    val without = token.copy(refreshTokenHash = None)
+    assertEquals(without.matchesRefresh(unsafe(RefreshToken.from("rt-1"))), false)
   }
 
   test("a code without a challenge stays without one") {
