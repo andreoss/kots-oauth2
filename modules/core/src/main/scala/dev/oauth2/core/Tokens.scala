@@ -20,3 +20,23 @@ object RefreshToken {
   def from(raw: String): Either[ParseFailure, RefreshToken] =
     Text.printable("RefreshToken", raw).map(new RefreshToken(_))
 }
+
+final case class AccessTokenHash private (value: String)
+
+object AccessTokenHash {
+
+  def of(token: AccessToken): AccessTokenHash = new AccessTokenHash(Digests.sha256Hex(token.value))
+
+  def verify(hash: AccessTokenHash, token: AccessToken): Boolean =
+    Digests.equal(hash.value, Digests.sha256Hex(token.value))
+}
+
+final case class RefreshTokenHash private (value: String)
+
+object RefreshTokenHash {
+
+  def of(token: RefreshToken): RefreshTokenHash = new RefreshTokenHash(Digests.sha256Hex(token.value))
+
+  def verify(hash: RefreshTokenHash, token: RefreshToken): Boolean =
+    Digests.equal(hash.value, Digests.sha256Hex(token.value))
+}
