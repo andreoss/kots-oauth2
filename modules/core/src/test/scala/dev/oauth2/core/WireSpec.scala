@@ -86,6 +86,9 @@ class WireSpec extends ScalaCheckSuite {
   roundTrip[Scopes]("Scopes", scopes)
   roundTrip[ResponseType]("ResponseType", Gen.oneOf(ResponseType.all))
   roundTrip[GrantType]("GrantType", Gen.oneOf(GrantType.all))
+  roundTrip[ClientAuthMethod]("ClientAuthMethod", Gen.oneOf(ClientAuthMethod.all))
+  roundTrip[RevocationToken]("RevocationToken", printable.map(raw => RevocationToken.from(raw).toOption.get))
+  roundTrip[TokenTypeHint]("TokenTypeHint", Gen.oneOf(TokenTypeHint.all))
 
   stability[ClientId]("ClientId", printable)
   stability[Scopes]("Scopes", Gen.listOf(scopeToken).map(_.mkString(" ")))
@@ -113,4 +116,6 @@ class WireSpec extends ScalaCheckSuite {
   refuses[CodeVerifier]("CodeVerifier", "short")
   refuses[ResponseType]("ResponseType", "token")
   refuses[GrantType]("GrantType", "password")
+  refuses[TokenTypeHint]("TokenTypeHint", "id_token")
+  refuses[RevocationToken]("RevocationToken", "")
 }
