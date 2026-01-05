@@ -17,9 +17,11 @@ import dev.oauth2.core.GrantId
 import dev.oauth2.core.ParseFailure
 import dev.oauth2.core.RefreshToken
 import dev.oauth2.core.RefreshTokenHash
+import dev.oauth2.core.RevocationToken
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
 import dev.oauth2.core.TestClock
+import dev.oauth2.core.TokenTypeHint
 import dev.oauth2.store.Client
 import dev.oauth2.store.CodeRecord
 import dev.oauth2.store.Grant
@@ -332,6 +334,60 @@ class MemoryStoresSpec extends CatsEffectSuite {
       assertEquals(firstRefresh, None)
       assertEquals(second, None)
       assert(third.isDefined)
+    }
+  }
+
+  test("revoking a refresh token revokes every token of the same grant") {
+    for {
+      clock <- IO(new TestClock(start, Duration.ofSeconds(60L)))
+      store <- InMemoryTokenStore.create[IO](clockOf(clock))
+      _ <- store.save(token("at-1", Some("rt-1"), "grant-1"))
+      _ <- store.save(token("at-2", Some("rt-2"), "grant-2"))
+      revoked <- store.revoke(unsafe(RevocationToken.from("rt-1")), None, client.id)
+      first <- store.findByAccess(unsafe(AccessToken.from("at-1")))
+      second <- store.findByAccess(unsafe(AccessToken.from("at-2")))
+    } yield {
+      assertEquals(revoked, Some(unsafe(GrantId.from("grant-1"))))
+      assertEquals(first, None)
+      assert(second.isDefined)
+    }
+  }
+
+  test("revoking an access token keeps the rest of the grant") {
+    for {
+      clock <- IO(new TestClock(start, Duration.ofSeconds(60L)))
+      store <- InMemoryTokenStore.create[IO](clockOf(clock))
+      _ <- store.save(token("at-1", Some("rt-1"), "grant-1"))
+      _ <- store.save(token("at-2", Some("rt-2"), "grant-1"))
+      revoked <- store.revoke(unsafe(RevocationToken.from("at-1")), None, client.id)
+      dropped <- store.findByAccess(unsafe(AccessToken.from("at-1")))
+      kept <- store.findByAccess(unsafe(AccessToken.from("at-2")))
+    } yield {
+      assertEquals(revoked, None)
+      assertEquals(dropped, None)
+      assert(kept.isDefined)
+    }
+  }
+
+  test("revocation honours the hint and refuses a token of another client") {
+    for {
+      clock <- IO(new TestClock(start, Duration.ofSeconds(60L)))
+      store <- InMemoryTokenStore.create[IO](clockOf(clock))
+      _ <- store.save(token("at-1", Some("rt-1"), "grant-1"))
+      _ <- store.save(token("at-2", Some("rt-2"), "grant-2"))
+      asAccess <- store.revoke(unsafe(RevocationToken.from("at-1")), Some(TokenTypeHint.AccessToken), client.id)
+      byRefresh <- store.revoke(unsafe(RevocationToken.from("at-2")), Some(TokenTypeHint.RefreshToken), client.id)
+      foreign <- store.revoke(unsafe(RevocationToken.from("rt-2")), None, unsafe(ClientId.from("client-2")))
+      unknown <- store.revoke(unsafe(RevocationToken.from("absent")), None, client.id)
+      dropped <- store.findByAccess(unsafe(AccessToken.from("at-1")))
+      kept <- store.findByRefresh(unsafe(RefreshToken.from("rt-2")))
+    } yield {
+      assertEquals(asAccess, None)
+      assertEquals(byRefresh, None)
+      assertEquals(foreign, None)
+      assertEquals(unknown, None)
+      assertEquals(dropped, None)
+      assert(kept.isDefined)
     }
   }
 

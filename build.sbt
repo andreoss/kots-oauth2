@@ -73,7 +73,10 @@ lazy val client = module("client").dependsOn(core)
 lazy val host = module("host")
   .dependsOn(server, client)
   .settings(
-    libraryDependencies += "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % Tapir
+    libraryDependencies ++= Seq(
+      "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % Tapir,
+      "io.circe" %% "circe-parser" % Circe % Test
+    )
   )
 
 lazy val root = (project in file("."))

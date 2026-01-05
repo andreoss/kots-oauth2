@@ -15,10 +15,13 @@ import sttp.tapir.docs.openapi.OpenAPIDocsInterpreter
 class EndpointsSpec extends FunSuite {
 
   private val document: OpenAPI =
-    OpenAPIDocsInterpreter().toOpenAPI(List(Endpoints.token), "OAuth 2.0", "1.0")
+    OpenAPIDocsInterpreter().toOpenAPI(List(Endpoints.token, Endpoints.revocation), "OAuth 2.0", "1.0")
 
   private def tokenOperation =
     document.paths.pathItems("/token").post.getOrElse(fail("no token operation in the document"))
+
+  private def revocationOperation =
+    document.paths.pathItems("/revocation").post.getOrElse(fail("no revocation operation in the document"))
 
   private def accepted[A](result: DecodeResult[A]): Boolean =
     result match {
@@ -133,6 +136,31 @@ class EndpointsSpec extends FunSuite {
     val responses = tokenOperation.responses.responses.values.flatMap(_.toOption)
     assert(responses.nonEmpty)
     assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
+  }
+
+  test("the revocation endpoint is a form post at /revocation") {
+    assertEquals(Endpoints.revocation.showPathTemplate(showQueryParam = None), "/revocation")
+    assertEquals(Endpoints.revocation.method.map(_.method), Some("POST"))
+    assertEquals(
+      revocationOperation.requestBody.flatMap(_.toOption).map(_.content.keys.toList),
+      Some(List("application/x-www-form-urlencoded"))
+    )
+    assert(revocationOperation.security.nonEmpty)
+  }
+
+  test("every described revocation response carries cache control no-store") {
+    val responses = revocationOperation.responses.responses.values.flatMap(_.toOption)
+    assert(responses.nonEmpty)
+    assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
+  }
+
+  test("the revocation form accepts its own parameters and refuses the others") {
+    val form = Endpoints.strictForm(Endpoints.revocationParameters)
+    assertEquals(
+      form.decode("token=at-1&token_type_hint=refresh_token"),
+      DecodeResult.Value(Map("token" -> "at-1", "token_type_hint" -> "refresh_token"))
+    )
+    assert(refused(form.decode("token=at-1&scope=read")))
   }
 
   test("an error is written as the body the RFC assigns to it") {

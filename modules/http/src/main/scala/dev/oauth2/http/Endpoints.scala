@@ -25,15 +25,25 @@ object Endpoints {
     "scope"
   )
 
-  implicit val formParameters: Codec[String, Map[String, String], XWwwFormUrlencoded] =
+  val revocationParameters: Set[String] = Set(
+    "token",
+    "token_type_hint",
+    "client_id",
+    "client_secret"
+  )
+
+  def strictForm(allowed: Set[String]): Codec[String, Map[String, String], XWwwFormUrlencoded] =
     Codec
       .id[String, XWwwFormUrlencoded](XWwwFormUrlencoded(), Schema.anyObject)
       .mapDecode(raw =>
         Form
           .parse(raw)
-          .flatMap(params => Form.strict(params, tokenParameters))
+          .flatMap(params => Form.strict(params, allowed))
           .fold(error => DecodeResult.Error(error.code, new IllegalArgumentException(error.code)), DecodeResult.Value(_))
       )(Form.render)
+
+  implicit val formParameters: Codec[String, Map[String, String], XWwwFormUrlencoded] =
+    strictForm(tokenParameters)
 
   val statuses: List[StatusCode] = List(
     StatusCode.BadRequest,
@@ -59,7 +69,7 @@ object Endpoints {
         DecodeResult.Value(_)
       )
 
-  private def noStore[A](out: EndpointOutput[A]): EndpointOutput[A] =
+  private[http] def noStore[A](out: EndpointOutput[A]): EndpointOutput[A] =
     out.and(header(Endpoints.CacheControlHeader, Endpoints.NoStore))
 
   private def errorVariant(status: StatusCode): EndpointOutput.OneOfVariant[OAuth2Error] = {
@@ -75,11 +85,31 @@ object Endpoints {
       oneOfVariantValueMatcher(status, noStore(jsonBody[Map[String, String]].map(errorBody(status))))(matches)
   }
 
+  def errors: EndpointOutput[OAuth2Error] =
+    oneOf[OAuth2Error](errorVariant(statuses.head), statuses.tail.map(errorVariant): _*)
+
   val token: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     endpoint.post
       .in("token")
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
       .out(noStore(jsonBody[Map[String, String]]))
-      .errorOut(oneOf[OAuth2Error](errorVariant(statuses.head), statuses.tail.map(errorVariant): _*))
+      .errorOut(errors)
+
+  lazy val revocation: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Unit, Any] =
+    Revocation.endpoint
+}
+
+private[http] object Revocation {
+
+  implicit val formParameters: Codec[String, Map[String, String], XWwwFormUrlencoded] =
+    Endpoints.strictForm(Endpoints.revocationParameters)
+
+  val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Unit, Any] =
+    sttp.tapir.endpoint.post
+      .in("revocation")
+      .in(Auth.basic)
+      .in(formBody[Map[String, String]])
+      .out(Endpoints.noStore(statusCode(StatusCode.Ok)))
+      .errorOut(Endpoints.errors)
 }
