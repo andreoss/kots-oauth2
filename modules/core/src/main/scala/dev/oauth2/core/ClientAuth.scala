@@ -25,19 +25,16 @@ final case class ClientAuthInput(
 }
 
 object ClientAuthInput {
-  private val BasicPrefix: String = "basic"
 
-  def from(authorization: Option[String], params: Map[String, String]): ValidatedNec[OAuth2Error, ClientAuthInput] =
+  def from(basic: Option[String], params: Map[String, String]): ValidatedNec[OAuth2Error, ClientAuthInput] =
     (
-      credentials(authorization),
+      credentials(basic),
       field(params, "client_id")(ClientId.from),
       field(params, "client_secret")(ClientSecret.from)
     ).mapN(ClientAuthInput.apply)
 
-  private def credentials(authorization: Option[String]): ValidatedNec[OAuth2Error, Option[ClientCredentials]] =
-    authorization
-      .filter(_.regionMatches(true, 0, BasicPrefix, 0, BasicPrefix.length))
-      .map(_.substring(BasicPrefix.length))
+  private def credentials(basic: Option[String]): ValidatedNec[OAuth2Error, Option[ClientCredentials]] =
+    basic
       .traverse(raw => ClientCredentials.fromBasic(raw).leftMap(_ => OAuth2Error.InvalidClient(): OAuth2Error))
       .toValidatedNec
 

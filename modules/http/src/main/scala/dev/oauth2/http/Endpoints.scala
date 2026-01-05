@@ -8,6 +8,8 @@ import sttp.tapir.json.circe._
 
 object Endpoints {
 
+  val ChallengeHeader: String = "WWW-Authenticate"
+
   val tokenParameters: Set[String] = Set(
     "grant_type",
     "code",
@@ -38,24 +40,36 @@ object Endpoints {
   )
 
   def errorBody(status: StatusCode): Mapping[Map[String, String], OAuth2Error] =
-    Mapping.fromDecode[Map[String, String], OAuth2Error](body =>
-      OAuth2Error
-        .fromWire(status.code, body)
-        .fold(
-          failure => DecodeResult.Error(status.code.toString, new IllegalArgumentException(failure.toString)),
-          DecodeResult.Value(_)
-        )
-    )(_.body)
+    Mapping.fromDecode[Map[String, String], OAuth2Error](body => decoded(status, body))(_.body)
 
-  private def errorVariant(status: StatusCode): EndpointOutput.OneOfVariant[OAuth2Error] =
-    oneOfVariantValueMatcher(status, jsonBody[Map[String, String]].map(errorBody(status))) {
-      case error: OAuth2Error => error.status == status.code
-    }
+  def challengedBody(status: StatusCode): Mapping[(Option[String], Map[String, String]), OAuth2Error] =
+    Mapping.fromDecode[(Option[String], Map[String, String]), OAuth2Error](carried => decoded(status, carried._2))(error =>
+      (error.challenge, error.body)
+    )
+
+  private def decoded(status: StatusCode, body: Map[String, String]): DecodeResult[OAuth2Error] =
+    OAuth2Error
+      .fromWire(status.code, body)
+      .fold(
+        failure => DecodeResult.Error(status.code.toString, new IllegalArgumentException(failure.toString)),
+        DecodeResult.Value(_)
+      )
+
+  private def errorVariant(status: StatusCode): EndpointOutput.OneOfVariant[OAuth2Error] = {
+    val matches: PartialFunction[Any, Boolean] = { case error: OAuth2Error => error.status == status.code }
+    if (status == StatusCode.Unauthorized)
+      oneOfVariantValueMatcher(
+        status,
+        header[Option[String]](Endpoints.ChallengeHeader).and(jsonBody[Map[String, String]]).map(challengedBody(status))
+      )(matches)
+    else
+      oneOfVariantValueMatcher(status, jsonBody[Map[String, String]].map(errorBody(status)))(matches)
+  }
 
   val token: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     endpoint.post
       .in("token")
-      .in(header[Option[String]]("Authorization"))
+      .in(Auth.basic)
       .in(formBody[Map[String, String]])
       .out(jsonBody[Map[String, String]])
       .errorOut(oneOf[OAuth2Error](errorVariant(statuses.head), statuses.tail.map(errorVariant): _*))

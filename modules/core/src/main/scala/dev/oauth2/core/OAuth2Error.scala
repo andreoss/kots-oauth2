@@ -66,7 +66,9 @@ object OAuth2Error {
       errorUri: Option[String] = None
   ) extends OAuth2Error("temporarily_unavailable", 503)
 
-  val BasicChallenge: String = """Basic realm="oauth2""""
+  val BasicRealm: String = "oauth2"
+
+  val BasicChallenge: String = s"""Basic realm="$BasicRealm""""
 
   val knownCodes: Set[String] = Set(
     "invalid_request",

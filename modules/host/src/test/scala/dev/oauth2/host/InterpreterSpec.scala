@@ -16,6 +16,7 @@ import dev.oauth2.core.CodeChallengeMethod
 import dev.oauth2.core.CodeVerifier
 import dev.oauth2.core.Entropy
 import dev.oauth2.core.LifetimePolicy
+import dev.oauth2.core.OAuth2Error
 import dev.oauth2.core.ParseFailure
 import dev.oauth2.core.Pkce
 import dev.oauth2.core.RedirectUri
@@ -35,6 +36,7 @@ import dev.oauth2.store.memory.InMemoryTokenStore
 import fs2.Stream
 import munit.CatsEffectSuite
 import org.http4s.BasicCredentials
+import org.http4s.Header
 import org.http4s.Headers
 import org.http4s.MediaType
 import org.http4s.Method
@@ -44,6 +46,7 @@ import org.http4s.Status
 import org.http4s.Uri
 import org.http4s.headers.Authorization
 import org.http4s.headers.`Content-Type`
+import org.typelevel.ci.CIString
 
 class InterpreterSpec extends CatsEffectSuite {
 
@@ -149,6 +152,37 @@ class InterpreterSpec extends CatsEffectSuite {
     } yield {
       assertEquals(response.status, Status.Unauthorized)
       assert(text.contains("invalid_client"))
+    }
+  }
+
+  test("a refused client is answered with the challenge of the error model") {
+    for {
+      served <- routes
+      answered <- served.run(post(exchange, Some("wrong"))).value
+      response = answered.get
+    } yield assertEquals(
+      response.headers.headers.find(_.name.toString == "WWW-Authenticate").map(_.value),
+      Some(OAuth2Error.BasicChallenge)
+    )
+  }
+
+  test("a malformed basic header is answered with unauthorized and the challenge") {
+    for {
+      served <- routes
+      answered <- served
+        .run(
+          post(exchange, None).putHeaders(
+            Header.Raw(CIString("Authorization"), "Basic not base64 !")
+          )
+        )
+        .value
+      response = answered.get
+    } yield {
+      assertEquals(response.status, Status.Unauthorized)
+      assertEquals(
+        response.headers.headers.find(_.name.toString == "WWW-Authenticate").map(_.value),
+        Some(OAuth2Error.BasicChallenge)
+      )
     }
   }
 
