@@ -85,4 +85,33 @@ object OAuth2Error {
 
   def fromParseFailure(failure: ParseFailure): InvalidRequest =
     InvalidRequest(Some(s"${failure.typeName}: ${failure.reason}"))
+
+  def fromWire(status: Int, body: Map[String, String]): Either[ParseFailure, OAuth2Error] =
+    for {
+      code <- body.get("error").toRight(ParseFailure("OAuth2Error", "no error code"))
+      error <- fromCode(code, body)
+      _ <- Either.cond(
+        error.status == status,
+        error,
+        ParseFailure("OAuth2Error", s"$status is not the status of ${error.code}")
+      )
+    } yield error
+
+  private def fromCode(code: String, body: Map[String, String]): Either[ParseFailure, OAuth2Error] = {
+    val description = body.get("error_description")
+    val errorUri = body.get("error_uri")
+    code match {
+      case "invalid_request"           => Right(InvalidRequest(description, errorUri))
+      case "invalid_client"            => Right(InvalidClient(description, errorUri))
+      case "invalid_grant"             => Right(InvalidGrant(description, errorUri))
+      case "unauthorized_client"       => Right(UnauthorizedClient(description, errorUri))
+      case "unsupported_grant_type"    => Right(UnsupportedGrantType(description, errorUri))
+      case "invalid_scope"             => Right(InvalidScope(description, errorUri))
+      case "access_denied"             => Right(AccessDenied(description, errorUri))
+      case "unsupported_response_type" => Right(UnsupportedResponseType(description, errorUri))
+      case "server_error"              => Right(ServerError(description, errorUri))
+      case "temporarily_unavailable"   => Right(TemporarilyUnavailable(description, errorUri))
+      case other => Left(ParseFailure("OAuth2Error", s"unknown error code: $other"))
+    }
+  }
 }

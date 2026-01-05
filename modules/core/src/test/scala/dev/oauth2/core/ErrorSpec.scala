@@ -87,6 +87,31 @@ class ErrorSpec extends ScalaCheckSuite {
     assertEquals(e.description, Some("ClientId: empty"))
   }
 
+  test("a wire body without a code is refused") {
+    assert(OAuth2Error.fromWire(400, Map.empty).isLeft)
+    assert(OAuth2Error.fromWire(400, Map("error_description" -> "gone")).isLeft)
+  }
+
+  test("an unknown wire code is refused") {
+    assert(OAuth2Error.fromWire(400, Map("error" -> "invalid_thing")).isLeft)
+  }
+
+  test("a wire body whose status disagrees with its code is refused") {
+    assert(OAuth2Error.fromWire(400, Map("error" -> "invalid_client")).isLeft)
+    assert(OAuth2Error.fromWire(401, Map("error" -> "invalid_grant")).isLeft)
+  }
+
+  test("a wire body is parsed back into the error that wrote it") {
+    val e = OAuth2Error.InvalidScope(Some("unknown scope"), Some("https://example.com/e"))
+    assertEquals(OAuth2Error.fromWire(e.status, e.body), Right(e))
+  }
+
+  property("every error round trips through status and body") {
+    forAll(genError) { e =>
+      OAuth2Error.fromWire(e.status, e.body) == Right(e)
+    }
+  }
+
   property("code is one of the RFC 6749 codes") {
     forAll(genError) { e =>
       OAuth2Error.knownCodes.contains(e.code)

@@ -63,6 +63,23 @@ class FormSpec extends ScalaCheckSuite {
     assertEquals(code(Form.strict(params, Set("grant_type"))), Some("invalid_request"))
   }
 
+  test("a rendered form body is percent-encoded and ordered by name") {
+    assertEquals(
+      Form.render(Map("scope" -> "openid read", "redirect_uri" -> "https://example.com/cb")),
+      "redirect_uri=https%3A%2F%2Fexample.com%2Fcb&scope=openid+read"
+    )
+  }
+
+  test("an empty form renders to an empty body") {
+    assertEquals(Form.render(Map.empty[String, String]), "")
+  }
+
+  property("a rendered form body decodes back to the same parameters") {
+    forAll(nameOf(4), nameOf(6)) { (name, value) =>
+      Form.parse(Form.render(Map(name -> value))) == Right(Map(name -> value))
+    }
+  }
+
   property("a decoded form round trips percent-encoded parameters") {
     forAll(nameOf(4), nameOf(8)) { (name, value) =>
       Form.parse(s"$name=${value.replace(" ", "+")}") == Right(Map(name -> value.replace(" ", "+").replace("+", " ")))
