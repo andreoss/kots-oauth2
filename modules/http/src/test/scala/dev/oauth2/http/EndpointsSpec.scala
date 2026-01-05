@@ -129,6 +129,12 @@ class EndpointsSpec extends FunSuite {
     assertEquals(Endpoints.challengedBody(sttp.model.StatusCode.BadRequest).encode(error), (None, error.body))
   }
 
+  test("every described response carries cache control no-store") {
+    val responses = tokenOperation.responses.responses.values.flatMap(_.toOption)
+    assert(responses.nonEmpty)
+    assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
+  }
+
   test("an error is written as the body the RFC assigns to it") {
     val error = OAuth2Error.InvalidClient(Some("bad"))
     assertEquals(Endpoints.errorBody(sttp.model.StatusCode.Unauthorized).encode(error), error.body)

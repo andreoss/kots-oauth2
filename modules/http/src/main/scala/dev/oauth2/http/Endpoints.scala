@@ -10,6 +10,10 @@ object Endpoints {
 
   val ChallengeHeader: String = "WWW-Authenticate"
 
+  val CacheControlHeader: String = "Cache-Control"
+
+  val NoStore: String = "no-store"
+
   val tokenParameters: Set[String] = Set(
     "grant_type",
     "code",
@@ -55,15 +59,20 @@ object Endpoints {
         DecodeResult.Value(_)
       )
 
+  private def noStore[A](out: EndpointOutput[A]): EndpointOutput[A] =
+    out.and(header(Endpoints.CacheControlHeader, Endpoints.NoStore))
+
   private def errorVariant(status: StatusCode): EndpointOutput.OneOfVariant[OAuth2Error] = {
     val matches: PartialFunction[Any, Boolean] = { case error: OAuth2Error => error.status == status.code }
     if (status == StatusCode.Unauthorized)
       oneOfVariantValueMatcher(
         status,
-        header[Option[String]](Endpoints.ChallengeHeader).and(jsonBody[Map[String, String]]).map(challengedBody(status))
+        noStore(
+          header[Option[String]](Endpoints.ChallengeHeader).and(jsonBody[Map[String, String]]).map(challengedBody(status))
+        )
       )(matches)
     else
-      oneOfVariantValueMatcher(status, jsonBody[Map[String, String]].map(errorBody(status)))(matches)
+      oneOfVariantValueMatcher(status, noStore(jsonBody[Map[String, String]].map(errorBody(status))))(matches)
   }
 
   val token: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
@@ -71,6 +80,6 @@ object Endpoints {
       .in("token")
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
-      .out(jsonBody[Map[String, String]])
+      .out(noStore(jsonBody[Map[String, String]]))
       .errorOut(oneOf[OAuth2Error](errorVariant(statuses.head), statuses.tail.map(errorVariant): _*))
 }

@@ -22,6 +22,7 @@ import dev.oauth2.core.Pkce
 import dev.oauth2.core.RedirectUri
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
+import dev.oauth2.http.Endpoints
 import dev.oauth2.http.Form
 import dev.oauth2.http.Server
 import dev.oauth2.server.RegisteredClientAuthentication
@@ -120,6 +121,9 @@ class InterpreterSpec extends CatsEffectSuite {
     )
   }
 
+  private def cacheControl(response: Response[IO]): Option[String] =
+    response.headers.headers.find(_.name.toString == Endpoints.CacheControlHeader).map(_.value)
+
   private def body(response: Response[IO]): IO[String] =
     response.body.compile.toVector.map(bytes => new String(bytes.toArray, StandardCharsets.UTF_8))
 
@@ -197,6 +201,22 @@ class InterpreterSpec extends CatsEffectSuite {
       assertEquals(second.get.status, Status.BadRequest)
       assert(text.contains("invalid_grant"))
     }
+  }
+
+  test("an answered token is served with cache control no-store") {
+    for {
+      served <- routes
+      answered <- served.run(post(exchange, Some("s3cret"))).value
+      response = answered.get
+    } yield assertEquals(cacheControl(response), Some(Endpoints.NoStore))
+  }
+
+  test("a refused token is served with cache control no-store") {
+    for {
+      served <- routes
+      answered <- served.run(post(exchange, Some("wrong"))).value
+      response = answered.get
+    } yield assertEquals(cacheControl(response), Some(Endpoints.NoStore))
   }
 
   test("a request to another path is not served") {
