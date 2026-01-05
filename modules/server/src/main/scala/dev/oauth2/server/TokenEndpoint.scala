@@ -1,0 +1,58 @@
+package dev.oauth2.server
+
+import java.time.Duration
+
+import cats.Monad
+import cats.syntax.flatMap._
+import cats.syntax.functor._
+
+import dev.oauth2.core.ClientAuthInput
+import dev.oauth2.core.OAuth2Error
+import dev.oauth2.core.TokenRequest
+import dev.oauth2.http.TokenLogic
+import dev.oauth2.http.TokenResponse
+import dev.oauth2.store.Client
+import dev.oauth2.store.IssuedToken
+
+final class TokenEndpoint[F[_]: Monad](
+    authentication: ClientAuthentication[F],
+    tokens: TokenService[F]
+) extends TokenLogic[F] {
+
+  def apply(
+      authorization: Option[String],
+      parameters: Map[String, String]
+  ): F[Either[OAuth2Error, TokenResponse]] =
+    ClientAuthInput.from(authorization, parameters).toEither match {
+      case Left(failures) => Monad[F].pure(Left(failures.head))
+      case Right(input) =>
+        authentication.authenticate(input).flatMap {
+          case Left(error)   => Monad[F].pure(Left(error))
+          case Right(client) => grant(parameters, client)
+        }
+    }
+
+  private def grant(
+      parameters: Map[String, String],
+      client: Client
+  ): F[Either[OAuth2Error, TokenResponse]] =
+    TokenRequest.from(parameters).toEither match {
+      case Left(failures) => Monad[F].pure(Left(failures.head))
+      case Right(request) =>
+        request match {
+          case code: TokenRequest.Code       => tokens.authorizationCode(code, client).map(_.map(TokenEndpoint.render))
+          case refresh: TokenRequest.Refresh => tokens.refresh(refresh, client).map(_.map(TokenEndpoint.render))
+        }
+    }
+}
+
+object TokenEndpoint {
+
+  def render(issued: IssuedToken): TokenResponse =
+    TokenResponse(
+      accessToken = issued.accessToken,
+      expiresIn = Duration.between(issued.record.issuedAt, issued.record.accessExpiresAt).getSeconds,
+      scope = issued.record.scopes,
+      refreshToken = issued.refreshToken
+    )
+}
