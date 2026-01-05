@@ -70,7 +70,11 @@ lazy val server = module("server").dependsOn(core, store, http)
 
 lazy val client = module("client").dependsOn(core)
 
-lazy val host = module("host").dependsOn(server, client)
+lazy val host = module("host")
+  .dependsOn(server, client)
+  .settings(
+    libraryDependencies += "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % Tapir
+  )
 
 lazy val root = (project in file("."))
   .settings(commonSettings)
