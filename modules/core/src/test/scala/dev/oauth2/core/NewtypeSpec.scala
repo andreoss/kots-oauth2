@@ -35,6 +35,7 @@ class NewtypeSpec extends ScalaCheckSuite {
 
   roundTrip[ClientId]("ClientId", printable, ClientId.from, _.value)
   roundTrip[GrantId]("GrantId", printable, GrantId.from, _.value)
+  roundTrip[KeyId]("KeyId", printable, KeyId.from, _.value)
   roundTrip[Subject]("Subject", printable, Subject.from, _.value)
   roundTrip[AuthorizationCode]("AuthorizationCode", printable, AuthorizationCode.from, _.value)
   roundTrip[AccessToken]("AccessToken", printable, AccessToken.from, _.value)
