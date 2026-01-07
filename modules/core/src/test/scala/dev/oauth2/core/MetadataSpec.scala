@@ -1,0 +1,65 @@
+package dev.oauth2.core
+
+import munit.FunSuite
+
+class MetadataSpec extends FunSuite {
+
+  private def unsafe[A](parsed: Either[ParseFailure, A]): A =
+    parsed.fold(_ => sys.error("fixture"), identity)
+
+  private val issuer: Issuer = unsafe(Issuer.from("https://server.example"))
+
+  private val authorization: EndpointUri = unsafe(EndpointUri.from("https://server.example/authorize"))
+
+  private val token: EndpointUri = unsafe(EndpointUri.from("https://server.example/token"))
+
+  private val revocation: EndpointUri = unsafe(EndpointUri.from("https://server.example/revocation"))
+
+  private val introspection: EndpointUri = unsafe(EndpointUri.from("https://server.example/introspection"))
+
+  private val metadata: AuthorizationServerMetadata =
+    AuthorizationServerMetadata.of(issuer, authorization, token, Some(revocation), Some(introspection), unsafe(Scopes.parse("read write")))
+
+  test("an endpoint uri refuses a relative reference") {
+    assert(EndpointUri.from("/token").isLeft)
+  }
+
+  test("an endpoint uri refuses a uri with a fragment") {
+    assert(EndpointUri.from("https://server.example/token#x").isLeft)
+  }
+
+  test("an endpoint uri accepts an absolute https uri") {
+    assertEquals(EndpointUri.from("https://server.example/token").map(_.value), Right("https://server.example/token"))
+  }
+
+  test("the metadata carries the issuer and every endpoint it serves") {
+    assertEquals(metadata.issuer.value, "https://server.example")
+    assertEquals(metadata.authorizationEndpoint, authorization)
+    assertEquals(metadata.tokenEndpoint, token)
+    assertEquals(metadata.revocationEndpoint, Some(revocation))
+    assertEquals(metadata.introspectionEndpoint, Some(introspection))
+  }
+
+  test("the metadata offers only the code challenge method the server accepts") {
+    assertEquals(metadata.codeChallengeMethodsSupported, Set[CodeChallengeMethod](CodeChallengeMethod.S256))
+    assert(!metadata.codeChallengeMethodsSupported.contains(CodeChallengeMethod.Plain))
+  }
+
+  test("the metadata offers every registered response type, grant type and method") {
+    assertEquals(metadata.responseTypesSupported, ResponseType.all.toSet)
+    assertEquals(metadata.grantTypesSupported, GrantType.all.toSet)
+    assertEquals(metadata.tokenEndpointAuthMethodsSupported, ClientAuthMethod.all.toSet)
+  }
+
+  test("the metadata carries the scopes the server supports") {
+    assertEquals(metadata.scopesSupported.value.map(_.value), Set("read", "write"))
+  }
+
+  test("the metadata is built without the optional endpoints as well") {
+    val minimal =
+      AuthorizationServerMetadata.of(issuer, authorization, token, None, None, Scopes.empty)
+    assertEquals(minimal.revocationEndpoint, None)
+    assertEquals(minimal.introspectionEndpoint, None)
+    assertEquals(minimal.scopesSupported, Scopes.empty)
+  }
+}

@@ -65,6 +65,13 @@ object RedirectUri {
       .getOrElse(false)
 }
 
+final case class EndpointUri private (value: String)
+
+object EndpointUri {
+  def from(raw: String): Either[ParseFailure, EndpointUri] =
+    Text.absolute("EndpointUri", raw).map(new EndpointUri(_))
+}
+
 final case class ResourceIndicator private (value: String)
 
 object ResourceIndicator {
