@@ -25,6 +25,7 @@ import dev.oauth2.core.Subject
 import dev.oauth2.http.Endpoints
 import dev.oauth2.http.Form
 import dev.oauth2.http.Server
+import dev.oauth2.server.IntrospectionEndpoint
 import dev.oauth2.server.RegisteredClientAuthentication
 import dev.oauth2.server.RevocationEndpoint
 import dev.oauth2.server.TokenEndpoint
@@ -118,6 +119,7 @@ class InterpreterSpec extends CatsEffectSuite {
       grants <- InMemoryGrantStore.create[IO]
       clients <- InMemoryClientStore.create[IO](List(registered))
       revocation = new RevocationEndpoint[IO](new RegisteredClientAuthentication[IO](clients), tokens, grants)
+      introspection = new IntrospectionEndpoint[IO](new RegisteredClientAuthentication[IO](clients), tokens, grants)
     } yield Interpreter.routes[IO](
       List(
         Server.token(
@@ -126,7 +128,8 @@ class InterpreterSpec extends CatsEffectSuite {
             new TokenService[IO](codes, tokens, grants, clock, entropy, LifetimePolicy.defaults)
           )
         ),
-        Server.revocation(revocation)
+        Server.revocation(revocation),
+        Server.introspection(introspection)
       )
     )
   }
@@ -301,6 +304,66 @@ class InterpreterSpec extends CatsEffectSuite {
     for {
       served <- routes
       answered <- served.run(postTo("/revocation", revoke("absent", "access_token"), Some("s3cret"))).value
+    } yield assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
+  }
+
+  test("an issued access token is introspected as active with its metadata") {
+    for {
+      served <- routes
+      answered <- served.run(post(exchange, Some("s3cret"))).value
+      issued <- body(answered.get).map(field(_, "access_token"))
+      introspected <- served.run(postTo("/introspection", revoke(issued, "access_token"), Some("s3cret"))).value
+      response = introspected.get
+      text <- body(response)
+    } yield {
+      assertEquals(response.status, Status.Ok)
+      assertEquals(field(text, "active"), "true")
+      assertEquals(field(text, "client_id"), clientId.value)
+      assertEquals(field(text, "scope"), "read")
+      assertEquals(field(text, "token_type"), "Bearer")
+    }
+  }
+
+  test("an unknown token is introspected as inactive") {
+    for {
+      served <- routes
+      answered <- served.run(postTo("/introspection", revoke("absent", "access_token"), Some("s3cret"))).value
+      response = answered.get
+      text <- body(response)
+    } yield {
+      assertEquals(response.status, Status.Ok)
+      assertEquals(field(text, "active"), "false")
+      assert(!text.contains("client_id"))
+    }
+  }
+
+  test("a revoked token is introspected as inactive") {
+    for {
+      served <- routes
+      answered <- served.run(post(exchange, Some("s3cret"))).value
+      refresh <- body(answered.get).map(field(_, "refresh_token"))
+      _ <- served.run(postTo("/revocation", revoke(refresh, "refresh_token"), Some("s3cret"))).value
+      introspected <- served.run(postTo("/introspection", revoke(refresh, "refresh_token"), Some("s3cret"))).value
+      text <- body(introspected.get)
+    } yield assertEquals(field(text, "active"), "false")
+  }
+
+  test("introspection without credentials is answered with unauthorized") {
+    for {
+      served <- routes
+      answered <- served.run(postTo("/introspection", revoke("at-1", "access_token"), None)).value
+      response = answered.get
+      text <- body(response)
+    } yield {
+      assertEquals(response.status, Status.Unauthorized)
+      assert(text.contains("invalid_client"))
+    }
+  }
+
+  test("an introspection answer is served with cache control no-store") {
+    for {
+      served <- routes
+      answered <- served.run(postTo("/introspection", revoke("absent", "access_token"), Some("s3cret"))).value
     } yield assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
   }
 
