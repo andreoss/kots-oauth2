@@ -49,14 +49,16 @@ lazy val core =
   module("core")
     .settings(libraryDependencies += "org.typelevel" %% "cats-core" % "2.12.0")
 
-lazy val jose = module("jose").dependsOn(core)
+lazy val jose = module("jose")
+  .dependsOn(core)
+  .settings(libraryDependencies += "io.circe" %% "circe-core" % Circe)
 
 lazy val store = module("store")
   .dependsOn(core % "compile->compile;test->test", jose)
   .settings(libraryDependencies += "org.typelevel" %% "cats-effect" % "3.6.0")
 
 lazy val http = module("http")
-  .dependsOn(core)
+  .dependsOn(core, jose)
   .settings(
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.tapir" %% "tapir-core" % Tapir,

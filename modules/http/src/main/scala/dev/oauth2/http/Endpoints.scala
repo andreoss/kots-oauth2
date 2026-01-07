@@ -113,6 +113,14 @@ object Endpoints {
       .foldLeft(sttp.tapir.endpoint.get)((path, segment) => path.in(segment))
       .out(noStore(jsonBody[Map[String, Json]]))
       .errorOut(errors)
+
+  val JwksPath: String = "jwks"
+
+  lazy val jwks: PublicEndpoint[Unit, OAuth2Error, Json, Any] =
+    sttp.tapir.endpoint.get
+      .in(JwksPath)
+      .out(noStore(jsonBody[Json]))
+      .errorOut(errors)
 }
 
 private[http] object Revocation {

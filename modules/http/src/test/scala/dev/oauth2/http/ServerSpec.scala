@@ -117,6 +117,13 @@ class ServerSpec extends FunSuite {
     assertEquals(bound.logic(IdentityMonad)(())(()), Right(Metadata.render(metadata)))
   }
 
+  test("the bound jwks logic answers with the rendered document") {
+    val document = ServerSpec.keys
+    val bound = Server.jwks[cats.Id](document).asInstanceOf[ServerSpec.JwksBound[cats.Id]]
+    assertEquals(bound.logic(IdentityMonad)(())(()), Right(dev.oauth2.jose.Jwks.render(document)))
+    assertEquals(bound.showPathTemplate(showQueryParam = None), Endpoints.jwks.showPathTemplate(showQueryParam = None))
+  }
+
   test("a refused introspection is carried through as the endpoint error") {
     val logic = new IntrospectionLogic[Id] {
       def apply(basic: Option[String], parameters: Map[String, String]) = Left(OAuth2Error.InvalidClient())
@@ -134,6 +141,23 @@ object ServerSpec {
     type INPUT = Unit
     type ERROR_OUTPUT = OAuth2Error
     type OUTPUT = Map[String, io.circe.Json]
+  }
+
+  type JwksBound[F[_]] = ServerEndpoint[Any, F] {
+    type SECURITY_INPUT = Unit
+    type PRINCIPAL = Unit
+    type INPUT = Unit
+    type ERROR_OUTPUT = OAuth2Error
+    type OUTPUT = io.circe.Json
+  }
+
+  def keys: dev.oauth2.jose.Jwks = {
+    def unsafe[A](parsed: Either[ParseFailure, A]): A =
+      parsed.fold(_ => sys.error("fixture"), identity)
+    val kid = unsafe(dev.oauth2.core.KeyId.from("key-1"))
+    dev.oauth2.jose.Jwks(
+      List(unsafe(dev.oauth2.jose.Jwk.rsa(kid, dev.oauth2.jose.Alg.RS256, "t6Q8SWSFZkG9s2Y0m1IuA", "AQAB")))
+    )
   }
 
   def document: dev.oauth2.core.AuthorizationServerMetadata = {

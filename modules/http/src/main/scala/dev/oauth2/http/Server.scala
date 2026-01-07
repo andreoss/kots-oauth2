@@ -7,6 +7,7 @@ import cats.syntax.functor._
 import dev.oauth2.core.AuthorizationServerMetadata
 import dev.oauth2.core.IntrospectionResponse
 import dev.oauth2.core.OAuth2Error
+import dev.oauth2.jose.Jwks
 import io.circe.Json
 import sttp.tapir.server.ServerEndpoint
 
@@ -55,5 +56,11 @@ object Server {
     ServerEndpoint.public[Unit, OAuth2Error, Map[String, Json], Any, F](
       Endpoints.metadata,
       _ => _ => Applicative[F].pure(Right(Metadata.render(document)))
+    )
+
+  def jwks[F[_]: Functor](document: F[Jwks]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[Unit, OAuth2Error, Json, Any, F](
+      Endpoints.jwks,
+      _ => _ => document.map(keys => Right(Jwks.render(keys)): Either[OAuth2Error, Json])
     )
 }
