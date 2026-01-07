@@ -84,11 +84,68 @@ class ServerSpec extends FunSuite {
     assertEquals(bound.showPathTemplate(showQueryParam = None), Endpoints.introspection.showPathTemplate(showQueryParam = None))
   }
 
+  test("a metadata document is rendered with its endpoints and supported values") {
+    val metadata = ServerSpec.document
+    val rendered = Metadata.render(metadata)
+    assertEquals(rendered(Metadata.Issuer), io.circe.Json.fromString("https://server.example"))
+    assertEquals(rendered(Metadata.TokenEndpoint), io.circe.Json.fromString("https://server.example/token"))
+    assertEquals(rendered(Metadata.RevocationEndpoint), io.circe.Json.fromString("https://server.example/revocation"))
+    assertEquals(rendered(Metadata.IntrospectionEndpoint), io.circe.Json.fromString("https://server.example/introspection"))
+    assertEquals(rendered(Metadata.ScopesSupported), io.circe.Json.arr(io.circe.Json.fromString("read")))
+    assertEquals(rendered(Metadata.CodeChallengeMethodsSupported), io.circe.Json.arr(io.circe.Json.fromString("S256")))
+    assertEquals(
+      rendered(Metadata.GrantTypesSupported).asArray.get.map(_.asString.get).toSet,
+      dev.oauth2.core.GrantType.all.map(_.value).toSet
+    )
+    assertEquals(
+      rendered(Metadata.TokenEndpointAuthMethodsSupported).asArray.get.map(_.asString.get).toSet,
+      dev.oauth2.core.ClientAuthMethod.all.map(_.value).toSet
+    )
+  }
+
+  test("a metadata document without the optional endpoints renders neither") {
+    val rendered = Metadata.render(
+      ServerSpec.document.copy(revocationEndpoint = None, introspectionEndpoint = None)
+    )
+    assert(!rendered.contains(Metadata.RevocationEndpoint))
+    assert(!rendered.contains(Metadata.IntrospectionEndpoint))
+  }
+
+  test("the bound metadata logic answers with the rendered document") {
+    val metadata = ServerSpec.document
+    val bound = Server.metadata[cats.Id](metadata).asInstanceOf[ServerSpec.MetadataBound[cats.Id]]
+    assertEquals(bound.logic(IdentityMonad)(())(()), Right(Metadata.render(metadata)))
+  }
+
   test("a refused introspection is carried through as the endpoint error") {
     val logic = new IntrospectionLogic[Id] {
       def apply(basic: Option[String], parameters: Map[String, String]) = Left(OAuth2Error.InvalidClient())
     }
     val bound = Server.introspection(logic).asInstanceOf[Bound[Id]]
     assertEquals(bound.logic(IdentityMonad)(())((None, Map.empty[String, String])), Left(OAuth2Error.InvalidClient()))
+  }
+}
+
+object ServerSpec {
+
+  type MetadataBound[F[_]] = ServerEndpoint[Any, F] {
+    type SECURITY_INPUT = Unit
+    type PRINCIPAL = Unit
+    type INPUT = Unit
+    type ERROR_OUTPUT = OAuth2Error
+    type OUTPUT = Map[String, io.circe.Json]
+  }
+
+  def document: dev.oauth2.core.AuthorizationServerMetadata = {
+    def unsafe[A](parsed: Either[ParseFailure, A]): A =
+      parsed.fold(_ => sys.error("fixture"), identity)
+    dev.oauth2.core.AuthorizationServerMetadata.of(
+      unsafe(dev.oauth2.core.Issuer.from("https://server.example")),
+      unsafe(dev.oauth2.core.EndpointUri.from("https://server.example/authorize")),
+      unsafe(dev.oauth2.core.EndpointUri.from("https://server.example/token")),
+      Some(unsafe(dev.oauth2.core.EndpointUri.from("https://server.example/revocation"))),
+      Some(unsafe(dev.oauth2.core.EndpointUri.from("https://server.example/introspection"))),
+      unsafe(Scopes.parse("read"))
+    )
   }
 }
