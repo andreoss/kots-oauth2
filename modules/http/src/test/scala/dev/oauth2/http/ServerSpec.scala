@@ -3,6 +3,7 @@ package dev.oauth2.http
 import cats.Id
 
 import dev.oauth2.core.AccessToken
+import dev.oauth2.core.IntrospectionResponse
 import dev.oauth2.core.OAuth2Error
 import dev.oauth2.core.ParseFailure
 import dev.oauth2.core.RefreshToken
@@ -71,5 +72,23 @@ class ServerSpec extends FunSuite {
   test("a refused token is carried through as the endpoint error") {
     val out = run(failure(OAuth2Error.InvalidGrant()), (None, Map.empty[String, String]))
     assertEquals(out, Left(OAuth2Error.InvalidGrant()))
+  }
+
+  test("an introspection answer is rendered as the endpoint body") {
+    val response = IntrospectionResponse.inactive
+    val logic = new IntrospectionLogic[Id] {
+      def apply(basic: Option[String], parameters: Map[String, String]) = Right(response)
+    }
+    val bound = Server.introspection(logic).asInstanceOf[Bound[Id]]
+    assertEquals(bound.logic(IdentityMonad)(())((None, Map("token" -> "at-1"))), Right(response.body))
+    assertEquals(bound.showPathTemplate(showQueryParam = None), Endpoints.introspection.showPathTemplate(showQueryParam = None))
+  }
+
+  test("a refused introspection is carried through as the endpoint error") {
+    val logic = new IntrospectionLogic[Id] {
+      def apply(basic: Option[String], parameters: Map[String, String]) = Left(OAuth2Error.InvalidClient())
+    }
+    val bound = Server.introspection(logic).asInstanceOf[Bound[Id]]
+    assertEquals(bound.logic(IdentityMonad)(())((None, Map.empty[String, String])), Left(OAuth2Error.InvalidClient()))
   }
 }

@@ -15,13 +15,17 @@ import sttp.tapir.docs.openapi.OpenAPIDocsInterpreter
 class EndpointsSpec extends FunSuite {
 
   private val document: OpenAPI =
-    OpenAPIDocsInterpreter().toOpenAPI(List(Endpoints.token, Endpoints.revocation), "OAuth 2.0", "1.0")
+    OpenAPIDocsInterpreter()
+      .toOpenAPI(List(Endpoints.token, Endpoints.revocation, Endpoints.introspection), "OAuth 2.0", "1.0")
 
   private def tokenOperation =
     document.paths.pathItems("/token").post.getOrElse(fail("no token operation in the document"))
 
   private def revocationOperation =
     document.paths.pathItems("/revocation").post.getOrElse(fail("no revocation operation in the document"))
+
+  private def introspectionOperation =
+    document.paths.pathItems("/introspection").post.getOrElse(fail("no introspection operation in the document"))
 
   private def accepted[A](result: DecodeResult[A]): Boolean =
     result match {
@@ -161,6 +165,31 @@ class EndpointsSpec extends FunSuite {
       DecodeResult.Value(Map("token" -> "at-1", "token_type_hint" -> "refresh_token"))
     )
     assert(refused(form.decode("token=at-1&scope=read")))
+  }
+
+  test("the introspection endpoint is a form post at /introspection") {
+    assertEquals(Endpoints.introspection.showPathTemplate(showQueryParam = None), "/introspection")
+    assertEquals(Endpoints.introspection.method.map(_.method), Some("POST"))
+    assertEquals(
+      introspectionOperation.requestBody.flatMap(_.toOption).map(_.content.keys.toList),
+      Some(List("application/x-www-form-urlencoded"))
+    )
+    assert(introspectionOperation.security.nonEmpty)
+  }
+
+  test("every described introspection response carries cache control no-store") {
+    val responses = introspectionOperation.responses.responses.values.flatMap(_.toOption)
+    assert(responses.nonEmpty)
+    assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
+  }
+
+  test("the introspection form accepts its own parameters and refuses the others") {
+    val form = Endpoints.strictForm(Endpoints.introspectionParameters)
+    assertEquals(
+      form.decode("token=at-1&token_type_hint=access_token"),
+      DecodeResult.Value(Map("token" -> "at-1", "token_type_hint" -> "access_token"))
+    )
+    assert(refused(form.decode("token=at-1&grant_type=code")))
   }
 
   test("an error is written as the body the RFC assigns to it") {
