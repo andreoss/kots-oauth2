@@ -83,6 +83,11 @@ object TokenRequest {
       clientId: ClientId
   ) extends TokenRequest
 
+  final case class ClientCredentials(
+      scope: Option[Scopes],
+      clientId: ClientId
+  ) extends TokenRequest
+
   def from(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
     Params
       .required(params, "grant_type")(
@@ -91,7 +96,7 @@ object TokenRequest {
       .andThen {
         case GrantType.AuthorizationCode => authorizationCode(params)
         case GrantType.RefreshToken      => refreshToken(params)
-        case other => OAuth2Error.UnsupportedGrantType(Some(s"${other.value} is not supported")).invalidNec
+        case GrantType.ClientCredentials => clientCredentials(params)
       }
 
   private def authorizationCode(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
@@ -108,4 +113,10 @@ object TokenRequest {
       Params.fieldOpt(params, "scope")(Scopes.parse),
       Params.field(params, "client_id")(ClientId.from)
     ).mapN(Refresh.apply)
+
+  private def clientCredentials(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
+    (
+      Params.fieldOpt(params, "scope")(Scopes.parse),
+      Params.field(params, "client_id")(ClientId.from)
+    ).mapN(ClientCredentials.apply)
 }

@@ -42,6 +42,8 @@ final class TokenEndpoint[F[_]: Monad](
         request match {
           case code: TokenRequest.Code       => tokens.authorizationCode(code, client).map(_.map(TokenEndpoint.render))
           case refresh: TokenRequest.Refresh => tokens.refresh(refresh, client).map(_.map(TokenEndpoint.render))
+          case credentials: TokenRequest.ClientCredentials =>
+            tokens.clientCredentials(credentials, client).map(_.map(TokenEndpoint.render))
         }
     }
 }

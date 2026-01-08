@@ -178,13 +178,32 @@ class RequestsSpec extends ScalaCheckSuite {
     assertEquals(errors(decoded).map(_.code), List("invalid_request"))
   }
 
+  test("token request decodes a client credentials grant") {
+    val decoded = TokenRequest.from(Map("grant_type" -> "client_credentials", "client_id" -> Client))
+    valid(decoded) match {
+      case TokenRequest.ClientCredentials(scope, clientId) =>
+        assertEquals(scope, None)
+        assertEquals(clientId.value, Client)
+      case other => fail(s"unexpected request $other")
+    }
+  }
+
+  test("token request decodes a client credentials grant with a scope") {
+    val decoded = TokenRequest.from(
+      Map("grant_type" -> "client_credentials", "scope" -> "read write", "client_id" -> Client)
+    )
+    val request = valid(decoded).asInstanceOf[TokenRequest.ClientCredentials]
+    assertEquals(request.scope.map(_.value.map(_.value)), Some(Set("read", "write")))
+  }
+
+  test("token request accumulates a missing client id and a malformed scope") {
+    val decoded = TokenRequest.from(Map("grant_type" -> "client_credentials", "scope" -> "read  write"))
+    assertEquals(errors(decoded).map(_.code), List("invalid_request", "invalid_request"))
+  }
+
   test("token request refuses an unsupported grant type") {
     assertEquals(
       errors(TokenRequest.from(Map("grant_type" -> "password"))).map(_.code),
-      List("unsupported_grant_type")
-    )
-    assertEquals(
-      errors(TokenRequest.from(Map("grant_type" -> "client_credentials"))).map(_.code),
       List("unsupported_grant_type")
     )
     assertEquals(errors(TokenRequest.from(Map.empty[String, String])).map(_.code), List("invalid_request"))
