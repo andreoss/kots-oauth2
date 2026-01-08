@@ -85,6 +85,13 @@ class KeysSpec extends ScalaCheckSuite {
     assertEquals(Jwk.okp(kid, Alg.EdDSA, "Ed25519", "a=b").isLeft, true)
   }
 
+  test("a public parameter whose length cannot decode is refused") {
+    assertEquals(Jwk.rsa(kid, Alg.RS256, "t6Q8SWSFZkG9s2Y0m1IuA", e).isLeft, true)
+    assertEquals(Jwk.rsa(kid, Alg.RS256, n, "AQABA").isLeft, true)
+    assertEquals(Jwk.ec(kid, Alg.ES256, "P-256", "abcde", y).isLeft, true)
+    assertEquals(Jwk.okp(kid, Alg.EdDSA, "Ed25519", "a").isLeft, true)
+  }
+
   test("a key is found by its identifier and not by another one") {
     val keys = Jwks(List(unsafe(Jwk.rsa(kid, Alg.RS256, n, e))))
     assertEquals(keys.find(kid).map(_.kty), Some(Kty.Rsa))
