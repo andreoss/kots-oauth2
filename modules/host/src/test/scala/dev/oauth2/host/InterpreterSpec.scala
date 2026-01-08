@@ -90,6 +90,7 @@ class InterpreterSpec extends CatsEffectSuite {
     unsafe(EndpointUri.from("https://server.example/token")),
     Some(unsafe(EndpointUri.from("https://server.example/revocation"))),
     Some(unsafe(EndpointUri.from("https://server.example/introspection"))),
+    Some(unsafe(EndpointUri.from(s"https://server.example/${Endpoints.JwksPath}"))),
     unsafe(Scopes.parse("read"))
   )
 
@@ -412,6 +413,7 @@ class InterpreterSpec extends CatsEffectSuite {
       assertEquals(cursor.get[String]("authorization_endpoint").toOption, Some("https://server.example/authorize"))
       assertEquals(cursor.get[String]("token_endpoint").toOption, Some("https://server.example/token"))
       assertEquals(cursor.get[String]("introspection_endpoint").toOption, Some("https://server.example/introspection"))
+      assertEquals(cursor.get[String]("jwks_uri").toOption, Some("https://server.example/jwks"))
       assertEquals(cursor.get[List[String]]("scopes_supported").toOption, Some(List("read")))
       assertEquals(cursor.get[List[String]]("code_challenge_methods_supported").toOption, Some(List("S256")))
       assert(cursor.get[List[String]]("grant_types_supported").toOption.get.contains("refresh_token"))

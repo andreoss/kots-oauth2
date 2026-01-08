@@ -91,6 +91,7 @@ class ServerSpec extends FunSuite {
     assertEquals(rendered(Metadata.TokenEndpoint), io.circe.Json.fromString("https://server.example/token"))
     assertEquals(rendered(Metadata.RevocationEndpoint), io.circe.Json.fromString("https://server.example/revocation"))
     assertEquals(rendered(Metadata.IntrospectionEndpoint), io.circe.Json.fromString("https://server.example/introspection"))
+    assertEquals(rendered(Metadata.JwksUri), io.circe.Json.fromString("https://server.example/jwks"))
     assertEquals(rendered(Metadata.ScopesSupported), io.circe.Json.arr(io.circe.Json.fromString("read")))
     assertEquals(rendered(Metadata.CodeChallengeMethodsSupported), io.circe.Json.arr(io.circe.Json.fromString("S256")))
     assertEquals(
@@ -105,10 +106,11 @@ class ServerSpec extends FunSuite {
 
   test("a metadata document without the optional endpoints renders neither") {
     val rendered = Metadata.render(
-      ServerSpec.document.copy(revocationEndpoint = None, introspectionEndpoint = None)
+      ServerSpec.document.copy(revocationEndpoint = None, introspectionEndpoint = None, jwksUri = None)
     )
     assert(!rendered.contains(Metadata.RevocationEndpoint))
     assert(!rendered.contains(Metadata.IntrospectionEndpoint))
+    assert(!rendered.contains(Metadata.JwksUri))
   }
 
   test("the bound metadata logic answers with the rendered document") {
@@ -169,6 +171,7 @@ object ServerSpec {
       unsafe(dev.oauth2.core.EndpointUri.from("https://server.example/token")),
       Some(unsafe(dev.oauth2.core.EndpointUri.from("https://server.example/revocation"))),
       Some(unsafe(dev.oauth2.core.EndpointUri.from("https://server.example/introspection"))),
+      Some(unsafe(dev.oauth2.core.EndpointUri.from("https://server.example/jwks"))),
       unsafe(Scopes.parse("read"))
     )
   }
