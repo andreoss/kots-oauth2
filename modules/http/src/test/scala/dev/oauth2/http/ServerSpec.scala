@@ -153,14 +153,8 @@ object ServerSpec {
     type OUTPUT = io.circe.Json
   }
 
-  def keys: dev.oauth2.jose.Jwks = {
-    def unsafe[A](parsed: Either[ParseFailure, A]): A =
-      parsed.fold(_ => sys.error("fixture"), identity)
-    val kid = unsafe(dev.oauth2.core.KeyId.from("key-1"))
-    dev.oauth2.jose.Jwks(
-      List(unsafe(dev.oauth2.jose.Jwk.rsa(kid, dev.oauth2.jose.Alg.RS256, "t6Q8SWSFZkG9s2Y0m1IuA", "AQAB")))
-    )
-  }
+  def keys: dev.oauth2.jose.Jwks =
+    dev.oauth2.jose.Jwks(List(dev.oauth2.jose.Fakes.rsa("key-1")))
 
   def document: dev.oauth2.core.AuthorizationServerMetadata = {
     def unsafe[A](parsed: Either[ParseFailure, A]): A =

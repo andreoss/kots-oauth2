@@ -54,11 +54,11 @@ lazy val jose = module("jose")
   .settings(libraryDependencies += "io.circe" %% "circe-core" % Circe)
 
 lazy val store = module("store")
-  .dependsOn(core % "compile->compile;test->test", jose)
+  .dependsOn(core % "compile->compile;test->test", jose % "compile->compile;test->test")
   .settings(libraryDependencies += "org.typelevel" %% "cats-effect" % "3.6.0")
 
 lazy val http = module("http")
-  .dependsOn(core, jose)
+  .dependsOn(core, jose % "compile->compile;test->test")
   .settings(
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.tapir" %% "tapir-core" % Tapir,
@@ -73,7 +73,7 @@ lazy val server = module("server").dependsOn(core, store, http)
 lazy val client = module("client").dependsOn(core)
 
 lazy val host = module("host")
-  .dependsOn(server, client)
+  .dependsOn(server, client, jose % "test->test")
   .settings(
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % Tapir,
