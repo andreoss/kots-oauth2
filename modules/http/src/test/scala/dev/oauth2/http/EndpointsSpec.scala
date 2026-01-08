@@ -215,16 +215,22 @@ class EndpointsSpec extends FunSuite {
     assert(jwksOperation.security.isEmpty)
   }
 
-  test("every described jwks response carries cache control no-store") {
+  test("every described jwks response carries a cache control header") {
     val responses = jwksOperation.responses.responses.values.flatMap(_.toOption)
     assert(responses.nonEmpty)
     assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
   }
 
-  test("every described metadata response carries cache control no-store") {
+  test("every described metadata response carries a cache control header") {
     val responses = metadataOperation.responses.responses.values.flatMap(_.toOption)
     assert(responses.nonEmpty)
     assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
+  }
+
+  test("a public document is cacheable for an explicit bounded lifetime") {
+    assertEquals(Endpoints.PublicCache, s"max-age=${Endpoints.PublicCacheSeconds}")
+    assert(Endpoints.PublicCacheSeconds > 0L)
+    assert(Endpoints.PublicCacheSeconds <= 3600L)
   }
 
   test("an error is written as the body the RFC assigns to it") {

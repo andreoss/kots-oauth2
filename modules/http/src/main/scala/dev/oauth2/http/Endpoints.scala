@@ -15,6 +15,10 @@ object Endpoints {
 
   val NoStore: String = "no-store"
 
+  val PublicCacheSeconds: Long = 300L
+
+  val PublicCache: String = s"max-age=$PublicCacheSeconds"
+
   val tokenParameters: Set[String] = Set(
     "grant_type",
     "code",
@@ -75,6 +79,9 @@ object Endpoints {
   private[http] def noStore[A](out: EndpointOutput[A]): EndpointOutput[A] =
     out.and(header(Endpoints.CacheControlHeader, Endpoints.NoStore))
 
+  private[http] def cacheable[A](out: EndpointOutput[A]): EndpointOutput[A] =
+    out.and(header(Endpoints.CacheControlHeader, Endpoints.PublicCache))
+
   private def errorVariant(status: StatusCode): EndpointOutput.OneOfVariant[OAuth2Error] = {
     val matches: PartialFunction[Any, Boolean] = { case error: OAuth2Error => error.status == status.code }
     if (status == StatusCode.Unauthorized)
@@ -111,7 +118,7 @@ object Endpoints {
   lazy val metadata: PublicEndpoint[Unit, OAuth2Error, Map[String, Json], Any] =
     WellKnownPath
       .foldLeft(sttp.tapir.endpoint.get)((path, segment) => path.in(segment))
-      .out(noStore(jsonBody[Map[String, Json]]))
+      .out(cacheable(jsonBody[Map[String, Json]]))
       .errorOut(errors)
 
   val JwksPath: String = "jwks"
@@ -119,7 +126,7 @@ object Endpoints {
   lazy val jwks: PublicEndpoint[Unit, OAuth2Error, Json, Any] =
     sttp.tapir.endpoint.get
       .in(JwksPath)
-      .out(noStore(jsonBody[Json]))
+      .out(cacheable(jsonBody[Json]))
       .errorOut(errors)
 }
 

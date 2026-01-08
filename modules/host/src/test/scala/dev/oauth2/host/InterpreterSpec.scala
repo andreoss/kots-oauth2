@@ -420,11 +420,11 @@ class InterpreterSpec extends CatsEffectSuite {
     }
   }
 
-  test("the metadata document is served with cache control no-store") {
+  test("the metadata document is served with an explicit cache lifetime") {
     for {
       served <- routes
       answered <- served.run(wellKnown).value
-    } yield assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
+    } yield assertEquals(cacheControl(answered.get), Some(Endpoints.PublicCache))
   }
 
   test("the key set is served at /jwks with the public parameters only") {
@@ -447,11 +447,11 @@ class InterpreterSpec extends CatsEffectSuite {
     }
   }
 
-  test("the key set is served with cache control no-store") {
+  test("the key set is served with an explicit cache lifetime") {
     for {
       served <- routes
       answered <- served.run(jwks).value
-    } yield assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
+    } yield assertEquals(cacheControl(answered.get), Some(Endpoints.PublicCache))
   }
 
   test("a request to another path is not served") {
