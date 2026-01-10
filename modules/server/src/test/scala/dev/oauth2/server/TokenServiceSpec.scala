@@ -167,6 +167,108 @@ class TokenServiceSpec extends CatsEffectSuite {
       if (method == ClientAuthMethod.None) None else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
     )
 
+  private def issuedSubject(service: TokenService[IO]): IO[dev.oauth2.store.IssuedToken] =
+    service
+      .authorizationCode(request("code-1", verifier), client())
+      .map(_.fold(error => sys.error(error.code), identity))
+
+  private def exchangeOf(
+      subjectToken: dev.oauth2.core.AccessToken,
+      actorToken: Option[dev.oauth2.core.AccessToken] = None,
+      audience: Option[String] = None,
+      scope: Option[String] = None
+  ): TokenRequest.Exchange =
+    TokenRequest.Exchange(
+      subjectToken,
+      actorToken,
+      audience.map(raw => unsafe(dev.oauth2.core.Audience.from(raw))),
+      None,
+      scope.map(raw => unsafe(Scopes.parse(raw))),
+      clientId
+    )
+
+  test("an exchange answers a new audience bound token for a valid subject token") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      subject <- issuedSubject(service)
+      result <- service.exchange(exchangeOf(subject.accessToken, audience = Some("https://api.example")), client())
+    } yield {
+      val minted = result.toOption.get
+      assertEquals(minted.record.subject, subject.record.subject)
+      assertEquals(minted.record.scopes, subject.record.scopes)
+      assertEquals(minted.record.audience.map(_.value), Some("https://api.example"))
+      assertEquals(minted.record.actor, None)
+      assertEquals(minted.refreshToken, None)
+      assert(minted.accessToken != subject.accessToken)
+    }
+  }
+
+  test("an exchange records the resource as the audience when no audience is named") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      subject <- issuedSubject(service)
+      result <- service.exchange(
+        exchangeOf(subject.accessToken).copy(resource = Some(unsafe(dev.oauth2.core.ResourceIndicator.from("https://api.example/v1")))),
+        client()
+      )
+    } yield assertEquals(result.toOption.get.record.audience.map(_.value), Some("https://api.example/v1"))
+  }
+
+  test("an exchange with an actor token records the acting subject") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      subject <- issuedSubject(service)
+      acting <- service.clientCredentials(TokenRequest.ClientCredentials(None, clientId), client())
+      result <- service.exchange(
+        exchangeOf(subject.accessToken, actorToken = Some(acting.toOption.get.accessToken)),
+        client()
+      )
+    } yield assertEquals(result.toOption.get.record.actor.map(_.value), Some(clientId.value))
+  }
+
+  test("an exchange narrows the scope and refuses a widening") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      subject <- issuedSubject(service)
+      narrowed <- service.exchange(exchangeOf(subject.accessToken, scope = Some("read")), client())
+      widened <- service.exchange(exchangeOf(subject.accessToken, scope = Some("read write")), client())
+    } yield {
+      assertEquals(narrowed.toOption.get.record.scopes, unsafe(Scopes.parse("read")))
+      assertEquals(widened.left.toOption.map(_.code), Some("invalid_scope"))
+    }
+  }
+
+  test("an exchange with an unknown subject token is refused") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      result <- service.exchange(exchangeOf(unsafe(dev.oauth2.core.AccessToken.from("absent"))), client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("an exchange of another client's token is refused") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, _) = triple
+      subject <- issuedSubject(service)
+      result <- service.exchange(exchangeOf(subject.accessToken), client(id = otherClientId))
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("an exchange of a token from a revoked grant is refused") {
+    for {
+      triple <- setup(record("code-1"))
+      (service, _, grants) = triple
+      subject <- issuedSubject(service)
+      _ <- grants.revoke(subject.record.grantId)
+      result <- service.exchange(exchangeOf(subject.accessToken), client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
   test("a device poll before the approval is answered as authorization pending") {
     for {
       triple <- deviceSetup(deviceRecord())

@@ -120,6 +120,27 @@ class TokenEndpointSpec extends CatsEffectSuite {
   private def code(result: Either[OAuth2Error, TokenResponse]): Option[String] =
     result.left.toOption.map(_.code)
 
+  test("a token exchange request is answered with the issued token type") {
+    for {
+      endpoint <- setup()
+      first <- endpoint(basic("client-1", "s3cret"), codeParams("code-1"))
+      token = first.toOption.get.accessToken
+      result <- endpoint(
+        basic("client-1", "s3cret"),
+        Map(
+          "grant_type" -> "urn:ietf:params:oauth:grant-type:token-exchange",
+          "subject_token" -> token.value,
+          "subject_token_type" -> "urn:ietf:params:oauth:token-type:access_token",
+          "client_id" -> "client-1"
+        )
+      )
+    } yield {
+      val response = result.toOption.get
+      assertEquals(response.issuedTokenType, Some(dev.oauth2.core.ExchangeTokenType.AccessToken))
+      assertEquals(response.refreshToken, None)
+    }
+  }
+
   test("an authorization code request is answered with a token response") {
     for {
       endpoint <- setup()

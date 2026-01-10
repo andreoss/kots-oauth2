@@ -7,6 +7,7 @@ import cats.syntax.flatMap._
 import cats.syntax.functor._
 
 import dev.oauth2.core.ClientAuthInput
+import dev.oauth2.core.ExchangeTokenType
 import dev.oauth2.core.OAuth2Error
 import dev.oauth2.core.TokenRequest
 import dev.oauth2.http.TokenLogic
@@ -46,6 +47,10 @@ final class TokenEndpoint[F[_]: Monad](
             tokens.clientCredentials(credentials, client).map(_.map(TokenEndpoint.render))
           case device: TokenRequest.Device =>
             tokens.deviceCode(device, client).map(_.map(TokenEndpoint.render))
+          case exchange: TokenRequest.Exchange =>
+            tokens
+              .exchange(exchange, client)
+              .map(_.map(issued => TokenEndpoint.render(issued).copy(issuedTokenType = Some(ExchangeTokenType.AccessToken))))
         }
     }
 }

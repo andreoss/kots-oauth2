@@ -58,6 +58,14 @@ class ServerSpec extends FunSuite {
     assertEquals(rendered.keySet, Set("access_token", "token_type", "expires_in"))
   }
 
+  test("a token response renders the issued token type when it carries one") {
+    val rendered = TokenResponse.render(
+      TokenResponse(accessToken, 60L, Scopes.empty, None, Some(dev.oauth2.core.ExchangeTokenType.AccessToken))
+    )
+    assertEquals(rendered("issued_token_type"), "urn:ietf:params:oauth:token-type:access_token")
+    assertEquals(rendered("token_type"), "Bearer")
+  }
+
   test("the bound logic answers through the described endpoint") {
     val endpoint = Server.token(success(TokenResponse(accessToken, 1L, Scopes.empty, None)))
     assertEquals(endpoint.showPathTemplate(showQueryParam = None), Endpoints.token.showPathTemplate(showQueryParam = None))

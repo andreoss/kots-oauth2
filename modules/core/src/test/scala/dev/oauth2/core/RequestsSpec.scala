@@ -230,6 +230,80 @@ class RequestsSpec extends ScalaCheckSuite {
     assertEquals(errors(DeviceAuthorizationRequest.from(Map.empty[String, String])).map(_.code), List("invalid_request"))
   }
 
+  test("token request decodes a token exchange with every parameter") {
+    val decoded = TokenRequest.from(
+      Map(
+        "grant_type" -> "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token" -> "at-1",
+        "subject_token_type" -> "urn:ietf:params:oauth:token-type:access_token",
+        "actor_token" -> "at-2",
+        "actor_token_type" -> "urn:ietf:params:oauth:token-type:access_token",
+        "requested_token_type" -> "urn:ietf:params:oauth:token-type:access_token",
+        "audience" -> "https://api.example",
+        "resource" -> "https://api.example/v1",
+        "scope" -> "read",
+        "client_id" -> Client
+      )
+    )
+    val request = valid(decoded).asInstanceOf[TokenRequest.Exchange]
+    assertEquals(request.subjectToken.value, "at-1")
+    assertEquals(request.actorToken.map(_.value), Some("at-2"))
+    assertEquals(request.audience.map(_.value), Some("https://api.example"))
+    assertEquals(request.resource.map(_.value), Some("https://api.example/v1"))
+    assertEquals(request.scope.map(_.value.map(_.value)), Some(Set("read")))
+    assertEquals(request.clientId.value, Client)
+  }
+
+  test("token request decodes a token exchange without the optional parameters") {
+    val decoded = TokenRequest.from(
+      Map(
+        "grant_type" -> "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token" -> "at-1",
+        "subject_token_type" -> "urn:ietf:params:oauth:token-type:access_token",
+        "client_id" -> Client
+      )
+    )
+    val request = valid(decoded).asInstanceOf[TokenRequest.Exchange]
+    assertEquals(request.actorToken, None)
+    assertEquals(request.audience, None)
+    assertEquals(request.resource, None)
+    assertEquals(request.scope, None)
+  }
+
+  test("token exchange refuses an actor token and its type apart") {
+    def decoded(extra: (String, String)) = TokenRequest.from(
+      Map(
+        "grant_type" -> "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token" -> "at-1",
+        "subject_token_type" -> "urn:ietf:params:oauth:token-type:access_token",
+        "client_id" -> Client,
+        extra._1 -> extra._2
+      )
+    )
+    assertEquals(errors(decoded("actor_token" -> "at-2")).map(_.code), List("invalid_request"))
+    assertEquals(
+      errors(decoded("actor_token_type" -> "urn:ietf:params:oauth:token-type:access_token")).map(_.code),
+      List("invalid_request")
+    )
+  }
+
+  test("token exchange refuses a token type outside the allow-list") {
+    val decoded = TokenRequest.from(
+      Map(
+        "grant_type" -> "urn:ietf:params:oauth:grant-type:token-exchange",
+        "subject_token" -> "at-1",
+        "subject_token_type" -> "urn:ietf:params:oauth:token-type:jwt",
+        "client_id" -> Client
+      )
+    )
+    assertEquals(errors(decoded).map(_.code), List("invalid_request"))
+    assertEquals(
+      ExchangeTokenType.from("urn:ietf:params:oauth:token-type:access_token"),
+      Right(ExchangeTokenType.AccessToken)
+    )
+    assert(ExchangeTokenType.from("urn:ietf:params:oauth:token-type:refresh_token").isLeft)
+  }
+
   test("token request refuses an unsupported grant type") {
     assertEquals(
       errors(TokenRequest.from(Map("grant_type" -> "password"))).map(_.code),

@@ -6,6 +6,7 @@ import java.time.Instant
 
 import dev.oauth2.core.AccessToken
 import dev.oauth2.core.AccessTokenHash
+import dev.oauth2.core.Audience
 import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.AuthorizationDetails
 import dev.oauth2.core.ClientId
@@ -208,6 +209,70 @@ final class TokenService[F[_]: Monad](
         }
     }
 
+  def exchange(request: TokenRequest.Exchange, client: Client): F[Either[OAuth2Error, IssuedToken]] =
+    bearer(request.subjectToken, client).flatMap {
+      case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+      case Right(subjectRecord) =>
+        actorOf(request.actorToken, client).flatMap {
+          case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+          case Right(actor) =>
+            request.scope match {
+              case Some(scopes) if !Scopes.isSubsetOf(scopes, subjectRecord.scopes) =>
+                Monad[F].pure(Left(OAuth2Error.InvalidScope(): OAuth2Error))
+              case requested =>
+                audienceOf(request) match {
+                  case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+                  case Right(audience) =>
+                    clock.instant.flatMap { now =>
+                      issue(
+                        TokenService.Mint(
+                          None,
+                          now,
+                          client.id,
+                          subjectRecord.subject,
+                          requested.getOrElse(subjectRecord.scopes),
+                          subjectRecord.details,
+                          None,
+                          audience,
+                          actor
+                        )
+                      )
+                    }
+                }
+            }
+        }
+    }
+
+  private def bearer(token: AccessToken, client: Client): F[Either[OAuth2Error, TokenRecord]] =
+    tokens.findByAccess(token).flatMap {
+      case Some(record) if record.clientId == client.id =>
+        grants.find(record.grantId).map {
+          case Some(grant) if !grant.revoked => Right(record): Either[OAuth2Error, TokenRecord]
+          case _                             => Left(TokenService.rejected)
+        }
+      case _ => Monad[F].pure(Left(TokenService.rejected): Either[OAuth2Error, TokenRecord])
+    }
+
+  private def actorOf(
+      token: Option[AccessToken],
+      client: Client
+  ): F[Either[OAuth2Error, Option[Subject]]] =
+    token match {
+      case None        => Monad[F].pure(Right(None): Either[OAuth2Error, Option[Subject]])
+      case Some(value) => bearer(value, client).map(_.map(record => Some(record.subject)))
+    }
+
+  private def audienceOf(request: TokenRequest.Exchange): Either[OAuth2Error, Option[Audience]] =
+    request.audience match {
+      case some @ Some(_) => Right(some)
+      case None =>
+        request.resource match {
+          case None => Right(None)
+          case Some(resource) =>
+            Audience.from(resource.value).map(Some(_): Option[Audience]).leftMap(TokenService.failure)
+        }
+    }
+
   private def issue(mint: TokenService.Mint): F[Either[OAuth2Error, IssuedToken]] =
     for {
       grant <- grantIdOf(mint)
@@ -233,7 +298,9 @@ final class TokenService[F[_]: Monad](
             details = mint.details,
             issuedAt = mint.now,
             accessExpiresAt = Lifetime.expiresAt(mint.now, LifetimePolicy.of(policy, TokenType.Access)),
-            refreshExpiresAt = refreshToken.map(_ => mint.refreshExpiresAt.getOrElse(mint.now))
+            refreshExpiresAt = refreshToken.map(_ => mint.refreshExpiresAt.getOrElse(mint.now)),
+            audience = mint.audience,
+            actor = mint.actor
           )
           grants
             .save(Grant(grantId, mint.clientId, mint.subject, mint.scopes, mint.details, revoked = false))
@@ -261,7 +328,9 @@ object TokenService {
       subject: Subject,
       scopes: Scopes,
       details: AuthorizationDetails,
-      refreshExpiresAt: Option[Instant]
+      refreshExpiresAt: Option[Instant],
+      audience: Option[Audience] = None,
+      actor: Option[Subject] = None
   )
 
   private val rejected: OAuth2Error = OAuth2Error.InvalidGrant()

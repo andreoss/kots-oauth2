@@ -26,6 +26,13 @@ object Endpoints {
     "redirect_uri",
     "code_verifier",
     "device_code",
+    "subject_token",
+    "subject_token_type",
+    "actor_token",
+    "actor_token_type",
+    "requested_token_type",
+    "audience",
+    "resource",
     "client_id",
     "client_secret",
     "scope"

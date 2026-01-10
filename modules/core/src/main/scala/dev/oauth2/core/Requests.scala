@@ -21,8 +21,9 @@ object GrantType {
   case object RefreshToken extends GrantType("refresh_token")
   case object ClientCredentials extends GrantType("client_credentials")
   case object DeviceCode extends GrantType("urn:ietf:params:oauth:grant-type:device_code")
+  case object TokenExchange extends GrantType("urn:ietf:params:oauth:grant-type:token-exchange")
 
-  val all: List[GrantType] = List(AuthorizationCode, RefreshToken, ClientCredentials, DeviceCode)
+  val all: List[GrantType] = List(AuthorizationCode, RefreshToken, ClientCredentials, DeviceCode, TokenExchange)
 
   def from(raw: String): Either[ParseFailure, GrantType] =
     all.find(_.value == raw).toRight(ParseFailure("GrantType", "not a registered grant type"))
@@ -94,6 +95,15 @@ object TokenRequest {
       clientId: ClientId
   ) extends TokenRequest
 
+  final case class Exchange(
+      subjectToken: AccessToken,
+      actorToken: Option[AccessToken],
+      audience: Option[Audience],
+      resource: Option[ResourceIndicator],
+      scope: Option[Scopes],
+      clientId: ClientId
+  ) extends TokenRequest
+
   def from(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
     Params
       .required(params, "grant_type")(
@@ -104,6 +114,7 @@ object TokenRequest {
         case GrantType.RefreshToken      => refreshToken(params)
         case GrantType.ClientCredentials => clientCredentials(params)
         case GrantType.DeviceCode        => device(params)
+        case GrantType.TokenExchange     => exchange(params)
       }
 
   private def authorizationCode(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
@@ -132,6 +143,47 @@ object TokenRequest {
       Params.field(params, "device_code")(DeviceCode.from),
       Params.field(params, "client_id")(ClientId.from)
     ).mapN(Device.apply)
+
+  private def exchange(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
+    (
+      (
+        Params.field(params, "subject_token")(AccessToken.from),
+        Params.field(params, "subject_token_type")(ExchangeTokenType.from)
+      ).mapN((token, _) => token),
+      (
+        Params.fieldOpt(params, "actor_token")(AccessToken.from),
+        Params.fieldOpt(params, "actor_token_type")(ExchangeTokenType.from)
+      ).tupled.andThen { case (token, kind) => actor(token, kind) },
+      Params.fieldOpt(params, "requested_token_type")(ExchangeTokenType.from),
+      Params.fieldOpt(params, "audience")(Audience.from),
+      Params.fieldOpt(params, "resource")(ResourceIndicator.from),
+      Params.fieldOpt(params, "scope")(Scopes.parse),
+      Params.field(params, "client_id")(ClientId.from)
+    ).mapN { case (subjectToken, actorToken, _, audience, resource, scope, clientId) =>
+      Exchange(subjectToken, actorToken, audience, resource, scope, clientId)
+    }
+
+  private def actor(
+      token: Option[AccessToken],
+      kind: Option[ExchangeTokenType]
+  ): ValidatedNec[OAuth2Error, Option[AccessToken]] =
+    (token, kind) match {
+      case (Some(value), Some(_)) => (Some(value): Option[AccessToken]).validNec
+      case (None, None)           => (None: Option[AccessToken]).validNec
+      case _ =>
+        (OAuth2Error.InvalidRequest(Some("actor_token and actor_token_type go together")): OAuth2Error).invalidNec
+    }
+}
+
+sealed abstract class ExchangeTokenType(val value: String)
+
+object ExchangeTokenType {
+  case object AccessToken extends ExchangeTokenType("urn:ietf:params:oauth:token-type:access_token")
+
+  val all: List[ExchangeTokenType] = List(AccessToken)
+
+  def from(raw: String): Either[ParseFailure, ExchangeTokenType] =
+    all.find(_.value == raw).toRight(ParseFailure("ExchangeTokenType", "not a supported token type"))
 }
 
 final case class DeviceAuthorizationRequest(

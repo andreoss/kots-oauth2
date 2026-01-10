@@ -493,6 +493,58 @@ class InterpreterSpec extends CatsEffectSuite {
     }
   }
 
+  test("an access token is exchanged for an audience bound token") {
+    for {
+      served <- routes
+      first <- served.run(post(exchange, Some("s3cret"))).value
+      text <- body(first.get)
+      subjectToken = field(text, "access_token")
+      answered <- served
+        .run(
+          post(
+            Map(
+              "grant_type" -> "urn:ietf:params:oauth:grant-type:token-exchange",
+              "subject_token" -> subjectToken,
+              "subject_token_type" -> "urn:ietf:params:oauth:token-type:access_token",
+              "audience" -> "https://api.example",
+              "client_id" -> clientId.value
+            ),
+            Some("s3cret")
+          )
+        )
+        .value
+      exchanged <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.Ok)
+      assert(field(exchanged, "access_token").nonEmpty)
+      assertEquals(field(exchanged, "issued_token_type"), "urn:ietf:params:oauth:token-type:access_token")
+      assertEquals(field(exchanged, "token_type"), "Bearer")
+    }
+  }
+
+  test("an exchange of an unknown subject token is refused") {
+    for {
+      served <- routes
+      answered <- served
+        .run(
+          post(
+            Map(
+              "grant_type" -> "urn:ietf:params:oauth:grant-type:token-exchange",
+              "subject_token" -> "absent",
+              "subject_token_type" -> "urn:ietf:params:oauth:token-type:access_token",
+              "client_id" -> clientId.value
+            ),
+            Some("s3cret")
+          )
+        )
+        .value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.BadRequest)
+      assertEquals(field(text, "error"), "invalid_grant")
+    }
+  }
+
   test("a device authorization is served with its codes and polling guidance") {
     for {
       pair <- application
