@@ -98,6 +98,12 @@ object Endpoints {
   def errors: EndpointOutput[OAuth2Error] =
     oneOf[OAuth2Error](errorVariant(statuses.head), statuses.tail.map(errorVariant): _*)
 
+  def documentErrors: EndpointOutput[OAuth2Error] =
+    oneOf[OAuth2Error](
+      errorVariant(StatusCode.InternalServerError),
+      errorVariant(StatusCode.ServiceUnavailable)
+    )
+
   val token: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     endpoint.post
       .in("token")
@@ -119,7 +125,7 @@ object Endpoints {
     WellKnownPath
       .foldLeft(sttp.tapir.endpoint.get)((path, segment) => path.in(segment))
       .out(cacheable(jsonBody[Map[String, Json]]))
-      .errorOut(errors)
+      .errorOut(documentErrors)
 
   val JwksPath: String = "jwks"
 
@@ -141,7 +147,7 @@ object Endpoints {
     sttp.tapir.endpoint.get
       .in(JwksPath)
       .out(cacheable(stringBodyUtf8AnyFormat(jwkSet)))
-      .errorOut(errors)
+      .errorOut(documentErrors)
 }
 
 private[http] object Revocation {
