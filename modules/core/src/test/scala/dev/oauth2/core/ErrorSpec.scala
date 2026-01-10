@@ -23,12 +23,24 @@ class ErrorSpec extends ScalaCheckSuite {
       (d, u) => OAuth2Error.AccessDenied(d, u),
       (d, u) => OAuth2Error.UnsupportedResponseType(d, u),
       (d, u) => OAuth2Error.ServerError(d, u),
-      (d, u) => OAuth2Error.TemporarilyUnavailable(d, u)
+      (d, u) => OAuth2Error.TemporarilyUnavailable(d, u),
+      (d, u) => OAuth2Error.AuthorizationPending(d, u),
+      (d, u) => OAuth2Error.SlowDown(d, u),
+      (d, u) => OAuth2Error.ExpiredToken(d, u)
     )
     for {
       f <- Gen.oneOf(cases)
       tu <- base
     } yield f(tu._1, tu._2)
+  }
+
+  test("every device grant error carries the RFC 8628 code and a bad request status") {
+    assertEquals(OAuth2Error.AuthorizationPending().code, "authorization_pending")
+    assertEquals(OAuth2Error.SlowDown().code, "slow_down")
+    assertEquals(OAuth2Error.ExpiredToken().code, "expired_token")
+    assertEquals(OAuth2Error.AuthorizationPending().status, 400)
+    assertEquals(OAuth2Error.SlowDown().status, 400)
+    assertEquals(OAuth2Error.ExpiredToken().status, 400)
   }
 
   test("every error carries the RFC 6749 code") {

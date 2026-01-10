@@ -37,6 +37,8 @@ class TimeSpec extends ScalaCheckSuite {
     assertEquals(policy.accessToken.seconds, 3600L)
     assert(policy.refreshToken.seconds > policy.accessToken.seconds)
     assert(policy.authorizationCode.seconds < policy.accessToken.seconds)
+    assert(policy.deviceCode.seconds < policy.accessToken.seconds)
+    assert(policy.deviceCode.seconds > policy.authorizationCode.seconds)
   }
 
   test("the policy resolves the lifetime of a token type") {
@@ -44,6 +46,7 @@ class TimeSpec extends ScalaCheckSuite {
     assertEquals(LifetimePolicy.of(policy, TokenType.Access), policy.accessToken)
     assertEquals(LifetimePolicy.of(policy, TokenType.Refresh), policy.refreshToken)
     assertEquals(LifetimePolicy.of(policy, TokenType.AuthorizationCode), policy.authorizationCode)
+    assertEquals(LifetimePolicy.of(policy, TokenType.DeviceCode), policy.deviceCode)
   }
 
   test("a fixed clock always answers the same instant") {

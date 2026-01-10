@@ -25,11 +25,14 @@ import dev.oauth2.core.Pkce
 import dev.oauth2.core.RedirectUri
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
+import dev.oauth2.core.UserCode
 import dev.oauth2.http.Endpoints
 import dev.oauth2.http.Form
 import dev.oauth2.http.Server
 import dev.oauth2.jose.Fakes
 import dev.oauth2.jose.Jwk
+import dev.oauth2.server.DeviceAuthorizationEndpoint
+import dev.oauth2.server.DeviceAuthorizationService
 import dev.oauth2.server.IntrospectionEndpoint
 import dev.oauth2.server.RegisteredClientAuthentication
 import dev.oauth2.server.RevocationEndpoint
@@ -39,6 +42,7 @@ import dev.oauth2.store.Client
 import dev.oauth2.store.CodeRecord
 import dev.oauth2.store.memory.InMemoryClientStore
 import dev.oauth2.store.memory.InMemoryCodeStore
+import dev.oauth2.store.memory.InMemoryDeviceStore
 import dev.oauth2.store.memory.InMemoryGrantStore
 import dev.oauth2.store.memory.InMemoryKeyStore
 import dev.oauth2.store.memory.InMemoryTokenStore
@@ -93,6 +97,8 @@ class InterpreterSpec extends CatsEffectSuite {
     unsafe(Scopes.parse("read"))
   )
 
+  private val verification: EndpointUri = unsafe(EndpointUri.from("https://server.example/device"))
+
   private val registered: Client = Client(
     clientId,
     Set(unsafe(RedirectUri.from("https://client.example/cb"))),
@@ -129,7 +135,7 @@ class InterpreterSpec extends CatsEffectSuite {
       body = Stream.emits(Form.render(form).getBytes(StandardCharsets.UTF_8).toSeq).covary[IO]
     )
 
-  private def routes: IO[org.http4s.HttpRoutes[IO]] = {
+  private def application: IO[(org.http4s.HttpRoutes[IO], InMemoryDeviceStore[IO])] = {
     val clock = new Clock[IO] {
       def instant: IO[Instant] = IO.pure(Start)
     }
@@ -145,26 +151,38 @@ class InterpreterSpec extends CatsEffectSuite {
       _ <- codes.save(recorded)
       tokens <- InMemoryTokenStore.create[IO](clock)
       grants <- InMemoryGrantStore.create[IO]
+      devices <- InMemoryDeviceStore.create[IO](clock)
       keys <- InMemoryKeyStore.create[IO]
       _ <- keys.add(published)
       clients <- InMemoryClientStore.create[IO](List(registered))
-      revocation = new RevocationEndpoint[IO](new RegisteredClientAuthentication[IO](clients), tokens, grants)
-      introspection = new IntrospectionEndpoint[IO](new RegisteredClientAuthentication[IO](clients), tokens, grants)
-    } yield Interpreter.routes[IO](
-      List(
-        Server.token(
-          new TokenEndpoint[IO](
-            new RegisteredClientAuthentication[IO](clients),
-            new TokenService[IO](codes, tokens, grants, clock, entropy, LifetimePolicy.defaults)
-          )
-        ),
-        Server.revocation(revocation),
-        Server.introspection(introspection),
-        Server.metadata(metadata),
-        Server.jwks(keys.jwks)
+      authentication = new RegisteredClientAuthentication[IO](clients)
+      revocation = new RevocationEndpoint[IO](authentication, tokens, grants)
+      introspection = new IntrospectionEndpoint[IO](authentication, tokens, grants)
+      device = new DeviceAuthorizationEndpoint[IO](
+        authentication,
+        new DeviceAuthorizationService[IO](devices, clock, entropy, LifetimePolicy.defaults, verification)
       )
+    } yield (
+      Interpreter.routes[IO](
+        List(
+          Server.token(
+            new TokenEndpoint[IO](
+              authentication,
+              new TokenService[IO](codes, tokens, grants, devices, clock, entropy, LifetimePolicy.defaults)
+            )
+          ),
+          Server.revocation(revocation),
+          Server.introspection(introspection),
+          Server.deviceAuthorization(device),
+          Server.metadata(metadata),
+          Server.jwks(keys.jwks)
+        )
+      ),
+      devices
     )
   }
+
+  private def routes: IO[org.http4s.HttpRoutes[IO]] = application.map(_._1)
 
   private def cacheControl(response: Response[IO]): Option[String] =
     response.headers.headers.find(_.name.toString == Endpoints.CacheControlHeader).map(_.value)
@@ -472,6 +490,63 @@ class InterpreterSpec extends CatsEffectSuite {
       assertEquals(response.status, Status.InternalServerError)
       assertEquals(cacheControl(response), Some(Endpoints.NoStore))
       assertEquals(field(text, "error"), "server_error")
+    }
+  }
+
+  test("a device authorization is served with its codes and polling guidance") {
+    for {
+      pair <- application
+      (served, _) = pair
+      answered <- served.run(postTo("/device_authorization", Map("client_id" -> clientId.value, "scope" -> "read"), Some("s3cret"))).value
+      response = answered.get
+      text <- body(response)
+    } yield {
+      assertEquals(response.status, Status.Ok)
+      assert(field(text, "device_code").nonEmpty)
+      assert(field(text, "user_code").contains("-"))
+      assertEquals(field(text, "verification_uri"), verification.value)
+      assertEquals(field(text, "expires_in"), "1800")
+      assertEquals(field(text, "interval"), "5")
+      assertEquals(cacheControl(response), Some(Endpoints.NoStore))
+    }
+  }
+
+  test("a device poll is pending until the approval and then issues the tokens once") {
+    def poll(code: String): Request[IO] =
+      postTo(
+        "/token",
+        Map(
+          "grant_type" -> "urn:ietf:params:oauth:grant-type:device_code",
+          "device_code" -> code,
+          "client_id" -> clientId.value
+        ),
+        Some("s3cret")
+      )
+    for {
+      pair <- application
+      (served, devices) = pair
+      issued <- served.run(postTo("/device_authorization", Map("client_id" -> clientId.value), Some("s3cret"))).value
+      text <- body(issued.get)
+      code = field(text, "device_code")
+      user = field(text, "user_code")
+      pending <- served.run(poll(code)).value
+      pendingText <- body(pending.get)
+      hurried <- served.run(poll(code)).value
+      hurriedText <- body(hurried.get)
+      approved <- devices.approve(unsafe(UserCode.from(user)), unsafe(Subject.from("user-1")))
+      answered <- served.run(poll(code)).value
+      answeredText <- body(answered.get)
+      replayed <- served.run(poll(code)).value
+      replayedText <- body(replayed.get)
+    } yield {
+      assertEquals(pending.get.status, Status.BadRequest)
+      assertEquals(field(pendingText, "error"), "authorization_pending")
+      assertEquals(field(hurriedText, "error"), "slow_down")
+      assertEquals(approved, true)
+      assertEquals(answered.get.status, Status.Ok)
+      assert(field(answeredText, "access_token").nonEmpty)
+      assert(field(answeredText, "refresh_token").nonEmpty)
+      assertEquals(field(replayedText, "error"), "invalid_grant")
     }
   }
 

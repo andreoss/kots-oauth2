@@ -25,6 +25,13 @@ object Endpoints {
     "refresh_token",
     "redirect_uri",
     "code_verifier",
+    "device_code",
+    "client_id",
+    "client_secret",
+    "scope"
+  )
+
+  val deviceAuthorizationParameters: Set[String] = Set(
     "client_id",
     "client_secret",
     "scope"
@@ -115,6 +122,12 @@ object Endpoints {
   lazy val revocation: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Unit, Any] =
     Revocation.endpoint
 
+  val DeviceAuthorizationPath: String = "device_authorization"
+
+  lazy val deviceAuthorization
+      : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+    DeviceAuthorization.endpoint
+
   lazy val introspection
       : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     Introspection.endpoint
@@ -165,6 +178,20 @@ private[http] object Revocation {
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
       .out(Endpoints.noStore(statusCode(StatusCode.Ok)))
+      .errorOut(Endpoints.errors)
+}
+
+private[http] object DeviceAuthorization {
+
+  implicit val formParameters: Codec[String, Map[String, String], XWwwFormUrlencoded] =
+    Endpoints.strictForm(Endpoints.deviceAuthorizationParameters)
+
+  val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+    sttp.tapir.endpoint.post
+      .in(Endpoints.DeviceAuthorizationPath)
+      .in(Auth.basic)
+      .in(formBody[Map[String, String]])
+      .out(Endpoints.noStore(jsonBody[Map[String, String]]))
       .errorOut(Endpoints.errors)
 }
 

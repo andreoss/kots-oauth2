@@ -113,6 +113,45 @@ class ServerSpec extends FunSuite {
     assert(!rendered.contains(Metadata.JwksUri))
   }
 
+  test("a device authorization response renders every field of the answer") {
+    val response = DeviceAuthorizationResponse(
+      unsafe(dev.oauth2.core.DeviceCode.from("device-1")),
+      unsafe(dev.oauth2.core.UserCode.from("BCDF-GHJK")),
+      unsafe(dev.oauth2.core.EndpointUri.from("https://server.example/device")),
+      1800L,
+      5L
+    )
+    val rendered = DeviceAuthorizationResponse.render(response)
+    assertEquals(rendered("device_code"), "device-1")
+    assertEquals(rendered("user_code"), "BCDF-GHJK")
+    assertEquals(rendered("verification_uri"), "https://server.example/device")
+    assertEquals(rendered("expires_in"), "1800")
+    assertEquals(rendered("interval"), "5")
+    assertEquals(rendered.keySet, Set("device_code", "user_code", "verification_uri", "expires_in", "interval"))
+  }
+
+  test("the bound device authorization logic answers with the rendered response") {
+    val response = DeviceAuthorizationResponse(
+      unsafe(dev.oauth2.core.DeviceCode.from("device-1")),
+      unsafe(dev.oauth2.core.UserCode.from("BCDF-GHJK")),
+      unsafe(dev.oauth2.core.EndpointUri.from("https://server.example/device")),
+      1800L,
+      5L
+    )
+    val logic = new DeviceAuthorizationLogic[Id] {
+      def apply(basic: Option[String], parameters: Map[String, String]) = Right(response)
+    }
+    val bound = Server.deviceAuthorization(logic).asInstanceOf[Bound[Id]]
+    assertEquals(
+      bound.logic(IdentityMonad)(())((None, Map.empty[String, String])),
+      Right(DeviceAuthorizationResponse.render(response))
+    )
+    assertEquals(
+      bound.showPathTemplate(showQueryParam = None),
+      Endpoints.deviceAuthorization.showPathTemplate(showQueryParam = None)
+    )
+  }
+
   test("the bound metadata logic answers with the rendered document") {
     val metadata = ServerSpec.document
     val bound = Server.metadata[cats.Id](metadata).asInstanceOf[ServerSpec.MetadataBound[cats.Id]]

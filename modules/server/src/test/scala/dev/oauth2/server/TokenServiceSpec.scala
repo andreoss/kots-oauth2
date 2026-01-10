@@ -24,10 +24,14 @@ import dev.oauth2.core.RefreshToken
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
 import dev.oauth2.core.TokenRequest
+import dev.oauth2.core.DeviceCode
+import dev.oauth2.core.UserCode
 import dev.oauth2.store.Client
 import dev.oauth2.store.CodeRecord
+import dev.oauth2.store.DeviceRecord
 import dev.oauth2.store.Grant
 import dev.oauth2.store.memory.InMemoryCodeStore
+import dev.oauth2.store.memory.InMemoryDeviceStore
 import dev.oauth2.store.memory.InMemoryGrantStore
 import dev.oauth2.store.memory.InMemoryTokenStore
 import munit.CatsEffectSuite
@@ -107,7 +111,51 @@ class TokenServiceSpec extends CatsEffectSuite {
       _ <- codes.save(stored)
       tokens <- InMemoryTokenStore.create[IO](clock)
       grants <- InMemoryGrantStore.create[IO]
-    } yield (new TokenService[IO](codes, tokens, grants, clock, entropy, policy), tokens, grants)
+      devices <- InMemoryDeviceStore.create[IO](clock)
+    } yield (new TokenService[IO](codes, tokens, grants, devices, clock, entropy, policy), tokens, grants)
+  }
+
+  private def deviceRecord(
+      subject: Option[Subject] = None,
+      denied: Boolean = false,
+      client: ClientId = clientId,
+      expiresAt: Instant = Start.plusSeconds(1800L),
+      lastPolledAt: Option[Instant] = None
+  ): DeviceRecord =
+    DeviceRecord(
+      deviceCode = unsafe(DeviceCode.from("device-1")),
+      userCode = unsafe(UserCode.from("BCDF-GHJK")),
+      clientId = client,
+      scopes = unsafe(Scopes.parse("read")),
+      expiresAt = expiresAt,
+      subject = subject,
+      denied = denied,
+      lastPolledAt = lastPolledAt
+    )
+
+  private def deviceRequest: TokenRequest.Device =
+    TokenRequest.Device(unsafe(DeviceCode.from("device-1")), clientId)
+
+  private def deviceSetup(stored: DeviceRecord): IO[(TokenService[IO], InMemoryDeviceStore[IO], IO[Unit])] = {
+    var now = Start
+    val clock = new Clock[IO] {
+      def instant: IO[Instant] = IO(now)
+    }
+    var calls: Int = 0
+    val entropy = new Entropy[IO] {
+      def bytes(n: Int): IO[Array[Byte]] = IO {
+        calls += 1
+        Array.fill(n)(calls.toByte)
+      }
+    }
+    val advance = IO { now = now.plusSeconds(DeviceAuthorizationService.Interval.seconds) }
+    for {
+      codes <- InMemoryCodeStore.create[IO](clock)
+      tokens <- InMemoryTokenStore.create[IO](clock)
+      grants <- InMemoryGrantStore.create[IO]
+      devices <- InMemoryDeviceStore.create[IO](clock)
+      _ <- devices.save(stored)
+    } yield (new TokenService[IO](codes, tokens, grants, devices, clock, entropy, LifetimePolicy.defaults), devices, advance)
   }
 
   private def client(id: ClientId = clientId, method: ClientAuthMethod = ClientAuthMethod.ClientSecretBasic): Client =
@@ -118,6 +166,83 @@ class TokenServiceSpec extends CatsEffectSuite {
       method,
       if (method == ClientAuthMethod.None) None else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
     )
+
+  test("a device poll before the approval is answered as authorization pending") {
+    for {
+      triple <- deviceSetup(deviceRecord())
+      (service, _, _) = triple
+      result <- service.deviceCode(deviceRequest, client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("authorization_pending"))
+  }
+
+  test("a device poll inside the interval is answered as slow down") {
+    for {
+      triple <- deviceSetup(deviceRecord())
+      (service, _, advance) = triple
+      _ <- service.deviceCode(deviceRequest, client())
+      early <- service.deviceCode(deviceRequest, client())
+      _ <- advance
+      paced <- service.deviceCode(deviceRequest, client())
+    } yield {
+      assertEquals(early.left.toOption.map(_.code), Some("slow_down"))
+      assertEquals(paced.left.toOption.map(_.code), Some("authorization_pending"))
+    }
+  }
+
+  test("an approved device code is exchanged exactly once") {
+    for {
+      triple <- deviceSetup(deviceRecord(subject = Some(subject)))
+      (service, _, _) = triple
+      issued <- service.deviceCode(deviceRequest, client())
+      replayed <- service.deviceCode(deviceRequest, client())
+    } yield {
+      val minted = issued.toOption.get
+      assertEquals(minted.record.subject, subject)
+      assertEquals(minted.record.scopes, unsafe(Scopes.parse("read")))
+      assert(minted.refreshToken.isDefined)
+      assertEquals(replayed.left.toOption.map(_.code), Some("invalid_grant"))
+    }
+  }
+
+  test("an approved device code for a public client is issued without a refresh token") {
+    for {
+      triple <- deviceSetup(deviceRecord(subject = Some(subject)))
+      (service, _, _) = triple
+      issued <- service.deviceCode(deviceRequest, client(method = ClientAuthMethod.None))
+    } yield assertEquals(issued.toOption.get.refreshToken, None)
+  }
+
+  test("a denied device code is answered as access denied") {
+    for {
+      triple <- deviceSetup(deviceRecord(denied = true))
+      (service, _, _) = triple
+      result <- service.deviceCode(deviceRequest, client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("access_denied"))
+  }
+
+  test("an expired device code is answered as expired token") {
+    for {
+      triple <- deviceSetup(deviceRecord(expiresAt = Start))
+      (service, _, _) = triple
+      result <- service.deviceCode(deviceRequest, client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("expired_token"))
+  }
+
+  test("a device code of another client is refused as an invalid grant") {
+    for {
+      triple <- deviceSetup(deviceRecord(client = otherClientId))
+      (service, _, _) = triple
+      result <- service.deviceCode(deviceRequest, client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
+
+  test("an unknown device code is refused as an invalid grant") {
+    for {
+      triple <- deviceSetup(deviceRecord())
+      (service, _, _) = triple
+      result <- service.deviceCode(TokenRequest.Device(unsafe(DeviceCode.from("device-2")), clientId), client())
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_grant"))
+  }
 
   test("exchange issues an access and a refresh token for a valid code") {
     for {

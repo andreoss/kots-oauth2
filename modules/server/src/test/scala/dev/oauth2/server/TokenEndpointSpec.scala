@@ -109,10 +109,11 @@ class TokenEndpointSpec extends CatsEffectSuite {
       _ <- stored.fold(IO.unit)(codes.save)
       tokens <- InMemoryTokenStore.create[IO](clock)
       grants <- InMemoryGrantStore.create[IO]
+      devices <- dev.oauth2.store.memory.InMemoryDeviceStore.create[IO](clock)
       registry <- InMemoryClientStore.create[IO](clients)
     } yield new TokenEndpoint[IO](
       new RegisteredClientAuthentication[IO](registry),
-      new TokenService[IO](codes, tokens, grants, clock, entropy, LifetimePolicy.defaults)
+      new TokenService[IO](codes, tokens, grants, devices, clock, entropy, LifetimePolicy.defaults)
     )
   }
 

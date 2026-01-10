@@ -17,7 +17,14 @@ class EndpointsSpec extends FunSuite {
   private val document: OpenAPI =
     OpenAPIDocsInterpreter()
       .toOpenAPI(
-        List(Endpoints.token, Endpoints.revocation, Endpoints.introspection, Endpoints.metadata, Endpoints.jwks),
+        List(
+          Endpoints.token,
+          Endpoints.revocation,
+          Endpoints.introspection,
+          Endpoints.deviceAuthorization,
+          Endpoints.metadata,
+          Endpoints.jwks
+        ),
         "OAuth 2.0",
         "1.0"
       )
@@ -30,6 +37,10 @@ class EndpointsSpec extends FunSuite {
 
   private def introspectionOperation =
     document.paths.pathItems("/introspection").post.getOrElse(fail("no introspection operation in the document"))
+
+  private def deviceOperation =
+    document.paths.pathItems("/device_authorization").post
+      .getOrElse(fail("no device authorization operation in the document"))
 
   private def metadataOperation =
     document.paths.pathItems("/.well-known/oauth-authorization-server").get
@@ -151,6 +162,31 @@ class EndpointsSpec extends FunSuite {
     val responses = tokenOperation.responses.responses.values.flatMap(_.toOption)
     assert(responses.nonEmpty)
     assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
+  }
+
+  test("the device authorization endpoint is a form post at /device_authorization") {
+    assertEquals(Endpoints.deviceAuthorization.showPathTemplate(showQueryParam = None), "/device_authorization")
+    assertEquals(Endpoints.deviceAuthorization.method.map(_.method), Some("POST"))
+    assertEquals(
+      deviceOperation.requestBody.flatMap(_.toOption).map(_.content.keys.toList),
+      Some(List("application/x-www-form-urlencoded"))
+    )
+  }
+
+  test("every described device authorization response carries cache control no-store") {
+    val responses = deviceOperation.responses.responses.values.flatMap(_.toOption)
+    assert(responses.nonEmpty)
+    assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
+  }
+
+  test("the device authorization form accepts its own parameters and refuses the device code") {
+    val form = Endpoints.strictForm(Endpoints.deviceAuthorizationParameters)
+    assert(accepted(form.decode("client_id=client-1&scope=read")))
+    assert(refused(form.decode("device_code=device-1")))
+  }
+
+  test("the token form accepts the device code parameter") {
+    assert(accepted(Endpoints.formParameters.decode("grant_type=refresh_token&device_code=device-1")))
   }
 
   test("the revocation endpoint is a form post at /revocation") {
