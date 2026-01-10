@@ -18,6 +18,7 @@ class EndpointsSpec extends FunSuite {
     OpenAPIDocsInterpreter()
       .toOpenAPI(
         List(
+          Endpoints.authorize,
           Endpoints.token,
           Endpoints.revocation,
           Endpoints.introspection,
@@ -31,6 +32,9 @@ class EndpointsSpec extends FunSuite {
 
   private def tokenOperation =
     document.paths.pathItems("/token").post.getOrElse(fail("no token operation in the document"))
+
+  private def authorizeOperation =
+    document.paths.pathItems("/authorize").get.getOrElse(fail("no authorize operation in the document"))
 
   private def revocationOperation =
     document.paths.pathItems("/revocation").post.getOrElse(fail("no revocation operation in the document"))
@@ -162,6 +166,24 @@ class EndpointsSpec extends FunSuite {
     val responses = tokenOperation.responses.responses.values.flatMap(_.toOption)
     assert(responses.nonEmpty)
     assert(responses.forall(_.headers.contains(Endpoints.CacheControlHeader)))
+  }
+
+  test("the authorization endpoint is a public get at /authorize") {
+    assertEquals(Endpoints.authorize.showPathTemplate(showQueryParam = None), "/authorize")
+    assertEquals(Endpoints.authorize.method.map(_.method), Some("GET"))
+    assert(authorizeOperation.security.isEmpty)
+  }
+
+  test("the authorization endpoint describes the redirect and its reachable failures") {
+    val codes = authorizeOperation.responses.responses.keys.collect { case ResponsesCodeKey(code) => code }.toSet
+    assertEquals(codes, Set(302, 400, 500, 503))
+  }
+
+  test("the authorization query accepts its own parameters and refuses the others") {
+    val decode = Endpoints.strictQuery(Endpoints.authorizeParameters)
+    assert(accepted(decode(sttp.model.QueryParams.fromMap(Map("response_type" -> "code", "client_id" -> "c")))))
+    assert(refused(decode(sttp.model.QueryParams.fromMap(Map("code_verifier" -> "x")))))
+    assert(refused(decode(sttp.model.QueryParams.fromSeq(Seq("client_id" -> "a", "client_id" -> "b")))))
   }
 
   test("the device authorization endpoint is a form post at /device_authorization") {

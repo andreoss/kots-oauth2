@@ -31,8 +31,11 @@ import dev.oauth2.http.Form
 import dev.oauth2.http.Server
 import dev.oauth2.jose.Fakes
 import dev.oauth2.jose.Jwk
+import dev.oauth2.server.AuthorizationEndpoint
+import dev.oauth2.server.AuthorizationService
 import dev.oauth2.server.DeviceAuthorizationEndpoint
 import dev.oauth2.server.DeviceAuthorizationService
+import dev.oauth2.server.SessionLogin
 import dev.oauth2.server.IntrospectionEndpoint
 import dev.oauth2.server.RegisteredClientAuthentication
 import dev.oauth2.server.RevocationEndpoint
@@ -40,8 +43,10 @@ import dev.oauth2.server.TokenEndpoint
 import dev.oauth2.server.TokenService
 import dev.oauth2.store.Client
 import dev.oauth2.store.CodeRecord
+import dev.oauth2.store.ConsentRecord
 import dev.oauth2.store.memory.InMemoryClientStore
 import dev.oauth2.store.memory.InMemoryCodeStore
+import dev.oauth2.store.memory.InMemoryConsentStore
 import dev.oauth2.store.memory.InMemoryDeviceStore
 import dev.oauth2.store.memory.InMemoryGrantStore
 import dev.oauth2.store.memory.InMemoryKeyStore
@@ -135,7 +140,8 @@ class InterpreterSpec extends CatsEffectSuite {
       body = Stream.emits(Form.render(form).getBytes(StandardCharsets.UTF_8).toSeq).covary[IO]
     )
 
-  private def application: IO[(org.http4s.HttpRoutes[IO], InMemoryDeviceStore[IO])] = {
+  private def application
+      : IO[(org.http4s.HttpRoutes[IO], InMemoryDeviceStore[IO], SessionLogin[IO], InMemoryConsentStore[IO])] = {
     val clock = new Clock[IO] {
       def instant: IO[Instant] = IO.pure(Start)
     }
@@ -155,7 +161,14 @@ class InterpreterSpec extends CatsEffectSuite {
       keys <- InMemoryKeyStore.create[IO]
       _ <- keys.add(published)
       clients <- InMemoryClientStore.create[IO](List(registered))
+      consents <- InMemoryConsentStore.create[IO]
+      login <- SessionLogin.create[IO]
       authentication = new RegisteredClientAuthentication[IO](clients)
+      authorization = new AuthorizationEndpoint[IO](
+        clients,
+        login,
+        new AuthorizationService[IO](codes, consents, clock, entropy, LifetimePolicy.defaults)
+      )
       revocation = new RevocationEndpoint[IO](authentication, tokens, grants)
       introspection = new IntrospectionEndpoint[IO](authentication, tokens, grants)
       device = new DeviceAuthorizationEndpoint[IO](
@@ -165,6 +178,7 @@ class InterpreterSpec extends CatsEffectSuite {
     } yield (
       Interpreter.routes[IO](
         List(
+          Server.authorize(authorization),
           Server.token(
             new TokenEndpoint[IO](
               authentication,
@@ -178,7 +192,9 @@ class InterpreterSpec extends CatsEffectSuite {
           Server.jwks(keys.jwks)
         )
       ),
-      devices
+      devices,
+      login,
+      consents
     )
   }
 
@@ -493,6 +509,66 @@ class InterpreterSpec extends CatsEffectSuite {
     }
   }
 
+  test("the authorization endpoint answers the full code flow end to end") {
+    val user = unsafe(Subject.from("user-1"))
+    val uri = "http://localhost/authorize?response_type=code" +
+      s"&client_id=${clientId.value}" +
+      "&redirect_uri=https%3A%2F%2Fclient.example%2Fcb" +
+      "&scope=read&state=xyz" +
+      s"&code_challenge=${challenge.value}&code_challenge_method=S256"
+    for {
+      tuple <- application
+      (served, _, login, consents) = tuple
+      _ <- consents.grant(ConsentRecord(clientId, user, unsafe(Scopes.parse("read"))))
+      _ <- login.login(user)
+      answered <- served.run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString(uri))).value
+      response = answered.get
+      location = response.headers.headers.find(_.name.toString == "Location").map(_.value).get
+      query = Form.parse(location.dropWhile(_ != '?').drop(1)).toOption.get
+      exchanged <- served
+        .run(
+          post(
+            Map(
+              "grant_type" -> "authorization_code",
+              "code" -> query("code"),
+              "code_verifier" -> verifier.value,
+              "client_id" -> clientId.value
+            ),
+            Some("s3cret")
+          )
+        )
+        .value
+      text <- body(exchanged.get)
+    } yield {
+      assertEquals(response.status, Status.Found)
+      assert(location.startsWith("https://client.example/cb?"))
+      assertEquals(query.get("state"), Some("xyz"))
+      assertEquals(cacheControl(response), Some(Endpoints.NoStore))
+      assertEquals(exchanged.get.status, Status.Ok)
+      assert(field(text, "access_token").nonEmpty)
+    }
+  }
+
+  test("an anonymous authorization is redirected back as access denied") {
+    val uri = "http://localhost/authorize?response_type=code" +
+      s"&client_id=${clientId.value}" +
+      "&redirect_uri=https%3A%2F%2Fclient.example%2Fcb" +
+      "&scope=read&state=xyz" +
+      s"&code_challenge=${challenge.value}&code_challenge_method=S256"
+    for {
+      served <- routes
+      answered <- served.run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString(uri))).value
+      response = answered.get
+      location = response.headers.headers.find(_.name.toString == "Location").map(_.value).get
+      query = Form.parse(location.dropWhile(_ != '?').drop(1)).toOption.get
+    } yield {
+      assertEquals(response.status, Status.Found)
+      assertEquals(query.get("error"), Some("access_denied"))
+      assertEquals(query.get("state"), Some("xyz"))
+      assertEquals(query.get("code"), None)
+    }
+  }
+
   test("an access token is exchanged for an audience bound token") {
     for {
       served <- routes
@@ -548,7 +624,7 @@ class InterpreterSpec extends CatsEffectSuite {
   test("a device authorization is served with its codes and polling guidance") {
     for {
       pair <- application
-      (served, _) = pair
+      (served, _, _, _) = pair
       answered <- served.run(postTo("/device_authorization", Map("client_id" -> clientId.value, "scope" -> "read"), Some("s3cret"))).value
       response = answered.get
       text <- body(response)
@@ -576,7 +652,7 @@ class InterpreterSpec extends CatsEffectSuite {
       )
     for {
       pair <- application
-      (served, devices) = pair
+      (served, devices, _, _) = pair
       issued <- served.run(postTo("/device_authorization", Map("client_id" -> clientId.value), Some("s3cret"))).value
       text <- body(issued.get)
       code = field(text, "device_code")
