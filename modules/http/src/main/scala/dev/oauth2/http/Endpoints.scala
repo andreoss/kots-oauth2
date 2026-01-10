@@ -123,10 +123,24 @@ object Endpoints {
 
   val JwksPath: String = "jwks"
 
+  val JwkSetMediaType: String = "application/jwk-set+json"
+
+  private[http] final case class JwkSetJson() extends CodecFormat {
+    override val mediaType: sttp.model.MediaType =
+      sttp.model.MediaType.unsafeParse(JwkSetMediaType)
+  }
+
+  private val jwkSet: Codec[String, Json, JwkSetJson] =
+    Codec
+      .id[String, JwkSetJson](JwkSetJson(), Schema.string)
+      .mapDecode(raw =>
+        io.circe.parser.parse(raw).fold(error => DecodeResult.Error(raw, error), DecodeResult.Value(_))
+      )(_.noSpaces)
+
   lazy val jwks: PublicEndpoint[Unit, OAuth2Error, Json, Any] =
     sttp.tapir.endpoint.get
       .in(JwksPath)
-      .out(cacheable(jsonBody[Json]))
+      .out(cacheable(stringBodyUtf8AnyFormat(jwkSet)))
       .errorOut(errors)
 }
 
