@@ -96,6 +96,7 @@ class ServerSpec extends FunSuite {
     val metadata = ServerSpec.document
     val rendered = Metadata.render(metadata)
     assertEquals(rendered(Metadata.Issuer), io.circe.Json.fromString("https://server.example"))
+    assertEquals(rendered(Metadata.AuthorizationResponseIssParameterSupported), io.circe.Json.True)
     assertEquals(rendered(Metadata.TokenEndpoint), io.circe.Json.fromString("https://server.example/token"))
     assertEquals(rendered(Metadata.RevocationEndpoint), io.circe.Json.fromString("https://server.example/revocation"))
     assertEquals(rendered(Metadata.IntrospectionEndpoint), io.circe.Json.fromString("https://server.example/introspection"))

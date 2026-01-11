@@ -27,9 +27,12 @@ object Metadata {
 
   val ScopesSupported: String = "scopes_supported"
 
+  val AuthorizationResponseIssParameterSupported: String = "authorization_response_iss_parameter_supported"
+
   def render(metadata: AuthorizationServerMetadata): Map[String, Json] =
     Map(
       Issuer -> Json.fromString(metadata.issuer.value),
+      AuthorizationResponseIssParameterSupported -> Json.True,
       AuthorizationEndpoint -> Json.fromString(metadata.authorizationEndpoint.value),
       TokenEndpoint -> Json.fromString(metadata.tokenEndpoint.value),
       ResponseTypesSupported -> values(metadata.responseTypesSupported.map(_.value)),

@@ -7,6 +7,7 @@ import cats.syntax.functor._
 import dev.oauth2.core.AuthorizationCode
 import dev.oauth2.core.AuthorizationDetails
 import dev.oauth2.core.AuthorizationRequest
+import dev.oauth2.core.Issuer
 import dev.oauth2.core.OAuth2Error
 import dev.oauth2.core.RedirectUri
 import dev.oauth2.core.State
@@ -18,7 +19,8 @@ import dev.oauth2.store.ClientStore
 final class AuthorizationEndpoint[F[_]: Monad](
     clients: ClientStore[F],
     login: Login[F],
-    service: AuthorizationService[F]
+    service: AuthorizationService[F],
+    issuer: Issuer
 ) extends AuthorizeLogic[F] {
 
   def apply(parameters: Map[String, String]): F[Either[OAuth2Error, AuthorizationRedirect]] =
@@ -35,12 +37,16 @@ final class AuthorizationEndpoint[F[_]: Monad](
                 login.subject.flatMap {
                   case None =>
                     Monad[F].pure(
-                      Right(AuthorizationEndpoint.refused(target, OAuth2Error.AccessDenied(), request.state))
+                      Right(
+                        AuthorizationEndpoint.refused(target, OAuth2Error.AccessDenied(), request.state, issuer)
+                      )
                     )
                   case Some(subject) =>
                     service.issue(request, client, subject, AuthorizationDetails.empty).map {
-                      case Right(code) => Right(AuthorizationEndpoint.granted(target, code, request.state))
-                      case Left(error) => Right(AuthorizationEndpoint.refused(target, error, request.state))
+                      case Right(code) =>
+                        Right(AuthorizationEndpoint.granted(target, code, request.state, issuer))
+                      case Left(error) =>
+                        Right(AuthorizationEndpoint.refused(target, error, request.state, issuer))
                     }
                 }
             }
@@ -50,11 +56,29 @@ final class AuthorizationEndpoint[F[_]: Monad](
 
 object AuthorizationEndpoint {
 
-  def granted(target: RedirectUri, code: AuthorizationCode, state: Option[State]): AuthorizationRedirect =
-    redirect(target, Map("code" -> code.value) ++ state.map(value => "state" -> value.value))
+  val IssParameter: String = "iss"
 
-  def refused(target: RedirectUri, error: OAuth2Error, state: Option[State]): AuthorizationRedirect =
-    redirect(target, error.body ++ state.map(value => "state" -> value.value))
+  def granted(
+      target: RedirectUri,
+      code: AuthorizationCode,
+      state: Option[State],
+      issuer: Issuer
+  ): AuthorizationRedirect =
+    redirect(
+      target,
+      Map("code" -> code.value, IssParameter -> issuer.value) ++ state.map(value => "state" -> value.value)
+    )
+
+  def refused(
+      target: RedirectUri,
+      error: OAuth2Error,
+      state: Option[State],
+      issuer: Issuer
+  ): AuthorizationRedirect =
+    redirect(
+      target,
+      error.body ++ Map(IssParameter -> issuer.value) ++ state.map(value => "state" -> value.value)
+    )
 
   private def redirect(target: RedirectUri, params: Map[String, String]): AuthorizationRedirect = {
     val separator = if (target.value.contains("?")) "&" else "?"
