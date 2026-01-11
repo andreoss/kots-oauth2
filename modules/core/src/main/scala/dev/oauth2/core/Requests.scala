@@ -34,7 +34,7 @@ final case class AuthorizationRequest(
     clientId: ClientId,
     redirectUri: Option[RedirectUri],
     scope: Scopes,
-    state: Option[State],
+    state: State,
     pkce: Option[Pkce]
 )
 
@@ -48,7 +48,7 @@ object AuthorizationRequest {
       Params.field(params, "client_id")(ClientId.from),
       Params.fieldOpt(params, "redirect_uri")(RedirectUri.from),
       Params.fieldOpt(params, "scope")(Scopes.parse),
-      Params.fieldOpt(params, "state")(State.from),
+      Params.field(params, "state")(State.from),
       (
         Params.fieldOpt(params, "code_challenge")(CodeChallenge.from),
         Params.fieldOpt(params, "code_challenge_method")(CodeChallengeMethod.from)

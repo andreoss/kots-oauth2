@@ -146,6 +146,10 @@ object Endpoints {
 
   val LocationHeader: String = "Location"
 
+  val ReferrerPolicyHeader: String = "Referrer-Policy"
+
+  val NoReferrer: String = "no-referrer"
+
   def authorizeErrors: EndpointOutput[OAuth2Error] =
     oneOf[OAuth2Error](
       errorVariant(StatusCode.BadRequest),
@@ -157,7 +161,11 @@ object Endpoints {
     sttp.tapir.endpoint.get
       .in(AuthorizePath)
       .in(queryParams.mapDecode(strictQuery(authorizeParameters))(sttp.model.QueryParams.fromMap))
-      .out(statusCode(StatusCode.Found).and(noStore(header[String](LocationHeader))))
+      .out(
+        statusCode(StatusCode.Found)
+          .and(noStore(header[String](LocationHeader)))
+          .and(header(ReferrerPolicyHeader, NoReferrer))
+      )
       .errorOut(authorizeErrors)
 
   val token: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =

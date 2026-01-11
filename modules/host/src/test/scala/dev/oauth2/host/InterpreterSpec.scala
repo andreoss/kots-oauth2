@@ -546,6 +546,10 @@ class InterpreterSpec extends CatsEffectSuite {
       assertEquals(query.get("state"), Some("xyz"))
       assertEquals(query.get("iss"), Some("https://server.example"))
       assertEquals(cacheControl(response), Some(Endpoints.NoStore))
+      assertEquals(
+        response.headers.headers.find(_.name.toString == Endpoints.ReferrerPolicyHeader).map(_.value),
+        Some(Endpoints.NoReferrer)
+      )
       assertEquals(exchanged.get.status, Status.Ok)
       assert(field(text, "access_token").nonEmpty)
     }

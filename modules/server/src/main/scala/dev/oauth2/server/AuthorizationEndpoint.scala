@@ -61,23 +61,23 @@ object AuthorizationEndpoint {
   def granted(
       target: RedirectUri,
       code: AuthorizationCode,
-      state: Option[State],
+      state: State,
       issuer: Issuer
   ): AuthorizationRedirect =
     redirect(
       target,
-      Map("code" -> code.value, IssParameter -> issuer.value) ++ state.map(value => "state" -> value.value)
+      Map("code" -> code.value, IssParameter -> issuer.value, "state" -> state.value)
     )
 
   def refused(
       target: RedirectUri,
       error: OAuth2Error,
-      state: Option[State],
+      state: State,
       issuer: Issuer
   ): AuthorizationRedirect =
     redirect(
       target,
-      error.body ++ Map(IssParameter -> issuer.value) ++ state.map(value => "state" -> value.value)
+      error.body ++ Map(IssParameter -> issuer.value, "state" -> state.value)
     )
 
   private def redirect(target: RedirectUri, params: Map[String, String]): AuthorizationRedirect = {

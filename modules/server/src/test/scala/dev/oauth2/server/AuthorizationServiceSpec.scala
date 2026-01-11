@@ -62,7 +62,7 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
       clientId = clientId,
       redirectUri = redirectUri,
       scope = scope.map(raw => unsafe(Scopes.parse(raw))).getOrElse(Scopes.empty),
-      state = None,
+      state = unsafe(dev.oauth2.core.State.from("xyz")),
       pkce = challenge
     )
 
