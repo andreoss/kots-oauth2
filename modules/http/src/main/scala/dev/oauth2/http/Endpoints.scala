@@ -197,6 +197,14 @@ object Endpoints {
       .out(cacheable(jsonBody[Map[String, Json]]))
       .errorOut(documentErrors)
 
+  val WellKnownResourcePath: List[String] = List(".well-known", "oauth-protected-resource")
+
+  lazy val resourceMetadata: PublicEndpoint[Unit, OAuth2Error, Map[String, Json], Any] =
+    WellKnownResourcePath
+      .foldLeft(sttp.tapir.endpoint.get)((path, segment) => path.in(segment))
+      .out(cacheable(jsonBody[Map[String, Json]]))
+      .errorOut(documentErrors)
+
   val JwksPath: String = "jwks"
 
   val JwkSetMediaType: String = "application/jwk-set+json"

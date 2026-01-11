@@ -1,5 +1,11 @@
 package dev.oauth2.core
 
+final case class ProtectedResourceMetadata(
+    resource: ResourceIndicator,
+    authorizationServers: List[Issuer],
+    scopesSupported: Scopes
+)
+
 final case class AuthorizationServerMetadata(
     issuer: Issuer,
     authorizationEndpoint: EndpointUri,

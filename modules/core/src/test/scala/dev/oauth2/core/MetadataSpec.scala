@@ -66,4 +66,12 @@ class MetadataSpec extends FunSuite {
     assertEquals(minimal.jwksUri, None)
     assertEquals(minimal.scopesSupported, Scopes.empty)
   }
+
+  test("the protected resource metadata carries the resource, its servers and scopes") {
+    val resource = unsafe(ResourceIndicator.from("https://api.example"))
+    val document = ProtectedResourceMetadata(resource, List(issuer), unsafe(Scopes.parse("read")))
+    assertEquals(document.resource, resource)
+    assertEquals(document.authorizationServers, List(issuer))
+    assertEquals(document.scopesSupported.value.map(_.value), Set("read"))
+  }
 }
