@@ -5,13 +5,15 @@ import dev.oauth2.core.ClientId
 import dev.oauth2.core.ClientSecretHash
 import dev.oauth2.core.RedirectUri
 import dev.oauth2.core.Scopes
+import dev.oauth2.jose.Jwks
 
 final case class Client(
     id: ClientId,
     redirectUris: Set[RedirectUri],
     scopes: Scopes,
     authMethod: ClientAuthMethod,
-    secretHash: Option[ClientSecretHash]
+    secretHash: Option[ClientSecretHash],
+    keys: Jwks = Jwks.empty
 ) {
   def confidential: Boolean = authMethod != ClientAuthMethod.None
 

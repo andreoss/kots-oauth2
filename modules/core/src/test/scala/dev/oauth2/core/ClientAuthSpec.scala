@@ -25,10 +25,29 @@ class ClientAuthSpec extends ScalaCheckSuite {
     assertEquals(ClientAuthMethod.from("none"), Right(ClientAuthMethod.None))
     assertEquals(ClientAuthMethod.from("client_secret_basic"), Right(ClientAuthMethod.ClientSecretBasic))
     assertEquals(ClientAuthMethod.from("client_secret_post"), Right(ClientAuthMethod.ClientSecretPost))
+    assertEquals(ClientAuthMethod.from("private_key_jwt"), Right(ClientAuthMethod.PrivateKeyJwt))
   }
 
   test("method refuses an unregistered value") {
-    assert(ClientAuthMethod.from("private_key_jwt").isLeft)
+    assert(ClientAuthMethod.from("tls_client_auth").isLeft)
+  }
+
+  test("input carries a client assertion of the jwt bearer type") {
+    val decoded = ClientAuthInput.from(
+      None,
+      Map("client_assertion" -> "a.b.c", "client_assertion_type" -> ClientAssertion.Type)
+    )
+    assertEquals(decoded.toOption.flatMap(_.assertion).map(_.value), Some("a.b.c"))
+  }
+
+  test("input refuses a client assertion without its type or of another type") {
+    assert(ClientAuthInput.from(None, Map("client_assertion" -> "a.b.c")).isInvalid)
+    assert(
+      ClientAuthInput
+        .from(None, Map("client_assertion" -> "a.b.c", "client_assertion_type" -> "urn:other"))
+        .isInvalid
+    )
+    assert(ClientAuthInput.from(None, Map("client_assertion_type" -> ClientAssertion.Type)).isInvalid)
   }
 
   test("input reads basic credentials from a basic header value") {
