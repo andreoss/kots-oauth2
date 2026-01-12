@@ -67,6 +67,12 @@ class NewtypeSpec extends ScalaCheckSuite {
     assert(Subject.from(raw).isLeft)
   }
 
+  test("an access token accepts a compact jwt length and stays bounded") {
+    assert(AccessToken.from("a" * (Text.MaxLength + 1)).isRight)
+    assert(AccessToken.from("a" * Text.TokenMaxLength).isRight)
+    assert(AccessToken.from("a" * (Text.TokenMaxLength + 1)).isLeft)
+  }
+
   test("scope tokens refuse quote and backslash") {
     assert(Scope.from("a\"b").isLeft)
     assert(Scope.from("a\\b").isLeft)
