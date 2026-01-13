@@ -60,7 +60,9 @@ import dev.oauth2.store.memory.InMemoryPushedRequestStore
 import dev.oauth2.store.memory.InMemoryTokenStore
 import fs2.Stream
 import munit.CatsEffectSuite
+import org.http4s.AuthScheme
 import org.http4s.BasicCredentials
+import org.http4s.Credentials
 import org.http4s.Header
 import org.http4s.Headers
 import org.http4s.MediaType
@@ -210,6 +212,9 @@ class InterpreterSpec extends CatsEffectSuite {
           Server.authorize(authorization),
           Server.par(par),
           Server.register(registration),
+          Server.registrationRead(registration),
+          Server.registrationUpdate(registration),
+          Server.registrationDelete(registration),
           Server.token(
             new TokenEndpoint[IO](
               authentication,
@@ -606,6 +611,57 @@ class InterpreterSpec extends CatsEffectSuite {
       )
       assertEquals(exchanged.get.status, Status.Ok)
       assert(field(text, "access_token").nonEmpty)
+    }
+  }
+
+  test("a registration is managed over http with its registration access token") {
+    val payload = io.circe.Json.obj(
+      "redirect_uris" -> io.circe.Json.arr(io.circe.Json.fromString("https://fresh.example/cb")),
+      "scope" -> io.circe.Json.fromString("read")
+    )
+    def managed(method: Method, id: String, token: String, body: Option[io.circe.Json]): Request[IO] =
+      Request[IO](
+        method = method,
+        uri = Uri.unsafeFromString(s"http://localhost/register/$id"),
+        headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, token))) ++
+          body.fold(Headers.empty)(_ => Headers(`Content-Type`(MediaType.application.json))),
+        body = body.fold[fs2.Stream[IO, Byte]](Stream.empty)(json =>
+          Stream.emits(json.noSpaces.getBytes(StandardCharsets.UTF_8).toSeq).covary[IO]
+        )
+      )
+    for {
+      served <- routes
+      minted <- served.run(postJson("/register", payload)).value
+      text <- body(minted.get)
+      id = field(text, "client_id")
+      token = field(text, "registration_access_token")
+      read <- served.run(managed(Method.GET, id, token, None)).value
+      readText <- body(read.get)
+      updated <- served
+        .run(
+          managed(
+            Method.PUT,
+            id,
+            token,
+            Some(
+              io.circe.Json.obj(
+                "redirect_uris" -> io.circe.Json.arr(io.circe.Json.fromString("https://fresh.example/cb")),
+                "scope" -> io.circe.Json.fromString("read write")
+              )
+            )
+          )
+        )
+        .value
+      updatedText <- body(updated.get)
+      removed <- served.run(managed(Method.DELETE, id, token, None)).value
+      afterwards <- served.run(managed(Method.GET, id, token, None)).value
+    } yield {
+      assertEquals(read.get.status, Status.Ok)
+      assertEquals(field(readText, "scope"), "read")
+      assertEquals(updated.get.status, Status.Ok)
+      assertEquals(field(updatedText, "scope"), "read write")
+      assertEquals(removed.get.status, Status.NoContent)
+      assertEquals(afterwards.get.status, Status.Unauthorized)
     }
   }
 

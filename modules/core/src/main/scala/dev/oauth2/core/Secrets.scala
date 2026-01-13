@@ -40,3 +40,21 @@ object ClientCredentials {
           } yield ClientCredentials(id, secret)
       }
 }
+
+final case class RegistrationToken private (value: String)
+
+object RegistrationToken {
+  def from(raw: String): Either[ParseFailure, RegistrationToken] =
+    Text.printable("RegistrationToken", raw).map(new RegistrationToken(_))
+}
+
+final case class RegistrationTokenHash private (value: String)
+
+object RegistrationTokenHash {
+
+  def of(token: RegistrationToken): RegistrationTokenHash =
+    new RegistrationTokenHash(Digests.sha256Hex(token.value))
+
+  def verify(hash: RegistrationTokenHash, token: RegistrationToken): Boolean =
+    Digests.equal(hash.value, Digests.sha256Hex(token.value))
+}
