@@ -55,6 +55,21 @@ object Endpoints {
     "state",
     "code_challenge",
     "code_challenge_method",
+    "resource",
+    "request_uri"
+  )
+
+  val parParameters: Set[String] = Set(
+    "response_type",
+    "client_id",
+    "client_secret",
+    "client_assertion",
+    "client_assertion_type",
+    "redirect_uri",
+    "scope",
+    "state",
+    "code_challenge",
+    "code_challenge_method",
     "resource"
   )
 
@@ -189,6 +204,11 @@ object Endpoints {
       : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     DeviceAuthorization.endpoint
 
+  val ParPath: String = "par"
+
+  lazy val par: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+    PushedAuthorization.endpoint
+
   lazy val introspection
       : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
     Introspection.endpoint
@@ -247,6 +267,20 @@ private[http] object Revocation {
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
       .out(Endpoints.noStore(statusCode(StatusCode.Ok)))
+      .errorOut(Endpoints.errors)
+}
+
+private[http] object PushedAuthorization {
+
+  implicit val formParameters: Codec[String, Map[String, String], XWwwFormUrlencoded] =
+    Endpoints.strictForm(Endpoints.parParameters)
+
+  val endpoint: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+    sttp.tapir.endpoint.post
+      .in(Endpoints.ParPath)
+      .in(Auth.basic)
+      .in(formBody[Map[String, String]])
+      .out(statusCode(StatusCode.Created).and(Endpoints.noStore(jsonBody[Map[String, String]])))
       .errorOut(Endpoints.errors)
 }
 
