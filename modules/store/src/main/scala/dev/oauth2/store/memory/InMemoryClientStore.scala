@@ -14,6 +14,9 @@ final class InMemoryClientStore[F[_]: Monad] private (
 
   def find(id: ClientId): F[Option[Client]] =
     state.get.map(_.get(id))
+
+  def save(client: Client): F[Unit] =
+    state.update(_.updated(client.id, client))
 }
 
 object InMemoryClientStore {

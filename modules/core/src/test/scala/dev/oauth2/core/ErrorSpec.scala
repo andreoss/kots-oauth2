@@ -26,12 +26,21 @@ class ErrorSpec extends ScalaCheckSuite {
       (d, u) => OAuth2Error.TemporarilyUnavailable(d, u),
       (d, u) => OAuth2Error.AuthorizationPending(d, u),
       (d, u) => OAuth2Error.SlowDown(d, u),
-      (d, u) => OAuth2Error.ExpiredToken(d, u)
+      (d, u) => OAuth2Error.ExpiredToken(d, u),
+      (d, u) => OAuth2Error.InvalidClientMetadata(d, u),
+      (d, u) => OAuth2Error.InvalidRedirectUri(d, u)
     )
     for {
       f <- Gen.oneOf(cases)
       tu <- base
     } yield f(tu._1, tu._2)
+  }
+
+  test("every registration error carries the RFC 7591 code and a bad request status") {
+    assertEquals(OAuth2Error.InvalidClientMetadata().code, "invalid_client_metadata")
+    assertEquals(OAuth2Error.InvalidRedirectUri().code, "invalid_redirect_uri")
+    assertEquals(OAuth2Error.InvalidClientMetadata().status, 400)
+    assertEquals(OAuth2Error.InvalidRedirectUri().status, 400)
   }
 
   test("every device grant error carries the RFC 8628 code and a bad request status") {

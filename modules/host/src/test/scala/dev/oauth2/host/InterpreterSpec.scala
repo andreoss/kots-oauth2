@@ -41,6 +41,8 @@ import dev.oauth2.server.SessionLogin
 import dev.oauth2.server.IntrospectionEndpoint
 import dev.oauth2.server.PushedAuthorizationEndpoint
 import dev.oauth2.server.PushedAuthorizationService
+import dev.oauth2.server.RegistrationEndpoint
+import dev.oauth2.server.RegistrationService
 import dev.oauth2.server.RegisteredClientAuthentication
 import dev.oauth2.server.RevocationEndpoint
 import dev.oauth2.server.TokenEndpoint
@@ -138,6 +140,14 @@ class InterpreterSpec extends CatsEffectSuite {
   private def post(form: Map[String, String], secret: Option[String]): Request[IO] =
     postTo("/token", form, secret)
 
+  private def postJson(path: String, payload: io.circe.Json): Request[IO] =
+    Request[IO](
+      method = Method.POST,
+      uri = Uri.unsafeFromString(s"http://localhost$path"),
+      headers = Headers(`Content-Type`(MediaType.application.json)),
+      body = Stream.emits(payload.noSpaces.getBytes(StandardCharsets.UTF_8).toSeq).covary[IO]
+    )
+
   private def postTo(
       path: String,
       form: Map[String, String],
@@ -187,6 +197,7 @@ class InterpreterSpec extends CatsEffectSuite {
         authentication,
         new PushedAuthorizationService[IO](pushed, clock, entropy, LifetimePolicy.defaults)
       )
+      registration = new RegistrationEndpoint[IO](new RegistrationService[IO](clients, entropy))
       revocation = new RevocationEndpoint[IO](authentication, tokens, grants)
       introspection = new IntrospectionEndpoint[IO](authentication, tokens, grants)
       device = new DeviceAuthorizationEndpoint[IO](
@@ -198,6 +209,7 @@ class InterpreterSpec extends CatsEffectSuite {
         List(
           Server.authorize(authorization),
           Server.par(par),
+          Server.register(registration),
           Server.token(
             new TokenEndpoint[IO](
               authentication,
@@ -594,6 +606,56 @@ class InterpreterSpec extends CatsEffectSuite {
       )
       assertEquals(exchanged.get.status, Status.Ok)
       assert(field(text, "access_token").nonEmpty)
+    }
+  }
+
+  test("a registered client is minted over http and can use its credentials") {
+    val payload = io.circe.Json.obj(
+      "redirect_uris" -> io.circe.Json.arr(io.circe.Json.fromString("https://fresh.example/cb")),
+      "token_endpoint_auth_method" -> io.circe.Json.fromString("client_secret_basic"),
+      "scope" -> io.circe.Json.fromString("read")
+    )
+    for {
+      served <- routes
+      answered <- served.run(postJson("/register", payload)).value
+      text <- body(answered.get)
+      freshId = field(text, "client_id")
+      freshSecret = field(text, "client_secret")
+      issued <- served.run(
+        Request[IO](
+          method = Method.POST,
+          uri = Uri.unsafeFromString("http://localhost/token"),
+          headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)) ++
+            Headers(List(Authorization(BasicCredentials(freshId, freshSecret)))),
+          body = Stream
+            .emits(
+              Form
+                .render(Map("grant_type" -> "client_credentials", "client_id" -> freshId))
+                .getBytes(StandardCharsets.UTF_8)
+                .toSeq
+            )
+            .covary[IO]
+        )
+      ).value
+      issuedText <- body(issued.get)
+    } yield {
+      assertEquals(answered.get.status, Status.Created)
+      assert(freshId.nonEmpty)
+      assert(freshSecret.nonEmpty)
+      assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
+      assertEquals(issued.get.status, Status.Ok)
+      assert(field(issuedText, "access_token").nonEmpty)
+    }
+  }
+
+  test("a registration without a redirect uri is refused") {
+    for {
+      served <- routes
+      answered <- served.run(postJson("/register", io.circe.Json.obj("scope" -> io.circe.Json.fromString("read")))).value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.BadRequest)
+      assertEquals(field(text, "error"), "invalid_redirect_uri")
     }
   }
 

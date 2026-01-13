@@ -81,6 +81,16 @@ object OAuth2Error {
       errorUri: Option[String] = None
   ) extends OAuth2Error("expired_token", 400)
 
+  final case class InvalidClientMetadata(
+      description: Option[String] = None,
+      errorUri: Option[String] = None
+  ) extends OAuth2Error("invalid_client_metadata", 400)
+
+  final case class InvalidRedirectUri(
+      description: Option[String] = None,
+      errorUri: Option[String] = None
+  ) extends OAuth2Error("invalid_redirect_uri", 400)
+
   val BasicRealm: String = "oauth2"
 
   val BasicChallenge: String = s"""Basic realm="$BasicRealm""""
@@ -98,7 +108,9 @@ object OAuth2Error {
     "temporarily_unavailable",
     "authorization_pending",
     "slow_down",
-    "expired_token"
+    "expired_token",
+    "invalid_client_metadata",
+    "invalid_redirect_uri"
   )
 
   val knownStatuses: Set[Int] = Set(400, 401, 403, 500, 503)
@@ -134,6 +146,8 @@ object OAuth2Error {
       case "authorization_pending"     => Right(AuthorizationPending(description, errorUri))
       case "slow_down"                 => Right(SlowDown(description, errorUri))
       case "expired_token"             => Right(ExpiredToken(description, errorUri))
+      case "invalid_client_metadata"   => Right(InvalidClientMetadata(description, errorUri))
+      case "invalid_redirect_uri"      => Right(InvalidRedirectUri(description, errorUri))
       case other => Left(ParseFailure("OAuth2Error", s"unknown error code: $other"))
     }
   }
