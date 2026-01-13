@@ -43,7 +43,8 @@ object Endpoints {
   val deviceAuthorizationParameters: Set[String] = Set(
     "client_id",
     "client_secret",
-    "scope"
+    "scope",
+    "resource"
   )
 
   val authorizeParameters: Set[String] = Set(
@@ -53,7 +54,8 @@ object Endpoints {
     "scope",
     "state",
     "code_challenge",
-    "code_challenge_method"
+    "code_challenge_method",
+    "resource"
   )
 
   val revocationParameters: Set[String] = Set(

@@ -43,7 +43,7 @@ final class AuthorizationService[F[_]: Monad](
       { case (redirectUri, scopes, pkce) =>
         consent.decide(request.clientId, subject, scopes).flatMap {
           case false => Monad[F].pure(Left(OAuth2Error.AccessDenied(): OAuth2Error))
-          case true  => mint(request.clientId, redirectUri, subject, scopes, details, pkce)
+          case true  => mint(request.clientId, redirectUri, subject, scopes, details, pkce, request.resource)
         }
       }
     )
@@ -88,7 +88,8 @@ final class AuthorizationService[F[_]: Monad](
       subject: Subject,
       scopes: Scopes,
       details: AuthorizationDetails,
-      pkce: Pkce
+      pkce: Pkce,
+      resource: Option[dev.oauth2.core.ResourceIndicator]
   ): F[Either[OAuth2Error, AuthorizationCode]] =
     for {
       now <- clock.instant
@@ -109,7 +110,8 @@ final class AuthorizationService[F[_]: Monad](
                 scopes = scopes,
                 details = details,
                 pkce = Some(pkce),
-                expiresAt = Lifetime.expiresAt(now, LifetimePolicy.of(policy, TokenType.AuthorizationCode))
+                expiresAt = Lifetime.expiresAt(now, LifetimePolicy.of(policy, TokenType.AuthorizationCode)),
+                resource = resource
               )
             )
             .as(Right(code))

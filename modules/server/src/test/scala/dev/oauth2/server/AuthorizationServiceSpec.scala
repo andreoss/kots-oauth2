@@ -146,6 +146,22 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     }
   }
 
+  test("issuance records the resource of the request on the code") {
+    val registered = client(Set(callback), "read")
+    val bound = unsafe(dev.oauth2.core.ResourceIndicator.from("https://api.example"))
+    for {
+      triple <- serviceOf()
+      (service, codes, _) = triple
+      issued <- service.issue(
+        request(Some(callback), Some("read"), Some(pkce)).copy(resource = Some(bound)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
+      record <- issued.fold(_ => IO.pure(None), codes.consume)
+    } yield assertEquals(record.flatMap(_.resource), Some(bound))
+  }
+
   test("issuance stores a code bound to the client, redirect, subject and challenge") {
     val registered = client(Set(callback), "read write")
     for {

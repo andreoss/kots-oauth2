@@ -56,7 +56,8 @@ final class DeviceAuthorizationService[F[_]: Monad](
                     expiresAt = Lifetime.expiresAt(now, lifetime),
                     subject = None,
                     denied = false,
-                    lastPolledAt = None
+                    lastPolledAt = None,
+                    resource = request.resource
                   )
                 )
                 .as(

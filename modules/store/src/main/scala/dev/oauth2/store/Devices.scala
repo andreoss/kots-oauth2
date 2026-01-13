@@ -4,6 +4,7 @@ import java.time.Instant
 
 import dev.oauth2.core.ClientId
 import dev.oauth2.core.DeviceCode
+import dev.oauth2.core.ResourceIndicator
 import dev.oauth2.core.Scopes
 import dev.oauth2.core.Subject
 import dev.oauth2.core.UserCode
@@ -16,7 +17,8 @@ final case class DeviceRecord(
     expiresAt: Instant,
     subject: Option[Subject],
     denied: Boolean,
-    lastPolledAt: Option[Instant]
+    lastPolledAt: Option[Instant],
+    resource: Option[ResourceIndicator] = None
 ) {
 
   def isExpired(now: Instant): Boolean = !now.isBefore(expiresAt)
