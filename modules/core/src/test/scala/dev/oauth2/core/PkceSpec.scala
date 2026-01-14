@@ -35,6 +35,13 @@ class PkceSpec extends ScalaCheckSuite {
     assertEquals(Pkce.verify(s256, verifier), Right(()))
   }
 
+  test("a derived challenge is the RFC 7636 example and verifies its verifier") {
+    val verifier = CodeVerifier.from(ExampleVerifier).toOption.get
+    val derived = Pkce.challenge(verifier).toOption.get
+    assertEquals(derived.value, ExampleChallenge)
+    assertEquals(Pkce.verify(Pkce(derived, CodeChallengeMethod.S256), verifier), Right(()))
+  }
+
   test("S256 verification refuses another verifier") {
     val verifier = CodeVerifier.from(OtherVerifier).toOption.get
     assert(Pkce.verify(s256, verifier).isLeft)
