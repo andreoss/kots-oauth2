@@ -83,7 +83,8 @@ lazy val client = module("client")
     libraryDependencies ++= Seq(
       "org.http4s" %% "http4s-client" % Http4s,
       "io.circe" %% "circe-core" % Circe,
-      "io.circe" %% "circe-parser" % Circe
+      "io.circe" %% "circe-parser" % Circe,
+      "org.typelevel" %% "cats-effect-testkit" % "3.6.0" % Test
     )
   )
 

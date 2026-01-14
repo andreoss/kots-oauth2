@@ -101,6 +101,20 @@ class TokenClientSpec extends CatsEffectSuite {
     }
   }
 
+  test("a device poll carries the device code grant") {
+    for {
+      seen <- Ref.of[IO, Option[(Map[String, String], Option[String])]](None)
+      tokens = new TokenClient[IO](transport(seen, ok(grantBody)), endpoint)
+      _ <- tokens.device(unsafe(dev.oauth2.core.DeviceCode.from("device-1")), clientId, Some(secret))
+      request <- seen.get
+    } yield {
+      val (fields, _) = request.get
+      assertEquals(fields.get("grant_type"), Some("urn:ietf:params:oauth:grant-type:device_code"))
+      assertEquals(fields.get("device_code"), Some("device-1"))
+      assertEquals(fields.get("client_id"), Some(clientId.value))
+    }
+  }
+
   test("a refused grant is carried back as its wire error") {
     for {
       seen <- Ref.of[IO, Option[(Map[String, String], Option[String])]](None)
