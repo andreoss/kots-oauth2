@@ -20,8 +20,12 @@ import dev.oauth2.store.TokenStore
 final class IntrospectionEndpoint[F[_]: Monad](
     authentication: ClientAuthentication[F],
     tokens: TokenStore[F],
-    grants: GrantStore[F]
+    grants: GrantStore[F],
+    audit: Option[dev.oauth2.store.AuditLog[F]] = None
 ) extends IntrospectionLogic[F] {
+
+  private val auditLog: dev.oauth2.store.AuditLog[F] =
+    audit.getOrElse(dev.oauth2.store.AuditLog.noop[F])
 
   def apply(
       basic: Option[String],
@@ -45,6 +49,11 @@ final class IntrospectionEndpoint[F[_]: Monad](
       case Right(request) =>
         find(request, client.id)
           .flatMap(found => found.fold(Monad[F].pure(IntrospectionResponse.inactive))(answer))
+          .flatMap(response =>
+            auditLog
+              .record(dev.oauth2.store.AuditEvent.Introspected(client.id, response.active))
+              .as(response)
+          )
           .map(Right(_))
     }
 

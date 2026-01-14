@@ -30,6 +30,8 @@ import dev.oauth2.core.TokenType
 import dev.oauth2.jose.Jwt
 import dev.oauth2.jose.JwtClaims
 import dev.oauth2.jose.SigningKey
+import dev.oauth2.store.AuditEvent
+import dev.oauth2.store.AuditLog
 import dev.oauth2.store.Client
 import dev.oauth2.store.CodeRecord
 import dev.oauth2.store.CodeStore
@@ -48,8 +50,11 @@ final class TokenService[F[_]: Monad](
     clock: Clock[F],
     entropy: Entropy[F],
     policy: LifetimePolicy,
-    signer: Option[TokenService.Signing] = None
+    signer: Option[TokenService.Signing] = None,
+    audit: Option[AuditLog[F]] = None
 ) {
+
+  private val auditLog: AuditLog[F] = audit.getOrElse(AuditLog.noop[F])
 
   def authorizationCode(
       request: TokenRequest.Code,
@@ -344,9 +349,13 @@ final class TokenService[F[_]: Monad](
             audience = mint.audience,
             actor = mint.actor
           )
+          val event =
+            if (mint.grantId.isEmpty) AuditEvent.Issued(mint.clientId, mint.subject, grantId)
+            else AuditEvent.Refreshed(mint.clientId, mint.subject, grantId)
           grants
             .save(Grant(grantId, mint.clientId, mint.subject, mint.scopes, mint.details, revoked = false))
             .flatMap(_ => tokens.save(minted))
+            .flatMap(_ => auditLog.record(event))
             .as(Right(IssuedToken(accessToken, refreshToken, minted)))
         }
       )
