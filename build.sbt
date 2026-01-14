@@ -77,7 +77,15 @@ lazy val http = module("http")
 
 lazy val server = module("server").dependsOn(core, store, http, jose % "test->test")
 
-lazy val client = module("client").dependsOn(core)
+lazy val client = module("client")
+  .dependsOn(core)
+  .settings(
+    libraryDependencies ++= Seq(
+      "org.http4s" %% "http4s-client" % Http4s,
+      "io.circe" %% "circe-core" % Circe,
+      "io.circe" %% "circe-parser" % Circe
+    )
+  )
 
 lazy val host = module("host")
   .dependsOn(server, client, jose % "test->test")
