@@ -41,6 +41,7 @@ import dev.oauth2.server.SessionLogin
 import dev.oauth2.server.IntrospectionEndpoint
 import dev.oauth2.server.PushedAuthorizationEndpoint
 import dev.oauth2.server.PushedAuthorizationService
+import dev.oauth2.server.Readiness
 import dev.oauth2.server.RegistrationEndpoint
 import dev.oauth2.server.RegistrationService
 import dev.oauth2.server.RegisteredClientAuthentication
@@ -226,7 +227,16 @@ class InterpreterSpec extends CatsEffectSuite {
           Server.deviceAuthorization(device),
           Server.metadata(metadata),
           Server.resourceMetadata(resource),
-          Server.jwks(keys.jwks)
+          Server.jwks(keys.jwks),
+          Server.health[IO],
+          Server.ready(
+            new Readiness[IO](
+              List(
+                "clients" -> clients.find(clientId).map(_.isDefined),
+                "keys" -> keys.jwks.map(_.keys.nonEmpty)
+              )
+            )
+          )
         )
       ),
       devices,
@@ -468,6 +478,39 @@ class InterpreterSpec extends CatsEffectSuite {
       served <- routes
       answered <- served.run(postTo("/introspection", revoke("absent", "access_token"), Some("s3cret"))).value
     } yield assertEquals(cacheControl(answered.get), Some(Endpoints.NoStore))
+  }
+
+  test("liveness and readiness are served with their dependency reports") {
+    for {
+      served <- routes
+      alive <- served.run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/health"))).value
+      aliveText <- body(alive.get)
+      ready <- served.run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/ready"))).value
+      readyText <- body(ready.get)
+      cursor = io.circe.parser.parse(readyText).toOption.get.hcursor
+    } yield {
+      assertEquals(alive.get.status, Status.Ok)
+      assertEquals(field(aliveText, "status"), "ok")
+      assertEquals(ready.get.status, Status.Ok)
+      assertEquals(field(readyText, "status"), "ok")
+      assertEquals(cursor.downField("dependencies").get[Boolean]("clients").toOption, Some(true))
+      assertEquals(cursor.downField("dependencies").get[Boolean]("keys").toOption, Some(true))
+    }
+  }
+
+  test("a failing dependency answers readiness as unavailable") {
+    val degraded = Interpreter.routes[IO](
+      List(
+        Server.ready(new Readiness[IO](List("store" -> IO.raiseError[Boolean](new IllegalStateException("down")))))
+      )
+    )
+    for {
+      answered <- degraded.run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/ready"))).value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.ServiceUnavailable)
+      assertEquals(field(text, "status"), "unavailable")
+    }
   }
 
   test("the protected resource document is served at its well known path") {

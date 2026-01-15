@@ -264,6 +264,22 @@ object Endpoints {
       .out(cacheable(jsonBody[Map[String, Json]]))
       .errorOut(documentErrors)
 
+  val HealthPath: String = "health"
+
+  lazy val health: PublicEndpoint[Unit, OAuth2Error, Map[String, Json], Any] =
+    sttp.tapir.endpoint.get
+      .in(HealthPath)
+      .out(noStore(jsonBody[Map[String, Json]]))
+      .errorOut(documentErrors)
+
+  val ReadyPath: String = "ready"
+
+  lazy val ready: PublicEndpoint[Unit, OAuth2Error, (StatusCode, Map[String, Json]), Any] =
+    sttp.tapir.endpoint.get
+      .in(ReadyPath)
+      .out(statusCode.and(noStore(jsonBody[Map[String, Json]])))
+      .errorOut(documentErrors)
+
   val JwksPath: String = "jwks"
 
   val JwkSetMediaType: String = "application/jwk-set+json"

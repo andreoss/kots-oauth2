@@ -192,7 +192,16 @@ object Development {
         ),
         Server.metadata(metadata),
         Server.resourceMetadata(resource),
-        Server.jwks(keys.jwks)
+        Server.jwks(keys.jwks),
+        Server.health[F],
+        Server.ready(
+          new dev.oauth2.server.Readiness[F](
+            List(
+              "clients" -> clients.find(clientId).map(_.isDefined),
+              "keys" -> keys.jwks.map(_.keys.nonEmpty)
+            )
+          )
+        )
       )
     )
   }
