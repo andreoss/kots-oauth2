@@ -63,4 +63,6 @@ trait TokenStore[F[_]] {
   def revoke(token: RevocationToken, hint: Option[TokenTypeHint], clientId: ClientId): F[Option[GrantId]]
 
   def revokeGrant(grantId: GrantId): F[Unit]
+
+  def sweep: F[Int]
 }

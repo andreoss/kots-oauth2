@@ -7,6 +7,7 @@ import java.util.Base64
 
 import cats.effect.Async
 import cats.effect.Resource
+import cats.effect.implicits._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 import com.comcast.ip4s.Port
@@ -88,7 +89,9 @@ object Development {
       }
     }
 
-  def routes[F[_]: Async]: F[HttpRoutes[F]] = {
+  def routes[F[_]: Async]: F[HttpRoutes[F]] = assembled[F].map { case (bound, _) => bound }
+
+  def assembled[F[_]: Async]: F[(HttpRoutes[F], List[F[Int]])] = {
     val clock = systemClock[F]
     def unsafe[A](parsed: Either[ParseFailure, A]): A =
       parsed.fold(failure => sys.error(failure.toString), identity)
@@ -154,7 +157,9 @@ object Development {
         Some(signing)
       )
       registration = new RegistrationEndpoint[F](new RegistrationService[F](clients, entropy))
-    } yield Interpreter.routes[F](
+    } yield assembledOf(
+      List(codes.sweep, tokens.sweep, devices.sweep, pushed.sweep, replays.sweep),
+      Interpreter.routes[F](
       List(
         Server.authorize(
           new AuthorizationEndpoint[F](
@@ -203,19 +208,32 @@ object Development {
           )
         )
       )
+      )
     )
   }
 
+  private def assembledOf[F[_]](
+      sweeps: List[F[Int]],
+      bound: HttpRoutes[F]
+  ): (HttpRoutes[F], List[F[Int]]) =
+    (bound, sweeps)
+
+  val SweepInterval: scala.concurrent.duration.FiniteDuration =
+    scala.concurrent.duration.DurationInt(60).seconds
+
   def server[F[_]: Async: fs2.io.net.Network](port: Port): Resource[F, org.http4s.server.Server] =
     Resource
-      .eval(routes[F])
-      .flatMap(bound =>
+      .eval(assembled[F])
+      .flatMap { case (bound, sweeps) =>
         EmberServerBuilder
           .default[F]
           .withPort(port)
           .withHttpApp(bound.orNotFound)
           .build
-      )
+          .flatMap(server =>
+            Sweeper.stream[F](SweepInterval, sweeps).compile.drain.background.as(server)
+          )
+      }
 
   private def publishedKey(pair: KeyPair): Either[ParseFailure, Jwk] = {
     val public = pair.getPublic.asInstanceOf[RSAPublicKey]

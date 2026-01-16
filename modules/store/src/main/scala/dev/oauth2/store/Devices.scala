@@ -37,4 +37,6 @@ trait DeviceStore[F[_]] {
   def poll(deviceCode: DeviceCode): F[Option[DeviceRecord]]
 
   def consume(deviceCode: DeviceCode): F[Option[DeviceRecord]]
+
+  def sweep: F[Int]
 }

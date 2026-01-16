@@ -24,6 +24,14 @@ final class InMemoryReplayStore[F[_]: Monad] private (
         else (live.updated(id, expiresAt), true)
       }
     }
+
+  def sweep: F[Int] =
+    clock.instant.flatMap { now =>
+      state.modify { seen =>
+        val (dead, live) = seen.partition { case (_, expiry) => !expiry.isAfter(now) }
+        (live, dead.size)
+      }
+    }
 }
 
 object InMemoryReplayStore {

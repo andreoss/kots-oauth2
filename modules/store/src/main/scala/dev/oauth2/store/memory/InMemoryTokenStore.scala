@@ -73,6 +73,16 @@ final class InMemoryTokenStore[F[_]: Monad] private (
       }
     }
 
+  def sweep: F[Int] =
+    clock.instant.flatMap { now =>
+      state.modify { tokens =>
+        val (dead, live) = tokens.partition { case (_, record) =>
+          record.isAccessExpired(now) && record.isRefreshExpired(now)
+        }
+        (live, dead.size)
+      }
+    }
+
   private def owned(
       record: TokenRecord,
       token: RevocationToken,
