@@ -91,6 +91,7 @@ lazy val client = module("client")
 lazy val host = module("host")
   .dependsOn(server, client, jose % "test->test")
   .settings(
+    Compile / run / mainClass := Some("dev.oauth2.host.DevServer"),
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % Tapir,
       "org.http4s" %% "http4s-ember-server" % Http4s,
