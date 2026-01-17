@@ -120,6 +120,95 @@ class TokenEndpointSpec extends CatsEffectSuite {
   private def code(result: Either[OAuth2Error, TokenResponse]): Option[String] =
     result.left.toOption.map(_.code)
 
+  private val TokenUri: String = "https://server.example/token"
+
+  private def dpopSetup: IO[TokenEndpoint[IO]] = {
+    val clock = new Clock[IO] {
+      def instant: IO[Instant] = IO.pure(Start)
+    }
+    var calls: Int = 0
+    val entropy = new Entropy[IO] {
+      def bytes(n: Int): IO[Array[Byte]] = IO {
+        calls += 1
+        Array.fill(n)(calls.toByte)
+      }
+    }
+    for {
+      codes <- InMemoryCodeStore.create[IO](clock)
+      _ <- codes.save(record("code-1"))
+      tokens <- InMemoryTokenStore.create[IO](clock)
+      grants <- InMemoryGrantStore.create[IO]
+      devices <- dev.oauth2.store.memory.InMemoryDeviceStore.create[IO](clock)
+      registry <- InMemoryClientStore.create[IO](List(client()))
+      replays <- dev.oauth2.store.memory.InMemoryReplayStore.create[IO](clock)
+    } yield new TokenEndpoint[IO](
+      new RegisteredClientAuthentication[IO](registry),
+      new TokenService[IO](
+        codes,
+        tokens,
+        grants,
+        devices,
+        clock,
+        entropy,
+        LifetimePolicy.defaults,
+        signer = Some(
+          TokenService.Signing(
+            unsafe(dev.oauth2.core.Issuer.from("https://server.example")),
+            dev.oauth2.jose.Fakes.signingKey
+          )
+        )
+      ),
+      dpop = Some(TokenEndpoint.Proofs(new DpopProofs[IO](replays, clock), TokenUri))
+    )
+  }
+
+  private def proof(compact: String = TokenUri): String =
+    dev.oauth2.jose.Dpop
+      .prove(
+        dev.oauth2.jose.Fakes.signingKey.alg,
+        dev.oauth2.jose.Fakes.signingPair.getPrivate,
+        dev.oauth2.jose.Fakes.signingJwk,
+        unsafe(dev.oauth2.core.JwtId.from("proof-1")),
+        "POST",
+        compact,
+        Start
+      )
+      .toOption
+      .get
+
+  test("a proven token request mints a key bound token of the dpop type") {
+    for {
+      endpoint <- dpopSetup
+      result <- endpoint(basic("client-1", "s3cret"), codeParams("code-1"), Some(proof()))
+    } yield {
+      val response = result.toOption.get
+      assertEquals(response.tokenType, "DPoP")
+      val claims = dev.oauth2.jose.Jwt
+        .claims(
+          response.accessToken.value,
+          dev.oauth2.jose.Jwks(List(dev.oauth2.jose.Fakes.signingJwk)),
+          Start
+        )
+        .toOption
+        .get
+      assertEquals(claims.jkt, dev.oauth2.jose.Dpop.thumbprint(dev.oauth2.jose.Fakes.signingJwk).toOption)
+    }
+  }
+
+  test("a spoiled proof refuses the token request") {
+    for {
+      endpoint <- dpopSetup
+      result <- endpoint(basic("client-1", "s3cret"), codeParams("code-1"), Some("not-a-proof"))
+    } yield assertEquals(code(result), Some("invalid_dpop_proof"))
+  }
+
+  test("an unproven request keeps the bearer token type") {
+    for {
+      endpoint <- dpopSetup
+      result <- endpoint(basic("client-1", "s3cret"), codeParams("code-1"))
+    } yield assertEquals(result.toOption.map(_.tokenType), Some("Bearer"))
+  }
+
   test("a token exchange request is answered with the issued token type") {
     for {
       endpoint <- setup()

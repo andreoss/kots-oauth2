@@ -15,6 +15,7 @@ import dev.oauth2.core.Entropy
 import dev.oauth2.core.GrantId
 import dev.oauth2.core.Issuer
 import dev.oauth2.core.JwtId
+import dev.oauth2.core.KeyThumbprint
 import dev.oauth2.core.Lifetime
 import dev.oauth2.core.LifetimePolicy
 import dev.oauth2.core.OAuth2Error
@@ -58,26 +59,32 @@ final class TokenService[F[_]: Monad](
 
   def authorizationCode(
       request: TokenRequest.Code,
-      client: Client
+      client: Client,
+      jkt: Option[KeyThumbprint] = None
   ): F[Either[OAuth2Error, IssuedToken]] =
     codes.consume(request.code).flatMap {
       case None       => replay(request.code)
       case Some(record) =>
         check(record, request, client).fold(
           error => Monad[F].pure(Left(error)),
-          _ => issue(record, request.resource.orElse(record.resource), client)
+          _ => issue(record, request.resource.orElse(record.resource), client, jkt)
         )
     }
 
-  def refresh(request: TokenRequest.Refresh, client: Client): F[Either[OAuth2Error, IssuedToken]] =
+  def refresh(
+      request: TokenRequest.Refresh,
+      client: Client,
+      jkt: Option[KeyThumbprint] = None
+  ): F[Either[OAuth2Error, IssuedToken]] =
     tokens.findByRefresh(request.refreshToken).flatMap {
       case None         => reuse(request.refreshToken)
-      case Some(record) => rotate(record, request, client)
+      case Some(record) => rotate(record, request, client, jkt)
     }
 
   def clientCredentials(
       request: TokenRequest.ClientCredentials,
-      client: Client
+      client: Client,
+      jkt: Option[KeyThumbprint] = None
   ): F[Either[OAuth2Error, IssuedToken]] =
     if (!client.confidential) Monad[F].pure(Left(OAuth2Error.UnauthorizedClient(): OAuth2Error))
     else
@@ -101,14 +108,19 @@ final class TokenService[F[_]: Monad](
                     requested.getOrElse(client.scopes),
                     AuthorizationDetails.empty,
                     None,
-                    audience
+                    audience,
+                    jkt = jkt
                   )
                 )
             }
           )
       }
 
-  def deviceCode(request: TokenRequest.Device, client: Client): F[Either[OAuth2Error, IssuedToken]] =
+  def deviceCode(
+      request: TokenRequest.Device,
+      client: Client,
+      jkt: Option[KeyThumbprint] = None
+  ): F[Either[OAuth2Error, IssuedToken]] =
     devices.poll(request.deviceCode).flatMap {
       case None => Monad[F].pure(Left(TokenService.rejected))
       case Some(record) =>
@@ -148,7 +160,8 @@ final class TokenService[F[_]: Monad](
                             record.scopes,
                             AuthorizationDetails.empty,
                             refreshExpiresAt,
-                            audience
+                            audience,
+                            jkt = jkt
                           )
                         )
                     }
@@ -190,7 +203,8 @@ final class TokenService[F[_]: Monad](
   private def rotate(
       record: TokenRecord,
       request: TokenRequest.Refresh,
-      client: Client
+      client: Client,
+      jkt: Option[KeyThumbprint]
   ): F[Either[OAuth2Error, IssuedToken]] =
     grants.find(record.grantId).flatMap {
       case Some(grant) if !grant.revoked && record.clientId == client.id =>
@@ -211,7 +225,8 @@ final class TokenService[F[_]: Monad](
                       requested.getOrElse(record.scopes),
                       record.details,
                       record.refreshExpiresAt,
-                      narrowed.orElse(record.audience)
+                      narrowed.orElse(record.audience),
+                      jkt = jkt
                     )
                   ).flatMap {
                     case Right(issued) => tokens.retire(request.refreshToken, record.grantId).as(Right(issued))
@@ -226,7 +241,8 @@ final class TokenService[F[_]: Monad](
   private def issue(
       record: CodeRecord,
       resource: Option[ResourceIndicator],
-      client: Client
+      client: Client,
+      jkt: Option[KeyThumbprint]
   ): F[Either[OAuth2Error, IssuedToken]] =
     clock.instant.flatMap { now =>
       val refreshExpiresAt =
@@ -244,7 +260,8 @@ final class TokenService[F[_]: Monad](
               record.scopes,
               record.details,
               refreshExpiresAt,
-              audience
+              audience,
+              jkt = jkt
             )
           ).flatMap {
             case Right(issued) => codes.redeem(record.code, issued.record.grantId).as(Right(issued))
@@ -253,7 +270,11 @@ final class TokenService[F[_]: Monad](
       }
     }
 
-  def exchange(request: TokenRequest.Exchange, client: Client): F[Either[OAuth2Error, IssuedToken]] =
+  def exchange(
+      request: TokenRequest.Exchange,
+      client: Client,
+      jkt: Option[KeyThumbprint] = None
+  ): F[Either[OAuth2Error, IssuedToken]] =
     bearer(request.subjectToken, client).flatMap {
       case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
       case Right(subjectRecord) =>
@@ -278,7 +299,8 @@ final class TokenService[F[_]: Monad](
                           subjectRecord.details,
                           None,
                           audience,
-                          actor
+                          actor,
+                          jkt = jkt
                         )
                       )
                     }

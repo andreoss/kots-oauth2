@@ -25,12 +25,14 @@ class ServerSpec extends FunSuite {
 
   private def success(response: TokenResponse): TokenLogic[Id] =
     new TokenLogic[Id] {
-      def apply(basic: Option[String], parameters: Map[String, String]) = Right(response)
+      def apply(basic: Option[String], parameters: Map[String, String], proof: Option[String]) =
+        Right(response)
     }
 
   private def failure(error: OAuth2Error): TokenLogic[Id] =
     new TokenLogic[Id] {
-      def apply(basic: Option[String], parameters: Map[String, String]) = Left(error)
+      def apply(basic: Option[String], parameters: Map[String, String], proof: Option[String]) =
+        Left(error)
     }
 
   private type Bound[F[_]] = ServerEndpoint[Any, F] {
@@ -41,8 +43,16 @@ class ServerSpec extends FunSuite {
     type OUTPUT = Map[String, String]
   }
 
-  private def run(logic: TokenLogic[Id], input: (Option[String], Map[String, String])) =
-    Server.token(logic).asInstanceOf[Bound[Id]].logic(IdentityMonad)(())(input)
+  private type BoundToken[F[_]] = ServerEndpoint[Any, F] {
+    type SECURITY_INPUT = Unit
+    type PRINCIPAL = Unit
+    type INPUT = (Option[String], Map[String, String], Option[String])
+    type ERROR_OUTPUT = OAuth2Error
+    type OUTPUT = Map[String, String]
+  }
+
+  private def run(logic: TokenLogic[Id], input: (Option[String], Map[String, String], Option[String])) =
+    Server.token(logic).asInstanceOf[BoundToken[Id]].logic(IdentityMonad)(())(input)
 
   test("a token response renders its type, lifetime, scope and refresh token") {
     val rendered = TokenResponse.render(TokenResponse(accessToken, 3600L, scopes, Some(refreshToken)))
@@ -73,13 +83,32 @@ class ServerSpec extends FunSuite {
   }
 
   test("a answered token is rendered as the endpoint body") {
-    val out = run(success(TokenResponse(accessToken, 3600L, scopes, None)), (None, Map("grant_type" -> "code")))
+    val out = run(success(TokenResponse(accessToken, 3600L, scopes, None)), (None, Map("grant_type" -> "code"), None))
     assertEquals(out, Right(Map("access_token" -> "at-1", "token_type" -> "Bearer", "expires_in" -> "3600", "scope" -> "openid read")))
   }
 
   test("a refused token is carried through as the endpoint error") {
-    val out = run(failure(OAuth2Error.InvalidGrant()), (None, Map.empty[String, String]))
+    val out = run(failure(OAuth2Error.InvalidGrant()), (None, Map.empty[String, String], None))
     assertEquals(out, Left(OAuth2Error.InvalidGrant()))
+  }
+
+  test("the token endpoint hands the dpop proof to the logic") {
+    var seen: Option[String] = None
+    val capturing = new TokenLogic[Id] {
+      def apply(basic: Option[String], parameters: Map[String, String], proof: Option[String]) = {
+        seen = proof
+        Right(TokenResponse(accessToken, 1L, Scopes.empty, None))
+      }
+    }
+    run(capturing, (None, Map("grant_type" -> "code"), Some("proof-1")))
+    assertEquals(seen, Some("proof-1"))
+  }
+
+  test("a dpop token response renders its own token type") {
+    val rendered = TokenResponse.render(
+      TokenResponse(accessToken, 60L, Scopes.empty, None, tokenType = "DPoP")
+    )
+    assertEquals(rendered("token_type"), "DPoP")
   }
 
   test("an introspection answer is rendered as the endpoint body") {

@@ -187,11 +187,15 @@ object Endpoints {
       )
       .errorOut(authorizeErrors)
 
-  val token: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any] =
+  val DpopHeader: String = "DPoP"
+
+  val token
+      : PublicEndpoint[(Option[String], Map[String, String], Option[String]), OAuth2Error, Map[String, String], Any] =
     endpoint.post
       .in("token")
       .in(Auth.basic)
       .in(formBody[Map[String, String]])
+      .in(header[Option[String]](DpopHeader))
       .out(noStore(jsonBody[Map[String, String]]))
       .errorOut(errors)
 

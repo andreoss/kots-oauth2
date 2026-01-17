@@ -19,7 +19,8 @@ trait AuthorizeLogic[F[_]] {
 trait TokenLogic[F[_]] {
   def apply(
       basic: Option[String],
-      parameters: Map[String, String]
+      parameters: Map[String, String],
+      proof: Option[String] = None
   ): F[Either[OAuth2Error, TokenResponse]]
 }
 
@@ -110,10 +111,11 @@ object Server {
     )
 
   def token[F[_]: Functor](logic: TokenLogic[F]): ServerEndpoint[Any, F] =
-    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any, F](
-      Endpoints.token,
-      _ => input => logic(input._1, input._2).map(_.map(TokenResponse.render))
-    )
+    ServerEndpoint
+      .public[(Option[String], Map[String, String], Option[String]), OAuth2Error, Map[String, String], Any, F](
+        Endpoints.token,
+        _ => input => logic(input._1, input._2, input._3).map(_.map(TokenResponse.render))
+      )
 
   def revocation[F[_]](logic: RevocationLogic[F]): ServerEndpoint[Any, F] =
     ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Unit, Any, F](
