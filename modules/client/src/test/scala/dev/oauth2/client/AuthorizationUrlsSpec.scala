@@ -82,6 +82,18 @@ class AuthorizationUrlsSpec extends CatsEffectSuite {
     }
   }
 
+  test("a step up retry carries the challenged acr values") {
+    val urls = new AuthorizationUrls[IO](entropy, endpoint)
+    for {
+      begun <- urls.begin(
+        clientId,
+        callback,
+        Scopes.empty,
+        acr = Some(unsafe(dev.oauth2.core.Acr.from("gold")))
+      )
+    } yield assertEquals(query(begun.toOption.get.location).get("acr_values"), Some("gold"))
+  }
+
   test("every begun authorization draws a distinct verifier and state") {
     val urls = new AuthorizationUrls[IO](entropy, endpoint)
     for {

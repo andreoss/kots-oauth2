@@ -382,7 +382,8 @@ final class TokenService[F[_]: Monad](
               scopes = mint.scopes,
               issuedAt = mint.now,
               expiresAt = expiresAt,
-              tokenId = tokenId
+              tokenId = tokenId,
+              acr = mint.acr
             )
           )
           token <- AccessToken.from(compact)
@@ -411,7 +412,8 @@ object TokenService {
       details: AuthorizationDetails,
       refreshExpiresAt: Option[Instant],
       audience: Option[Audience] = None,
-      actor: Option[Subject] = None
+      actor: Option[Subject] = None,
+      acr: Option[dev.oauth2.core.Acr] = None
   )
 
   private val rejected: OAuth2Error = OAuth2Error.InvalidGrant()

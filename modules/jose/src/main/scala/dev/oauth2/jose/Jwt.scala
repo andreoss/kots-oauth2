@@ -3,6 +3,7 @@ package dev.oauth2.jose
 import java.security.PrivateKey
 import java.time.Instant
 
+import dev.oauth2.core.Acr
 import dev.oauth2.core.Audience
 import dev.oauth2.core.ClientId
 import dev.oauth2.core.Issuer
@@ -23,7 +24,8 @@ final case class JwtClaims(
     scopes: Scopes,
     issuedAt: Instant,
     expiresAt: Instant,
-    tokenId: JwtId
+    tokenId: JwtId,
+    acr: Option[Acr] = None
 )
 
 object Jwt {
@@ -52,6 +54,7 @@ object Jwt {
           "exp" -> Json.fromLong(claims.expiresAt.getEpochSecond)
         ) ++
           claims.audience.map(value => "aud" -> Json.fromString(value.value)) ++
+          claims.acr.map(value => "acr" -> Json.fromString(value.value)) ++
           (if (claims.scopes.value.isEmpty) Nil
            else List("scope" -> Json.fromString(claims.scopes.value.map(_.value).toVector.sorted.mkString(" "))))
       )
@@ -73,7 +76,10 @@ object Jwt {
       scopes <- cursor.get[String]("scope").toOption.fold(
         Right(Scopes.empty): Either[ParseFailure, Scopes]
       )(raw => Scopes.parse(raw))
-    } yield JwtClaims(issuer, subject, audience, clientId, scopes, issuedAt, expiresAt, tokenId)
+      acr <- cursor.get[String]("acr").toOption.fold(
+        Right(None): Either[ParseFailure, Option[Acr]]
+      )(raw => Acr.from(raw).map(Some(_)))
+    } yield JwtClaims(issuer, subject, audience, clientId, scopes, issuedAt, expiresAt, tokenId, acr)
 
   private def string(cursor: io.circe.HCursor, name: String): Either[ParseFailure, String] =
     cursor.get[String](name).left.map(_ => ParseFailure("Jwt", s"no $name claim"))

@@ -7,6 +7,7 @@ import cats.Monad
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 
+import dev.oauth2.core.Acr
 import dev.oauth2.core.ClientId
 import dev.oauth2.core.CodeChallengeMethod
 import dev.oauth2.core.CodeVerifier
@@ -26,7 +27,8 @@ final class AuthorizationUrls[F[_]: Monad](entropy: Entropy[F], endpoint: Endpoi
       clientId: ClientId,
       redirectUri: RedirectUri,
       scope: Scopes,
-      resource: Option[ResourceIndicator] = None
+      resource: Option[ResourceIndicator] = None,
+      acr: Option[Acr] = None
   ): F[Either[ParseFailure, AuthorizationUrls.Ticket]] =
     for {
       verifierRaw <- entropy.bytes(AuthorizationUrls.VerifierEntropyBytes)
@@ -36,7 +38,7 @@ final class AuthorizationUrls[F[_]: Monad](entropy: Entropy[F], endpoint: Endpoi
       challenge <- Pkce.challenge(verifier)
       state <- State.from(Entropy.hex(stateRaw))
     } yield AuthorizationUrls.Ticket(
-      location(clientId, redirectUri, scope, state, challenge.value, resource),
+      location(clientId, redirectUri, scope, state, challenge.value, resource, acr),
       verifier,
       state
     )
@@ -47,7 +49,8 @@ final class AuthorizationUrls[F[_]: Monad](entropy: Entropy[F], endpoint: Endpoi
       scope: Scopes,
       state: State,
       challenge: String,
-      resource: Option[ResourceIndicator]
+      resource: Option[ResourceIndicator],
+      acr: Option[Acr]
   ): String = {
     val parameters =
       List(
@@ -59,7 +62,8 @@ final class AuthorizationUrls[F[_]: Monad](entropy: Entropy[F], endpoint: Endpoi
         "code_challenge_method" -> CodeChallengeMethod.S256.value
       ) ++
         (if (scope.value.isEmpty) Nil else List("scope" -> Wire[Scopes].encode(scope))) ++
-        resource.map(value => "resource" -> value.value)
+        resource.map(value => "resource" -> value.value) ++
+        acr.map(value => "acr_values" -> value.value)
     val query = parameters
       .map { case (name, value) => s"$name=${URLEncoder.encode(value, StandardCharsets.UTF_8.name)}" }
       .mkString("&")
