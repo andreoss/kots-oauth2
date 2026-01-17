@@ -70,7 +70,7 @@ final class RegisteredClientAuthentication[F[_]: Monad](
             Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
           case Right(claimed) =>
             clients.find(claimed).flatMap {
-              case Some(client) if client.authMethod == ClientAuthMethod.PrivateKeyJwt =>
+              case Some(client) if RegisteredClientAuthentication.asserts(client.authMethod) =>
                 config.clock.instant.flatMap { now =>
                   verified(raw, client, config, now) match {
                     case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, Client])
@@ -108,7 +108,7 @@ final class RegisteredClientAuthentication[F[_]: Monad](
       now: Instant
   ): Either[OAuth2Error, RegisteredClientAuthentication.Asserted] =
     for {
-      payload <- Jws.verify(raw.value, client.keys).left.map(_ => RegisteredClientAuthentication.rejected)
+      payload <- payloadOf(raw, client)
       json <- io.circe.parser.parse(payload).left.map(_ => RegisteredClientAuthentication.rejected)
       cursor = json.hcursor
       iss <- claim(cursor, "iss")
@@ -123,6 +123,21 @@ final class RegisteredClientAuthentication[F[_]: Monad](
       expiresAt = Instant.ofEpochSecond(exp)
       _ <- refuse(now.isBefore(expiresAt))
     } yield RegisteredClientAuthentication.Asserted(jti, expiresAt)
+
+  private def payloadOf(raw: ClientAssertion, client: Client): Either[OAuth2Error, String] =
+    client.authMethod match {
+      case ClientAuthMethod.ClientSecretJwt =>
+        client.secret
+          .toRight(RegisteredClientAuthentication.rejected)
+          .flatMap(shared =>
+            dev.oauth2.jose.Hs256
+              .verify(raw.value, shared)
+              .left
+              .map(_ => RegisteredClientAuthentication.rejected)
+          )
+      case _ =>
+        Jws.verify(raw.value, client.keys).left.map(_ => RegisteredClientAuthentication.rejected)
+    }
 
   private def claim(cursor: io.circe.HCursor, name: String): Either[OAuth2Error, String] =
     cursor.get[String](name).left.map(_ => RegisteredClientAuthentication.rejected)
@@ -154,7 +169,8 @@ final class RegisteredClientAuthentication[F[_]: Monad](
             case Some(candidate) => secret(client, candidate)
             case None            => Left(RegisteredClientAuthentication.rejected)
           }
-        case ClientAuthMethod.PrivateKeyJwt => Left(RegisteredClientAuthentication.rejected)
+        case ClientAuthMethod.PrivateKeyJwt | ClientAuthMethod.ClientSecretJwt =>
+          Left(RegisteredClientAuthentication.rejected)
       }
 
   private def secret(client: Client, candidate: ClientSecret): Either[OAuth2Error, Client] =
@@ -172,6 +188,9 @@ final class RegisteredClientAuthentication[F[_]: Monad](
 object RegisteredClientAuthentication {
 
   final case class Assertions[F[_]](audience: Issuer, replays: ReplayStore[F], clock: Clock[F])
+
+  private[server] def asserts(method: ClientAuthMethod): Boolean =
+    method == ClientAuthMethod.PrivateKeyJwt || method == ClientAuthMethod.ClientSecretJwt
 
   private[server] final case class Asserted(tokenId: JwtId, expiresAt: Instant)
 

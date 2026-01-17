@@ -192,6 +192,60 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
     } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
   }
 
+  private def macClient(stored: Option[ClientSecret] = Some(secret)): Client =
+    Client(id, Set.empty, Scopes.empty, ClientAuthMethod.ClientSecretJwt, Some(storedHash), secret = stored)
+
+  private def macAssertion(
+      key: ClientSecret = secret,
+      jti: String = "jti-1"
+  ): String = {
+    val payload = io.circe.Json
+      .obj(
+        "iss" -> io.circe.Json.fromString(id.value),
+        "sub" -> io.circe.Json.fromString(id.value),
+        "aud" -> io.circe.Json.fromString("https://server.example"),
+        "exp" -> io.circe.Json.fromLong(Start.plusSeconds(60L).getEpochSecond),
+        "jti" -> io.circe.Json.fromString(jti)
+      )
+      .noSpaces
+    dev.oauth2.jose.Hs256.sign(key, payload)
+  }
+
+  test("a client secret jwt assertion authenticates the registered client") {
+    val registered = macClient()
+    for {
+      authentication <- assertionService(List(registered))
+      result <- authentication.authenticate(assertionInput(macAssertion()))
+    } yield assertEquals(result, Right(registered))
+  }
+
+  test("a client secret jwt assertion maced with another secret is refused") {
+    for {
+      authentication <- assertionService(List(macClient()))
+      result <- authentication.authenticate(
+        assertionInput(macAssertion(key = unsafe(ClientSecret.from("other"))))
+      )
+    } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
+  }
+
+  test("a client secret jwt assertion without a kept secret is refused") {
+    for {
+      authentication <- assertionService(List(macClient(stored = None)))
+      result <- authentication.authenticate(assertionInput(macAssertion()))
+    } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
+  }
+
+  test("a replayed client secret jwt assertion is refused") {
+    for {
+      authentication <- assertionService(List(macClient()))
+      first <- authentication.authenticate(assertionInput(macAssertion()))
+      second <- authentication.authenticate(assertionInput(macAssertion()))
+    } yield {
+      assert(first.isRight)
+      assertEquals(rejection(second), OAuth2Error.InvalidClient())
+    }
+  }
+
   test("basic credentials authenticate a client registered for client_secret_basic") {
     val registered = client()
     for {

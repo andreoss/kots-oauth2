@@ -44,7 +44,8 @@ final class RegistrationService[F[_]: Monad](
                 registration.authMethod,
                 secret.map(ClientSecretHash.of),
                 Jwks.empty,
-                Some(RegistrationTokenHash.of(token))
+                Some(RegistrationTokenHash.of(token)),
+                secret.filter(_ => registration.authMethod == ClientAuthMethod.ClientSecretJwt)
               )
             )
             .as(

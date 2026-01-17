@@ -2,6 +2,7 @@ package dev.oauth2.store
 
 import dev.oauth2.core.ClientAuthMethod
 import dev.oauth2.core.ClientId
+import dev.oauth2.core.ClientSecret
 import dev.oauth2.core.ClientSecretHash
 import dev.oauth2.core.RedirectUri
 import dev.oauth2.core.RegistrationTokenHash
@@ -15,7 +16,8 @@ final case class Client(
     authMethod: ClientAuthMethod,
     secretHash: Option[ClientSecretHash],
     keys: Jwks = Jwks.empty,
-    registrationTokenHash: Option[RegistrationTokenHash] = None
+    registrationTokenHash: Option[RegistrationTokenHash] = None,
+    secret: Option[ClientSecret] = None
 ) {
   def confidential: Boolean = authMethod != ClientAuthMethod.None
 
