@@ -91,6 +91,16 @@ object OAuth2Error {
       errorUri: Option[String] = None
   ) extends OAuth2Error("invalid_redirect_uri", 400)
 
+  final case class InvalidDpopProof(
+      description: Option[String] = None,
+      errorUri: Option[String] = None
+  ) extends OAuth2Error("invalid_dpop_proof", 400)
+
+  final case class UseDpopNonce(
+      description: Option[String] = None,
+      errorUri: Option[String] = None
+  ) extends OAuth2Error("use_dpop_nonce", 400)
+
   val BasicRealm: String = "oauth2"
 
   val BasicChallenge: String = s"""Basic realm="$BasicRealm""""
@@ -110,7 +120,9 @@ object OAuth2Error {
     "slow_down",
     "expired_token",
     "invalid_client_metadata",
-    "invalid_redirect_uri"
+    "invalid_redirect_uri",
+    "invalid_dpop_proof",
+    "use_dpop_nonce"
   )
 
   val knownStatuses: Set[Int] = Set(400, 401, 403, 500, 503)
@@ -148,6 +160,8 @@ object OAuth2Error {
       case "expired_token"             => Right(ExpiredToken(description, errorUri))
       case "invalid_client_metadata"   => Right(InvalidClientMetadata(description, errorUri))
       case "invalid_redirect_uri"      => Right(InvalidRedirectUri(description, errorUri))
+      case "invalid_dpop_proof"        => Right(InvalidDpopProof(description, errorUri))
+      case "use_dpop_nonce"            => Right(UseDpopNonce(description, errorUri))
       case other => Left(ParseFailure("OAuth2Error", s"unknown error code: $other"))
     }
   }
