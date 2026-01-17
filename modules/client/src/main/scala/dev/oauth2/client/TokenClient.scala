@@ -1,6 +1,7 @@
 package dev.oauth2.client
 
 import cats.effect.Concurrent
+import cats.syntax.flatMap._
 import cats.syntax.functor._
 
 import dev.oauth2.core.AccessToken
@@ -23,7 +24,11 @@ import org.http4s.UrlForm
 import org.http4s.client.Client
 import org.http4s.headers.Authorization
 
-final class TokenClient[F[_]: Concurrent](transport: Client[F], endpoint: EndpointUri) {
+final class TokenClient[F[_]: Concurrent](
+    transport: Client[F],
+    endpoint: EndpointUri,
+    dpop: Option[DpopSigner[F]] = None
+) {
 
   def clientCredentials(
       clientId: ClientId,
@@ -82,11 +87,43 @@ final class TokenClient[F[_]: Concurrent](transport: Client[F], endpoint: Endpoi
   private def request(
       form: Map[String, String],
       credentials: Option[BasicCredentials]
+  ): F[Either[OAuth2Error, TokenClient.Grant]] =
+    attempt(form, credentials, retry = dpop.isDefined)
+
+  private def attempt(
+      form: Map[String, String],
+      credentials: Option[BasicCredentials],
+      retry: Boolean
   ): F[Either[OAuth2Error, TokenClient.Grant]] = {
     val base = Request[F](method = Method.POST, uri = Uri.unsafeFromString(endpoint.value))
       .withEntity(UrlForm(form.toSeq: _*))
     val sent = credentials.fold(base)(value => base.putHeaders(Authorization(value)))
-    transport.run(sent).use(answer)
+    dpop match {
+      case None => transport.run(sent).use(answer)
+      case Some(signer) =>
+        signer.proof(Method.POST.name, endpoint.value).flatMap {
+          case Left(failure) =>
+            Concurrent[F].pure(
+              Left(
+                OAuth2Error.ServerError(Some(s"${failure.typeName}: ${failure.reason}"))
+              ): Either[OAuth2Error, TokenClient.Grant]
+            )
+          case Right(proof) =>
+            transport
+              .run(sent.putHeaders(org.http4s.Header.Raw(TokenClient.ProofHeader, proof)))
+              .use { response =>
+                val demanded = response.headers
+                  .get(TokenClient.NonceHeader)
+                  .map(_.head.value)
+                signer.learn(demanded).flatMap(_ => answer(response))
+              }
+              .flatMap {
+                case Left(error) if error.code == TokenClient.NonceDemand && retry =>
+                  attempt(form, credentials, retry = false)
+                case result => Concurrent[F].pure(result)
+              }
+        }
+    }
   }
 
   private def answer(response: Response[F]): F[Either[OAuth2Error, TokenClient.Grant]] =
@@ -97,6 +134,12 @@ final class TokenClient[F[_]: Concurrent](transport: Client[F], endpoint: Endpoi
 }
 
 object TokenClient {
+
+  val ProofHeader: org.typelevel.ci.CIString = org.typelevel.ci.CIString("DPoP")
+
+  val NonceHeader: org.typelevel.ci.CIString = org.typelevel.ci.CIString("DPoP-Nonce")
+
+  val NonceDemand: String = "use_dpop_nonce"
 
   final case class Grant(
       accessToken: AccessToken,
