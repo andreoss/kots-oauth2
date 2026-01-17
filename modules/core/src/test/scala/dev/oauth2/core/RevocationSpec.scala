@@ -78,6 +78,12 @@ class RevocationSpec extends ScalaCheckSuite {
     assert(RevocationToken.from("").isLeft)
   }
 
+  test("a revocation token carries a value as long as an access token") {
+    val compact = "a" * Text.TokenMaxLength
+    assertEquals(RevocationToken.from(compact).toOption.map(_.value), Some(compact))
+    assert(RevocationToken.from("a" * (Text.TokenMaxLength + 1)).isLeft)
+  }
+
   property("a decoded revocation request keeps the token it was given") {
     forAll(genToken, Gen.oneOf(TokenTypeHint.all)) { (token, hint) =>
       val params = Map("token" -> token.value, "token_type_hint" -> hint.value)

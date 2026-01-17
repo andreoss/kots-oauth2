@@ -20,7 +20,7 @@ final case class RevocationToken private (value: String)
 object RevocationToken {
 
   def from(raw: String): Either[ParseFailure, RevocationToken] =
-    Text.printable("RevocationToken", raw).map(new RevocationToken(_))
+    Text.printableToken("RevocationToken", raw).map(new RevocationToken(_))
 
   def asAccessToken(token: RevocationToken): Option[AccessToken] =
     AccessToken.from(token.value).toOption
