@@ -105,7 +105,8 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
       uris,
       unsafe(Scopes.parse(scopes)),
       method,
-      if (method == ClientAuthMethod.None) None else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
+      if (method == ClientAuthMethod.None) None
+      else Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
     )
 
   test("issuance is denied without a recorded consent") {
@@ -113,7 +114,12 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     for {
       pair <- unconsented
       (service, _) = pair
-      issued <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      issued <- service.issue(
+        request(Some(callback), Some("read"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
     } yield assertEquals(issued.left.toOption.map(_.code), Some("access_denied"))
   }
 
@@ -123,8 +129,18 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
       pair <- unconsented
       (service, consents) = pair
       _ <- consents.grant(ConsentRecord(clientId, subject, unsafe(Scopes.parse("read"))))
-      narrow <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
-      wide <- service.issue(request(Some(callback), Some("read write"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      narrow <- service.issue(
+        request(Some(callback), Some("read"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
+      wide <- service.issue(
+        request(Some(callback), Some("read write"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
     } yield {
       assert(narrow.isRight)
       assertEquals(wide.left.toOption.map(_.code), Some("access_denied"))
@@ -137,9 +153,19 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
       pair <- unconsented
       (service, consents) = pair
       _ <- consents.grant(ConsentRecord(clientId, subject, unsafe(Scopes.parse("read"))))
-      first <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      first <- service.issue(
+        request(Some(callback), Some("read"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
       _ <- consents.revoke(clientId, subject)
-      second <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      second <- service.issue(
+        request(Some(callback), Some("read"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
     } yield {
       assert(first.isRight)
       assertEquals(second.left.toOption.map(_.code), Some("access_denied"))
@@ -167,7 +193,12 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     for {
       triple <- serviceOf()
       (service, codes, _) = triple
-      issued <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      issued <- service.issue(
+        request(Some(callback), Some("read"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
       record <- issued.fold(_ => IO.pure(None), codes.consume)
     } yield {
       assert(issued.isRight)
@@ -184,7 +215,12 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     for {
       triple <- serviceOf()
       (service, _, _) = triple
-      issued <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      issued <- service.issue(
+        request(Some(callback), Some("read"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
     } yield assertEquals(issued.toOption.map(_.value.length), Some(AuthorizationService.CodeEntropyBytes * 2))
   }
 
@@ -195,9 +231,19 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     for {
       triple <- serviceOf(ticking, policy)
       (service, codes, _) = triple
-      issued <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      issued <- service.issue(
+        request(Some(callback), Some("read"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
       live <- issued.fold(_ => IO.pure(None), codes.consume)
-      again <- service.issue(request(Some(callback), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      again <- service.issue(
+        request(Some(callback), Some("read"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
       expired <- {
         ticking.now = Start.plusSeconds(31L)
         again.fold(_ => IO.pure(None), codes.consume)
@@ -213,7 +259,12 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     for {
       triple <- serviceOf()
       (service, _, _) = triple
-      issued <- service.issue(request(Some(other), Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      issued <- service.issue(
+        request(Some(other), Some("read"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
     } yield assertEquals(issued.left.toOption.map(_.code), Some("invalid_request"))
   }
 
@@ -222,7 +273,12 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     for {
       triple <- serviceOf()
       (service, _, _) = triple
-      issued <- service.issue(request(None, Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      issued <- service.issue(
+        request(None, Some("read"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
     } yield assertEquals(issued.left.toOption.map(_.code), Some("invalid_request"))
   }
 
@@ -231,7 +287,12 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     for {
       triple <- serviceOf()
       (service, codes, _) = triple
-      issued <- service.issue(request(None, Some("read"), Some(pkce)), registered, subject, AuthorizationDetails.empty)
+      issued <- service.issue(
+        request(None, Some("read"), Some(pkce)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
       record <- issued.fold(_ => IO.pure(None), codes.consume)
     } yield assertEquals(record.map(_.redirectUri), Some(callback))
   }
@@ -256,7 +317,12 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     for {
       triple <- serviceOf()
       (service, _, _) = triple
-      issued <- service.issue(request(Some(callback), Some("read"), None), registered, subject, AuthorizationDetails.empty)
+      issued <- service.issue(
+        request(Some(callback), Some("read"), None),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
     } yield assertEquals(issued.left.toOption.map(_.code), Some("invalid_request"))
   }
 
@@ -266,7 +332,12 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     for {
       triple <- serviceOf()
       (service, _, _) = triple
-      issued <- service.issue(request(Some(callback), Some("read"), Some(plain)), registered, subject, AuthorizationDetails.empty)
+      issued <- service.issue(
+        request(Some(callback), Some("read"), Some(plain)),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
     } yield assertEquals(issued.left.toOption.map(_.code), Some("invalid_request"))
   }
 
@@ -275,7 +346,12 @@ class AuthorizationServiceSpec extends CatsEffectSuite {
     for {
       triple <- serviceOf()
       (service, _, _) = triple
-      issued <- service.issue(request(Some(callback), Some("read"), None), registered, subject, AuthorizationDetails.empty)
+      issued <- service.issue(
+        request(Some(callback), Some("read"), None),
+        registered,
+        subject,
+        AuthorizationDetails.empty
+      )
     } yield assertEquals(issued.left.toOption.map(_.code), Some("invalid_request"))
   }
 }

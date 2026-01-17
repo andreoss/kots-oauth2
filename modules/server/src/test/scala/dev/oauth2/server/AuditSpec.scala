@@ -136,7 +136,9 @@ class AuditSpec extends CatsEffectSuite {
       assert(names.contains("revoked"))
       assert(names.contains("introspected"))
       assert(names.contains("authentication_failed"))
-      assert(events.collectFirst { case e: dev.oauth2.store.AuditEvent.Introspected => e.active }.contains(false))
+      assert(
+        events.collectFirst { case e: dev.oauth2.store.AuditEvent.Introspected => e.active }.contains(false)
+      )
     }
   }
 }

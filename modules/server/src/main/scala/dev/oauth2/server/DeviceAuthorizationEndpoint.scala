@@ -20,9 +20,9 @@ final class DeviceAuthorizationEndpoint[F[_]: Monad](
   ): F[Either[OAuth2Error, DeviceAuthorizationResponse]] =
     ClientAuthInput.from(basic, parameters).toEither match {
       case Left(failures) => Monad[F].pure(Left(failures.head))
-      case Right(input) =>
+      case Right(input)   =>
         authentication.authenticate(input).flatMap {
-          case Left(error) => Monad[F].pure(Left(error))
+          case Left(error)   => Monad[F].pure(Left(error))
           case Right(client) =>
             DeviceAuthorizationRequest.from(parameters).toEither match {
               case Left(failures) => Monad[F].pure(Left(failures.head))

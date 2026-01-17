@@ -155,10 +155,10 @@ class ErrorSpec extends ScalaCheckSuite {
   property("no error leaks a value that is not its own code, description or uri") {
     forAll(genError) { e =>
       e.body.forall {
-        case ("error", v)                 => v == e.code
-        case ("error_description", v)     => e.description.contains(v)
-        case ("error_uri", v)             => e.errorUri.contains(v)
-        case _                            => false
+        case ("error", v)             => v == e.code
+        case ("error_description", v) => e.description.contains(v)
+        case ("error_uri", v)         => e.errorUri.contains(v)
+        case _                        => false
       }
     }
   }

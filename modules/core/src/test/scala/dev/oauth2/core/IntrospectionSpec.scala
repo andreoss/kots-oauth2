@@ -47,12 +47,21 @@ class IntrospectionSpec extends ScalaCheckSuite {
   }
 
   test("an introspection request decodes both registered hints") {
-    assertEquals(valid(introspection("token_type_hint" -> "access_token")).hint, Some(TokenTypeHint.AccessToken))
-    assertEquals(valid(introspection("token_type_hint" -> "refresh_token")).hint, Some(TokenTypeHint.RefreshToken))
+    assertEquals(
+      valid(introspection("token_type_hint" -> "access_token")).hint,
+      Some(TokenTypeHint.AccessToken)
+    )
+    assertEquals(
+      valid(introspection("token_type_hint" -> "refresh_token")).hint,
+      Some(TokenTypeHint.RefreshToken)
+    )
   }
 
   test("an introspection request refuses a missing token") {
-    assertEquals(errors(IntrospectionRequest.from(Map.empty[String, String])).map(_.code), List("invalid_request"))
+    assertEquals(
+      errors(IntrospectionRequest.from(Map.empty[String, String])).map(_.code),
+      List("invalid_request")
+    )
   }
 
   test("an introspection request refuses an unknown hint") {
@@ -92,7 +101,15 @@ class IntrospectionSpec extends ScalaCheckSuite {
 
   test("an active token without a scope answers no scope") {
     val body = IntrospectionResponse
-      .active(TokenTypeHint.RefreshToken, Scopes.empty, unsafe(ClientId.from("client-1")), unsafe(Subject.from("user-1")), Start, Start, Start)
+      .active(
+        TokenTypeHint.RefreshToken,
+        Scopes.empty,
+        unsafe(ClientId.from("client-1")),
+        unsafe(Subject.from("user-1")),
+        Start,
+        Start,
+        Start
+      )
       .body
     assert(!body.contains("scope"))
     assertEquals(body("token_type"), "refresh_token")
@@ -108,7 +125,15 @@ class IntrospectionSpec extends ScalaCheckSuite {
   property("an active introspection body always carries the active flag") {
     forAll(genToken, Gen.oneOf(TokenTypeHint.all)) { (_, hint) =>
       IntrospectionResponse
-        .active(hint, Scopes.empty, unsafe(ClientId.from("client-1")), unsafe(Subject.from("user-1")), Start, Start, Start)
+        .active(
+          hint,
+          Scopes.empty,
+          unsafe(ClientId.from("client-1")),
+          unsafe(Subject.from("user-1")),
+          Start,
+          Start,
+          Start
+        )
         .body("active") == "true"
     }
   }

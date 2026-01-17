@@ -29,7 +29,9 @@ object Fakes {
     val public = signingPair.getPublic.asInstanceOf[java.security.interfaces.RSAPublicKey]
     def parameter(value: java.math.BigInteger): String =
       java.util.Base64.getUrlEncoder.withoutPadding.encodeToString(value.toByteArray.dropWhile(_ == 0))
-    unsafe(Jwk.rsa(keyId("key-1"), Alg.RS256, parameter(public.getModulus), parameter(public.getPublicExponent)))
+    unsafe(
+      Jwk.rsa(keyId("key-1"), Alg.RS256, parameter(public.getModulus), parameter(public.getPublicExponent))
+    )
   }
 
   lazy val signingKey: SigningKey = SigningKey(keyId("key-1"), Alg.RS256, signingPair.getPrivate)

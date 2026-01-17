@@ -164,8 +164,9 @@ class InterpreterSpec extends CatsEffectSuite {
       body = Stream.emits(Form.render(form).getBytes(StandardCharsets.UTF_8).toSeq).covary[IO]
     )
 
-  private def application
-      : IO[(org.http4s.HttpRoutes[IO], InMemoryDeviceStore[IO], SessionLogin[IO], InMemoryConsentStore[IO])] = {
+  private def application: IO[
+    (org.http4s.HttpRoutes[IO], InMemoryDeviceStore[IO], SessionLogin[IO], InMemoryConsentStore[IO])
+  ] = {
     val clock = new Clock[IO] {
       def instant: IO[Instant] = IO.pure(Start)
     }
@@ -363,7 +364,12 @@ class InterpreterSpec extends CatsEffectSuite {
       revoked <- served.run(postTo("/revocation", revoke(refresh, "refresh_token"), Some("s3cret"))).value
       text <- body(revoked.get)
       reused <- served
-        .run(post(Map("grant_type" -> "refresh_token", "refresh_token" -> refresh, "client_id" -> clientId.value), Some("s3cret")))
+        .run(
+          post(
+            Map("grant_type" -> "refresh_token", "refresh_token" -> refresh, "client_id" -> clientId.value),
+            Some("s3cret")
+          )
+        )
         .value
       refused <- body(reused.get)
     } yield {
@@ -394,7 +400,12 @@ class InterpreterSpec extends CatsEffectSuite {
       refresh = field(text, "refresh_token")
       revoked <- served.run(postTo("/revocation", revoke(access, "access_token"), Some("s3cret"))).value
       reused <- served
-        .run(post(Map("grant_type" -> "refresh_token", "refresh_token" -> refresh, "client_id" -> clientId.value), Some("s3cret")))
+        .run(
+          post(
+            Map("grant_type" -> "refresh_token", "refresh_token" -> refresh, "client_id" -> clientId.value),
+            Some("s3cret")
+          )
+        )
         .value
     } yield {
       assertEquals(revoked.get.status, Status.Ok)
@@ -425,7 +436,9 @@ class InterpreterSpec extends CatsEffectSuite {
       served <- routes
       answered <- served.run(post(exchange, Some("s3cret"))).value
       issued <- body(answered.get).map(field(_, "access_token"))
-      introspected <- served.run(postTo("/introspection", revoke(issued, "access_token"), Some("s3cret"))).value
+      introspected <- served
+        .run(postTo("/introspection", revoke(issued, "access_token"), Some("s3cret")))
+        .value
       response = introspected.get
       text <- body(response)
     } yield {
@@ -456,7 +469,9 @@ class InterpreterSpec extends CatsEffectSuite {
       answered <- served.run(post(exchange, Some("s3cret"))).value
       refresh <- body(answered.get).map(field(_, "refresh_token"))
       _ <- served.run(postTo("/revocation", revoke(refresh, "refresh_token"), Some("s3cret"))).value
-      introspected <- served.run(postTo("/introspection", revoke(refresh, "refresh_token"), Some("s3cret"))).value
+      introspected <- served
+        .run(postTo("/introspection", revoke(refresh, "refresh_token"), Some("s3cret")))
+        .value
       text <- body(introspected.get)
     } yield assertEquals(field(text, "active"), "false")
   }
@@ -483,9 +498,13 @@ class InterpreterSpec extends CatsEffectSuite {
   test("liveness and readiness are served with their dependency reports") {
     for {
       served <- routes
-      alive <- served.run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/health"))).value
+      alive <- served
+        .run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/health")))
+        .value
       aliveText <- body(alive.get)
-      ready <- served.run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/ready"))).value
+      ready <- served
+        .run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/ready")))
+        .value
       readyText <- body(ready.get)
       cursor = io.circe.parser.parse(readyText).toOption.get.hcursor
     } yield {
@@ -501,11 +520,15 @@ class InterpreterSpec extends CatsEffectSuite {
   test("a failing dependency answers readiness as unavailable") {
     val degraded = Interpreter.routes[IO](
       List(
-        Server.ready(new Readiness[IO](List("store" -> IO.raiseError[Boolean](new IllegalStateException("down")))))
+        Server.ready(
+          new Readiness[IO](List("store" -> IO.raiseError[Boolean](new IllegalStateException("down"))))
+        )
       )
     )
     for {
-      answered <- degraded.run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/ready"))).value
+      answered <- degraded
+        .run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/ready")))
+        .value
       text <- body(answered.get)
     } yield {
       assertEquals(answered.get.status, Status.ServiceUnavailable)
@@ -530,7 +553,10 @@ class InterpreterSpec extends CatsEffectSuite {
     } yield {
       assertEquals(response.status, Status.Ok)
       assertEquals(cursor.get[String]("resource").toOption, Some("https://api.example"))
-      assertEquals(cursor.get[List[String]]("authorization_servers").toOption, Some(List("https://server.example")))
+      assertEquals(
+        cursor.get[List[String]]("authorization_servers").toOption,
+        Some(List("https://server.example"))
+      )
       assertEquals(cursor.get[List[String]]("scopes_supported").toOption, Some(List("read")))
       assertEquals(cacheControl(response), Some(Endpoints.PublicCache))
     }
@@ -546,9 +572,15 @@ class InterpreterSpec extends CatsEffectSuite {
     } yield {
       assertEquals(response.status, Status.Ok)
       assertEquals(cursor.get[String]("issuer").toOption, Some("https://server.example"))
-      assertEquals(cursor.get[String]("authorization_endpoint").toOption, Some("https://server.example/authorize"))
+      assertEquals(
+        cursor.get[String]("authorization_endpoint").toOption,
+        Some("https://server.example/authorize")
+      )
       assertEquals(cursor.get[String]("token_endpoint").toOption, Some("https://server.example/token"))
-      assertEquals(cursor.get[String]("introspection_endpoint").toOption, Some("https://server.example/introspection"))
+      assertEquals(
+        cursor.get[String]("introspection_endpoint").toOption,
+        Some("https://server.example/introspection")
+      )
       assertEquals(cursor.get[String]("jwks_uri").toOption, Some("https://server.example/jwks"))
       assertEquals(cursor.get[List[String]]("scopes_supported").toOption, Some(List("read")))
       assertEquals(cursor.get[List[String]]("code_challenge_methods_supported").toOption, Some(List("S256")))
@@ -600,7 +632,9 @@ class InterpreterSpec extends CatsEffectSuite {
 
   test("a failing document read is answered as a server error") {
     val failing =
-      Interpreter.routes[IO](List(Server.jwks[IO](IO.raiseError[dev.oauth2.jose.Jwks](new RuntimeException("kaput")))))
+      Interpreter.routes[IO](
+        List(Server.jwks[IO](IO.raiseError[dev.oauth2.jose.Jwks](new RuntimeException("kaput"))))
+      )
     for {
       answered <- failing.run(jwks).value
       response = answered.get
@@ -720,22 +754,24 @@ class InterpreterSpec extends CatsEffectSuite {
       text <- body(answered.get)
       freshId = field(text, "client_id")
       freshSecret = field(text, "client_secret")
-      issued <- served.run(
-        Request[IO](
-          method = Method.POST,
-          uri = Uri.unsafeFromString("http://localhost/token"),
-          headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)) ++
-            Headers(List(Authorization(BasicCredentials(freshId, freshSecret)))),
-          body = Stream
-            .emits(
-              Form
-                .render(Map("grant_type" -> "client_credentials", "client_id" -> freshId))
-                .getBytes(StandardCharsets.UTF_8)
-                .toSeq
-            )
-            .covary[IO]
+      issued <- served
+        .run(
+          Request[IO](
+            method = Method.POST,
+            uri = Uri.unsafeFromString("http://localhost/token"),
+            headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)) ++
+              Headers(List(Authorization(BasicCredentials(freshId, freshSecret)))),
+            body = Stream
+              .emits(
+                Form
+                  .render(Map("grant_type" -> "client_credentials", "client_id" -> freshId))
+                  .getBytes(StandardCharsets.UTF_8)
+                  .toSeq
+              )
+              .covary[IO]
+          )
         )
-      ).value
+        .value
       issuedText <- body(issued.get)
     } yield {
       assertEquals(answered.get.status, Status.Created)
@@ -750,7 +786,9 @@ class InterpreterSpec extends CatsEffectSuite {
   test("a registration without a redirect uri is refused") {
     for {
       served <- routes
-      answered <- served.run(postJson("/register", io.circe.Json.obj("scope" -> io.circe.Json.fromString("read")))).value
+      answered <- served
+        .run(postJson("/register", io.circe.Json.obj("scope" -> io.circe.Json.fromString("read"))))
+        .value
       text <- body(answered.get)
     } yield {
       assertEquals(answered.get.status, Status.BadRequest)
@@ -898,7 +936,15 @@ class InterpreterSpec extends CatsEffectSuite {
     for {
       pair <- application
       (served, _, _, _) = pair
-      answered <- served.run(postTo("/device_authorization", Map("client_id" -> clientId.value, "scope" -> "read"), Some("s3cret"))).value
+      answered <- served
+        .run(
+          postTo(
+            "/device_authorization",
+            Map("client_id" -> clientId.value, "scope" -> "read"),
+            Some("s3cret")
+          )
+        )
+        .value
       response = answered.get
       text <- body(response)
     } yield {
@@ -926,7 +972,9 @@ class InterpreterSpec extends CatsEffectSuite {
     for {
       pair <- application
       (served, devices, _, _) = pair
-      issued <- served.run(postTo("/device_authorization", Map("client_id" -> clientId.value), Some("s3cret"))).value
+      issued <- served
+        .run(postTo("/device_authorization", Map("client_id" -> clientId.value), Some("s3cret")))
+        .value
       text <- body(issued.get)
       code = field(text, "device_code")
       user = field(text, "user_code")
@@ -954,7 +1002,9 @@ class InterpreterSpec extends CatsEffectSuite {
   test("a request to another path is not served") {
     for {
       served <- routes
-      answered <- served.run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/other"))).value
+      answered <- served
+        .run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/other")))
+        .value
     } yield assertEquals(answered, None)
   }
 }

@@ -66,7 +66,7 @@ final class RegistrationService[F[_]: Monad](
       registration: ClientRegistration
   ): F[Either[OAuth2Error, ClientRegistrationResponse]] =
     authorized(clientId, token).flatMap {
-      case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, ClientRegistrationResponse])
+      case Left(error)   => Monad[F].pure(Left(error): Either[OAuth2Error, ClientRegistrationResponse])
       case Right(client) =>
         val changed = client.copy(
           redirectUris = registration.redirectUris,
@@ -91,7 +91,7 @@ final class RegistrationService[F[_]: Monad](
         .toRight(RegistrationService.rejected)
         .flatMap(raw => RegistrationToken.from(raw).leftMap(_ => RegistrationService.rejected))
     ).mapN((_, _)) match {
-      case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, Client])
+      case Left(error)            => Monad[F].pure(Left(error): Either[OAuth2Error, Client])
       case Right((id, candidate)) =>
         clients.find(id).map {
           case Some(client)
@@ -106,7 +106,11 @@ final class RegistrationService[F[_]: Monad](
       raw: String
   ): Either[OAuth2Error, Option[ClientSecret]] =
     if (registration.authMethod == ClientAuthMethod.None) Right(None)
-    else ClientSecret.from(raw).map(secret => Some(secret): Option[ClientSecret]).leftMap(RegistrationService.failure)
+    else
+      ClientSecret
+        .from(raw)
+        .map(secret => Some(secret): Option[ClientSecret])
+        .leftMap(RegistrationService.failure)
 }
 
 object RegistrationService {

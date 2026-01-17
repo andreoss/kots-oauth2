@@ -32,13 +32,22 @@ final class AuthorizationEndpoint[F[_]: Monad](
       case Some(raw) => resolve(raw, parameters)
     }
 
-  private def resolve(raw: String, parameters: Map[String, String]): F[Either[OAuth2Error, AuthorizationRedirect]] =
+  private def resolve(
+      raw: String,
+      parameters: Map[String, String]
+  ): F[Either[OAuth2Error, AuthorizationRedirect]] =
     if ((parameters.keySet -- AuthorizationEndpoint.PushedParameters).nonEmpty)
       Monad[F].pure(Left(OAuth2Error.InvalidRequest(Some("request_uri stands alone")): OAuth2Error))
     else
-      (RequestUri.from(raw).left.map(_ => OAuth2Error.InvalidRequest(Some("not a request_uri")): OAuth2Error), pushed) match {
+      (
+        RequestUri
+          .from(raw)
+          .left
+          .map(_ => OAuth2Error.InvalidRequest(Some("not a request_uri")): OAuth2Error),
+        pushed
+      ) match {
         case (Left(error), _) => Monad[F].pure(Left(error))
-        case (_, None) =>
+        case (_, None)        =>
           Monad[F].pure(Left(OAuth2Error.InvalidRequest(Some("request_uri is not supported")): OAuth2Error))
         case (Right(uri), Some(store)) =>
           store.consume(uri).flatMap {
@@ -58,13 +67,14 @@ final class AuthorizationEndpoint[F[_]: Monad](
             Monad[F].pure(Left(OAuth2Error.InvalidRequest(Some("client is not registered")): OAuth2Error))
           case Some(client) =>
             service.target(client, request.redirectUri) match {
-              case Left(error) => Monad[F].pure(Left(error))
+              case Left(error)   => Monad[F].pure(Left(error))
               case Right(target) =>
                 login.subject.flatMap {
                   case None =>
                     Monad[F].pure(
                       Right(
-                        AuthorizationEndpoint.refused(target, OAuth2Error.AccessDenied(), request.state, issuer)
+                        AuthorizationEndpoint
+                          .refused(target, OAuth2Error.AccessDenied(), request.state, issuer)
                       )
                     )
                   case Some(subject) =>

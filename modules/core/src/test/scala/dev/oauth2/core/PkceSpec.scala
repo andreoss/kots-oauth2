@@ -77,7 +77,9 @@ class PkceSpec extends ScalaCheckSuite {
   property("S256 verification refuses a challenge that is not the computed one") {
     forAll(verifiers) { verifier =>
       verifier.value == ExampleVerifier ||
-      Pkce.verify(Pkce(CodeChallenge.from(verifier.value).toOption.get, CodeChallengeMethod.S256), verifier).isLeft
+      Pkce
+        .verify(Pkce(CodeChallenge.from(verifier.value).toOption.get, CodeChallengeMethod.S256), verifier)
+        .isLeft
     }
   }
 }

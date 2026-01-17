@@ -161,54 +161,54 @@ object Development {
     } yield assembledOf(
       List(codes.sweep, tokens.sweep, devices.sweep, pushed.sweep, replays.sweep),
       Interpreter.routes[F](
-      List(
-        Server.authorize(
-          new AuthorizationEndpoint[F](
-            clients,
-            login,
-            new AuthorizationService[F](codes, consents, clock, entropy, LifetimePolicy.defaults),
-            issuer,
-            Some(pushed)
-          )
-        ),
-        Server.par(
-          new PushedAuthorizationEndpoint[F](
-            authentication,
-            new PushedAuthorizationService[F](pushed, clock, entropy, LifetimePolicy.defaults)
-          )
-        ),
-        Server.register(registration),
-        Server.registrationRead(registration),
-        Server.registrationUpdate(registration),
-        Server.registrationDelete(registration),
-        Server.token(new TokenEndpoint[F](authentication, service)),
-        Server.revocation(new RevocationEndpoint[F](authentication, tokens, grants)),
-        Server.introspection(new IntrospectionEndpoint[F](authentication, tokens, grants)),
-        Server.deviceAuthorization(
-          new DeviceAuthorizationEndpoint[F](
-            authentication,
-            new DeviceAuthorizationService[F](
-              devices,
-              clock,
-              entropy,
-              LifetimePolicy.defaults,
-              unsafe(EndpointUri.from(s"$SeedIssuer/device"))
+        List(
+          Server.authorize(
+            new AuthorizationEndpoint[F](
+              clients,
+              login,
+              new AuthorizationService[F](codes, consents, clock, entropy, LifetimePolicy.defaults),
+              issuer,
+              Some(pushed)
             )
-          )
-        ),
-        Server.metadata(metadata),
-        Server.resourceMetadata(resource),
-        Server.jwks(keys.jwks),
-        Server.health[F],
-        Server.ready(
-          new dev.oauth2.server.Readiness[F](
-            List(
-              "clients" -> clients.find(clientId).map(_.isDefined),
-              "keys" -> keys.jwks.map(_.keys.nonEmpty)
+          ),
+          Server.par(
+            new PushedAuthorizationEndpoint[F](
+              authentication,
+              new PushedAuthorizationService[F](pushed, clock, entropy, LifetimePolicy.defaults)
+            )
+          ),
+          Server.register(registration),
+          Server.registrationRead(registration),
+          Server.registrationUpdate(registration),
+          Server.registrationDelete(registration),
+          Server.token(new TokenEndpoint[F](authentication, service)),
+          Server.revocation(new RevocationEndpoint[F](authentication, tokens, grants)),
+          Server.introspection(new IntrospectionEndpoint[F](authentication, tokens, grants)),
+          Server.deviceAuthorization(
+            new DeviceAuthorizationEndpoint[F](
+              authentication,
+              new DeviceAuthorizationService[F](
+                devices,
+                clock,
+                entropy,
+                LifetimePolicy.defaults,
+                unsafe(EndpointUri.from(s"$SeedIssuer/device"))
+              )
+            )
+          ),
+          Server.metadata(metadata),
+          Server.resourceMetadata(resource),
+          Server.jwks(keys.jwks),
+          Server.health[F],
+          Server.ready(
+            new dev.oauth2.server.Readiness[F](
+              List(
+                "clients" -> clients.find(clientId).map(_.isDefined),
+                "keys" -> keys.jwks.map(_.keys.nonEmpty)
+              )
             )
           )
         )
-      )
       )
     )
   }
@@ -233,9 +233,7 @@ object Development {
               .withPort(port)
               .withHttpApp(Correlated(entropy, Measured(metrics, bound)).orNotFound)
               .build
-              .flatMap(server =>
-                Sweeper.stream[F](SweepInterval, sweeps).compile.drain.background.as(server)
-              )
+              .flatMap(server => Sweeper.stream[F](SweepInterval, sweeps).compile.drain.background.as(server))
           }
         }
       }
@@ -246,6 +244,8 @@ object Development {
       Base64.getUrlEncoder.withoutPadding.encodeToString(value.toByteArray.dropWhile(_ == 0))
     dev.oauth2.core.KeyId
       .from(SeedKeyId)
-      .flatMap(kid => Jwk.rsa(kid, Alg.RS256, parameter(public.getModulus), parameter(public.getPublicExponent)))
+      .flatMap(kid =>
+        Jwk.rsa(kid, Alg.RS256, parameter(public.getModulus), parameter(public.getPublicExponent))
+      )
   }
 }

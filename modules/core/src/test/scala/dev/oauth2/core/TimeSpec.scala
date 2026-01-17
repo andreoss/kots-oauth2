@@ -21,7 +21,9 @@ class TimeSpec extends ScalaCheckSuite {
   }
 
   test("expiry is the issue instant plus the lifetime") {
-    assert(Lifetime.fromSeconds(60L).exists(l => Lifetime.expiresAt(issuedAt, l) == issuedAt.plusSeconds(60L)))
+    assert(
+      Lifetime.fromSeconds(60L).exists(l => Lifetime.expiresAt(issuedAt, l) == issuedAt.plusSeconds(60L))
+    )
   }
 
   test("a token is expired at its expiry instant and not before") {

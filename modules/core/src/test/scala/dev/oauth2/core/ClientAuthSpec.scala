@@ -87,7 +87,10 @@ class ClientAuthSpec extends ScalaCheckSuite {
   }
 
   test("input takes the client id from the body when there are no credentials") {
-    assertEquals(ClientAuthInput.from(None, Map("client_id" -> "client-2")).toOption.map(_.subject), Some(Some(otherId)))
+    assertEquals(
+      ClientAuthInput.from(None, Map("client_id" -> "client-2")).toOption.map(_.subject),
+      Some(Some(otherId))
+    )
   }
 
   test("input has no subject without credentials and without a body client id") {

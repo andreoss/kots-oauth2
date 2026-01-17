@@ -23,7 +23,8 @@ object GrantType {
   case object DeviceCode extends GrantType("urn:ietf:params:oauth:grant-type:device_code")
   case object TokenExchange extends GrantType("urn:ietf:params:oauth:grant-type:token-exchange")
 
-  val all: List[GrantType] = List(AuthorizationCode, RefreshToken, ClientCredentials, DeviceCode, TokenExchange)
+  val all: List[GrantType] =
+    List(AuthorizationCode, RefreshToken, ClientCredentials, DeviceCode, TokenExchange)
 
   def from(raw: String): Either[ParseFailure, GrantType] =
     all.find(_.value == raw).toRight(ParseFailure("GrantType", "not a registered grant type"))
@@ -43,8 +44,8 @@ object AuthorizationRequest {
 
   def from(params: Map[String, String]): ValidatedNec[OAuth2Error, AuthorizationRequest] =
     (
-      Params.required(params, "response_type")(
-        raw => ResponseType.from(raw).leftMap(_ => OAuth2Error.UnsupportedResponseType(): OAuth2Error)
+      Params.required(params, "response_type")(raw =>
+        ResponseType.from(raw).leftMap(_ => OAuth2Error.UnsupportedResponseType(): OAuth2Error)
       ),
       Params.field(params, "client_id")(ClientId.from),
       Params.fieldOpt(params, "redirect_uri")(RedirectUri.from),
@@ -56,7 +57,15 @@ object AuthorizationRequest {
       ).tupled.andThen { case (challenge, method) => pkce(challenge, method) },
       Params.fieldOpt(params, "resource")(ResourceIndicator.from)
     ).mapN { case (responseType, clientId, redirectUri, scope, state, pkce, resource) =>
-      AuthorizationRequest(responseType, clientId, redirectUri, scope.getOrElse(Scopes.empty), state, pkce, resource)
+      AuthorizationRequest(
+        responseType,
+        clientId,
+        redirectUri,
+        scope.getOrElse(Scopes.empty),
+        state,
+        pkce,
+        resource
+      )
     }
 
   private def pkce(
@@ -64,10 +73,10 @@ object AuthorizationRequest {
       method: Option[CodeChallengeMethod]
   ): ValidatedNec[OAuth2Error, Option[Pkce]] =
     (challenge, method) match {
-      case (Some(c), m)   => Some(Pkce(c, m.getOrElse(CodeChallengeMethod.Plain))).validNec
+      case (Some(c), m)    => Some(Pkce(c, m.getOrElse(CodeChallengeMethod.Plain))).validNec
       case (None, Some(_)) =>
         OAuth2Error.InvalidRequest(Some("code_challenge_method without code_challenge")).invalidNec
-      case (None, None)   => None.validNec
+      case (None, None) => None.validNec
     }
 }
 
@@ -112,8 +121,8 @@ object TokenRequest {
 
   def from(params: Map[String, String]): ValidatedNec[OAuth2Error, TokenRequest] =
     Params
-      .required(params, "grant_type")(
-        raw => GrantType.from(raw).leftMap(_ => OAuth2Error.UnsupportedGrantType(): OAuth2Error)
+      .required(params, "grant_type")(raw =>
+        GrantType.from(raw).leftMap(_ => OAuth2Error.UnsupportedGrantType(): OAuth2Error)
       )
       .andThen {
         case GrantType.AuthorizationCode => authorizationCode(params)
@@ -180,8 +189,10 @@ object TokenRequest {
     (token, kind) match {
       case (Some(value), Some(_)) => (Some(value): Option[AccessToken]).validNec
       case (None, None)           => (None: Option[AccessToken]).validNec
-      case _ =>
-        (OAuth2Error.InvalidRequest(Some("actor_token and actor_token_type go together")): OAuth2Error).invalidNec
+      case _                      =>
+        (OAuth2Error.InvalidRequest(
+          Some("actor_token and actor_token_type go together")
+        ): OAuth2Error).invalidNec
     }
 }
 

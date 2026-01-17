@@ -125,7 +125,12 @@ class SweepSpec extends CatsEffectSuite {
     for {
       pushed <- InMemoryPushedRequestStore.create[IO](clock)
       _ <- pushed.save(
-        PushedRequest(unsafe(RequestUri.from(RequestUri.Prefix + "live")), clientId, Map.empty, start.plusSeconds(60L))
+        PushedRequest(
+          unsafe(RequestUri.from(RequestUri.Prefix + "live")),
+          clientId,
+          Map.empty,
+          start.plusSeconds(60L)
+        )
       )
       _ <- pushed.save(
         PushedRequest(unsafe(RequestUri.from(RequestUri.Prefix + "dead")), clientId, Map.empty, start)

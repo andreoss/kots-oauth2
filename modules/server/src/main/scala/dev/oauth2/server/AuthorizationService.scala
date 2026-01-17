@@ -63,10 +63,10 @@ final class AuthorizationService[F[_]: Monad](
   ): ValidatedNec[OAuth2Error, RedirectUri] =
     (requested, client.redirectUris.toList) match {
       case (Some(uri), _) if client.allowsRedirect(uri) => uri.validNec
-      case (Some(_), _) =>
+      case (Some(_), _)                                 =>
         OAuth2Error.InvalidRequest(Some("redirect_uri is not registered")).invalidNec
       case (None, single :: Nil) => single.validNec
-      case (None, _) => OAuth2Error.InvalidRequest(Some("redirect_uri is required")).invalidNec
+      case (None, _)             => OAuth2Error.InvalidRequest(Some("redirect_uri is required")).invalidNec
     }
 
   private def scopes(client: Client, requested: Scopes): ValidatedNec[OAuth2Error, Scopes] =
@@ -77,7 +77,7 @@ final class AuthorizationService[F[_]: Monad](
   private def challenge(requested: Option[Pkce]): ValidatedNec[OAuth2Error, Pkce] =
     requested match {
       case Some(pkce) if pkce.method == CodeChallengeMethod.S256 => pkce.validNec
-      case Some(_) =>
+      case Some(_)                                               =>
         OAuth2Error.InvalidRequest(Some("only S256 code_challenge_method is supported")).invalidNec
       case None => OAuth2Error.InvalidRequest(Some("code_challenge is required")).invalidNec
     }
@@ -96,7 +96,9 @@ final class AuthorizationService[F[_]: Monad](
       raw <- entropy.bytes(AuthorizationService.CodeEntropyBytes)
       parsed = AuthorizationCode
         .from(Entropy.hex(raw))
-        .leftMap(failure => OAuth2Error.ServerError(Some(s"${failure.typeName}: ${failure.reason}")): OAuth2Error)
+        .leftMap(failure =>
+          OAuth2Error.ServerError(Some(s"${failure.typeName}: ${failure.reason}")): OAuth2Error
+        )
       issued <- parsed.fold(
         error => Monad[F].pure(Left(error)),
         code =>

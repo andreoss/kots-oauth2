@@ -63,7 +63,9 @@ class RevocationEndpointSpec extends CatsEffectSuite {
       refreshExpiresAt = refresh.map(_ => Start.plusSeconds(7200L))
     )
 
-  private def setup(records: List[TokenRecord] = List(token("at-1", Some("rt-1")))): IO[(RevocationEndpoint[IO], InMemoryTokenStore[IO], InMemoryGrantStore[IO])] = {
+  private def setup(
+      records: List[TokenRecord] = List(token("at-1", Some("rt-1")))
+  ): IO[(RevocationEndpoint[IO], InMemoryTokenStore[IO], InMemoryGrantStore[IO])] = {
     val clock = new Clock[IO] {
       def instant: IO[Instant] = IO.pure(Start)
     }
@@ -71,7 +73,16 @@ class RevocationEndpointSpec extends CatsEffectSuite {
       tokens <- InMemoryTokenStore.create[IO](clock)
       _ <- records.foldLeft(IO.unit)((done, record) => done >> tokens.save(record))
       grants <- InMemoryGrantStore.create[IO]
-      _ <- grants.save(Grant(grant, clientId, unsafe(Subject.from("user-1")), unsafe(dev.oauth2.core.Scopes.parse("read")), dev.oauth2.core.AuthorizationDetails.empty, revoked = false))
+      _ <- grants.save(
+        Grant(
+          grant,
+          clientId,
+          unsafe(Subject.from("user-1")),
+          unsafe(dev.oauth2.core.Scopes.parse("read")),
+          dev.oauth2.core.AuthorizationDetails.empty,
+          revoked = false
+        )
+      )
       registry <- InMemoryClientStore.create[IO](List(client))
     } yield (
       new RevocationEndpoint[IO](new RegisteredClientAuthentication[IO](registry), tokens, grants),

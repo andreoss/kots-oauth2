@@ -51,7 +51,10 @@ class DeviceAuthorizationServiceSpec extends CatsEffectSuite {
     InMemoryDeviceStore
       .create[IO](clock)
       .map(devices =>
-        (new DeviceAuthorizationService[IO](devices, clock, entropy, LifetimePolicy.defaults, verification), devices)
+        (
+          new DeviceAuthorizationService[IO](devices, clock, entropy, LifetimePolicy.defaults, verification),
+          devices
+        )
       )
   }
 

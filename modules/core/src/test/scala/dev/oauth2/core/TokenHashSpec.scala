@@ -54,7 +54,10 @@ class TokenHashSpec extends ScalaCheckSuite {
   property("a refresh token hash refuses every other token") {
     forAll(token) { raw =>
       val other = RefreshToken.from(raw).toOption
-      other.isEmpty || raw == refresh.value || !RefreshTokenHash.verify(RefreshTokenHash.of(refresh), other.get)
+      other.isEmpty || raw == refresh.value || !RefreshTokenHash.verify(
+        RefreshTokenHash.of(refresh),
+        other.get
+      )
     }
   }
 }

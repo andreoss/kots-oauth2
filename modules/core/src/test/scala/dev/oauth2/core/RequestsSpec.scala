@@ -66,7 +66,10 @@ class RequestsSpec extends ScalaCheckSuite {
       )
     )
     assertEquals(request.redirectUri.map(_.value), Some(Redirect))
-    assertEquals(request.scope, Scopes.of(List(Scope.from("openid").toOption.get, Scope.from("profile").toOption.get)))
+    assertEquals(
+      request.scope,
+      Scopes.of(List(Scope.from("openid").toOption.get, Scope.from("profile").toOption.get))
+    )
     assertEquals(request.state.value, "xyz")
     assertEquals(request.pkce.map(_.method), Some(CodeChallengeMethod.S256))
     assertEquals(request.pkce.map(_.challenge.value), Some(Verifier))
@@ -105,7 +108,10 @@ class RequestsSpec extends ScalaCheckSuite {
   }
 
   test("authorization request defaults the challenge method to plain") {
-    assertEquals(valid(authorization("code_challenge" -> Verifier)).pkce.map(_.method), Some(CodeChallengeMethod.Plain))
+    assertEquals(
+      valid(authorization("code_challenge" -> Verifier)).pkce.map(_.method),
+      Some(CodeChallengeMethod.Plain)
+    )
   }
 
   test("authorization request refuses a method without a challenge") {
@@ -117,7 +123,10 @@ class RequestsSpec extends ScalaCheckSuite {
 
   test("authorization request refuses a malformed challenge and method") {
     assertEquals(errors(authorization("code_challenge" -> "short")).map(_.code), List("invalid_request"))
-    assertEquals(errors(authorization("code_challenge" -> Verifier, "code_challenge_method" -> "MD5")).map(_.code), List("invalid_request"))
+    assertEquals(
+      errors(authorization("code_challenge" -> Verifier, "code_challenge_method" -> "MD5")).map(_.code),
+      List("invalid_request")
+    )
   }
 
   test("token request decodes an authorization code grant") {
@@ -144,7 +153,12 @@ class RequestsSpec extends ScalaCheckSuite {
 
   test("token request without a redirect uri decodes") {
     val decoded = TokenRequest.from(
-      Map("grant_type" -> "authorization_code", "code" -> "code-1", "code_verifier" -> Verifier, "client_id" -> Client)
+      Map(
+        "grant_type" -> "authorization_code",
+        "code" -> "code-1",
+        "code_verifier" -> Verifier,
+        "client_id" -> Client
+      )
     )
     assertEquals(valid(decoded).asInstanceOf[TokenRequest.Code].redirectUri, None)
   }
@@ -183,7 +197,12 @@ class RequestsSpec extends ScalaCheckSuite {
     ).asInstanceOf[TokenRequest.Code]
     val refresh = valid(
       TokenRequest.from(
-        Map("grant_type" -> "refresh_token", "refresh_token" -> "rt-1", "client_id" -> Client, "resource" -> bound)
+        Map(
+          "grant_type" -> "refresh_token",
+          "refresh_token" -> "rt-1",
+          "client_id" -> Client,
+          "resource" -> bound
+        )
       )
     ).asInstanceOf[TokenRequest.Refresh]
     val credentials = valid(
@@ -214,13 +233,19 @@ class RequestsSpec extends ScalaCheckSuite {
       )
     )
     assertEquals(request.resource.map(_.value), Some("https://api.example"))
-    val device = valid(DeviceAuthorizationRequest.from(Map("client_id" -> Client, "resource" -> "https://api.example")))
+    val device =
+      valid(DeviceAuthorizationRequest.from(Map("client_id" -> Client, "resource" -> "https://api.example")))
     assertEquals(device.resource.map(_.value), Some("https://api.example"))
   }
 
   test("token request decodes a refresh token grant with a narrower scope") {
     val decoded = TokenRequest.from(
-      Map("grant_type" -> "refresh_token", "refresh_token" -> "rt-1", "scope" -> "read", "client_id" -> Client)
+      Map(
+        "grant_type" -> "refresh_token",
+        "refresh_token" -> "rt-1",
+        "scope" -> "read",
+        "client_id" -> Client
+      )
     )
     val request = valid(decoded).asInstanceOf[TokenRequest.Refresh]
     assertEquals(request.scope, Some(Scopes.of(List(Scope.from("read").toOption.get))))
@@ -233,7 +258,12 @@ class RequestsSpec extends ScalaCheckSuite {
 
   test("token request refuses a malformed refresh scope") {
     val decoded = TokenRequest.from(
-      Map("grant_type" -> "refresh_token", "refresh_token" -> "rt-1", "scope" -> "read  write", "client_id" -> Client)
+      Map(
+        "grant_type" -> "refresh_token",
+        "refresh_token" -> "rt-1",
+        "scope" -> "read  write",
+        "client_id" -> Client
+      )
     )
     assertEquals(errors(decoded).map(_.code), List("invalid_request"))
   }
@@ -288,7 +318,10 @@ class RequestsSpec extends ScalaCheckSuite {
   }
 
   test("device authorization request refuses a missing client id") {
-    assertEquals(errors(DeviceAuthorizationRequest.from(Map.empty[String, String])).map(_.code), List("invalid_request"))
+    assertEquals(
+      errors(DeviceAuthorizationRequest.from(Map.empty[String, String])).map(_.code),
+      List("invalid_request")
+    )
   }
 
   test("token request decodes a token exchange with every parameter") {
@@ -375,7 +408,12 @@ class RequestsSpec extends ScalaCheckSuite {
 
   test("token request refuses a malformed code verifier") {
     val decoded = TokenRequest.from(
-      Map("grant_type" -> "authorization_code", "code" -> "code-1", "code_verifier" -> "short", "client_id" -> Client)
+      Map(
+        "grant_type" -> "authorization_code",
+        "code" -> "code-1",
+        "code_verifier" -> "short",
+        "client_id" -> Client
+      )
     )
     assertEquals(errors(decoded).map(_.code), List("invalid_request"))
   }

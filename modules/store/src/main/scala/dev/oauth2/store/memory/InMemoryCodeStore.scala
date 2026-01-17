@@ -26,7 +26,7 @@ final class InMemoryCodeStore[F[_]: Monad] private (
         codes.get(code) match {
           case Some(record) if !record.isExpired(now) => (codes - code, Some(record))
           case Some(_)                                => (codes - code, None)
-          case None                                  => (codes, None)
+          case None                                   => (codes, None)
         }
       }
     }

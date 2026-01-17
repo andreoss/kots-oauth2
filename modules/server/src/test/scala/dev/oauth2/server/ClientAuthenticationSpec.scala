@@ -258,7 +258,9 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
     val registered = client(ClientAuthMethod.ClientSecretPost)
     for {
       authentication <- service(List(registered))
-      result <- authentication.authenticate(input(None, Map("client_id" -> "client-1", "client_secret" -> "s3cret")))
+      result <- authentication.authenticate(
+        input(None, Map("client_id" -> "client-1", "client_secret" -> "s3cret"))
+      )
     } yield assertEquals(result, Right(registered))
   }
 
@@ -272,7 +274,9 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
   test("body credentials are refused for a client registered for client_secret_basic") {
     for {
       authentication <- service(List(client()))
-      result <- authentication.authenticate(input(None, Map("client_id" -> "client-1", "client_secret" -> "s3cret")))
+      result <- authentication.authenticate(
+        input(None, Map("client_id" -> "client-1", "client_secret" -> "s3cret"))
+      )
     } yield assert(result.isLeft)
   }
 
@@ -317,14 +321,18 @@ class ClientAuthenticationSpec extends CatsEffectSuite {
   test("a public client sending a secret is refused") {
     for {
       authentication <- service(List(client(ClientAuthMethod.None, None)))
-      result <- authentication.authenticate(input(None, Map("client_id" -> "client-1", "client_secret" -> "s3cret")))
+      result <- authentication.authenticate(
+        input(None, Map("client_id" -> "client-1", "client_secret" -> "s3cret"))
+      )
     } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
   }
 
   test("basic credentials for another client than the body client id are refused") {
     for {
       authentication <- service(List(client(), client(id = otherId)))
-      result <- authentication.authenticate(input(basic("client-1", "s3cret"), Map("client_id" -> "client-2")))
+      result <- authentication.authenticate(
+        input(basic("client-1", "s3cret"), Map("client_id" -> "client-2"))
+      )
     } yield assertEquals(rejection(result), OAuth2Error.InvalidClient())
   }
 

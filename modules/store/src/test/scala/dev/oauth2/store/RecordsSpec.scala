@@ -31,7 +31,10 @@ class RecordsSpec extends ScalaCheckSuite {
     parsed.fold(_ => sys.error("fixture"), identity)
 
   private val registered: Set[RedirectUri] =
-    Set(unsafe(RedirectUri.from("https://client.example/cb")), unsafe(RedirectUri.from("http://127.0.0.1:8080/cb")))
+    Set(
+      unsafe(RedirectUri.from("https://client.example/cb")),
+      unsafe(RedirectUri.from("http://127.0.0.1:8080/cb"))
+    )
 
   private val client = Client(
     id = unsafe(ClientId.from("client-1")),
@@ -137,7 +140,14 @@ class RecordsSpec extends ScalaCheckSuite {
   }
 
   test("a revocable grant carries its revoked flag") {
-    val grant = Grant(token.grantId, client.id, token.subject, token.scopes, AuthorizationDetails.empty, revoked = false)
+    val grant = Grant(
+      token.grantId,
+      client.id,
+      token.subject,
+      token.scopes,
+      AuthorizationDetails.empty,
+      revoked = false
+    )
     assertEquals(grant.copy(revoked = true).revoked, true)
     assertEquals(grant.revoked, false)
   }
@@ -154,7 +164,9 @@ class RecordsSpec extends ScalaCheckSuite {
   property("a code verifier and its challenge are carried by the record") {
     forAll(Gen.const("b" * 43)) { raw =>
       val verifier = unsafe(CodeVerifier.from(raw))
-      code.copy(pkce = Some(Pkce(unsafe(CodeChallenge.from(verifier.value)), CodeChallengeMethod.Plain))).pkce
+      code
+        .copy(pkce = Some(Pkce(unsafe(CodeChallenge.from(verifier.value)), CodeChallengeMethod.Plain)))
+        .pkce
         .exists(_.challenge.value == raw)
     }
   }

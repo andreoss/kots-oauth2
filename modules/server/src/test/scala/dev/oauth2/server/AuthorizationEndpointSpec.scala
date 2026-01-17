@@ -63,7 +63,10 @@ class AuthorizationEndpointSpec extends CatsEffectSuite {
       "code_challenge_method" -> "S256"
     )
 
-  private def setup(consented: Boolean = true, authenticated: Boolean = true): IO[AuthorizationEndpoint[IO]] = {
+  private def setup(
+      consented: Boolean = true,
+      authenticated: Boolean = true
+  ): IO[AuthorizationEndpoint[IO]] = {
     val clock = new Clock[IO] {
       def instant: IO[Instant] = IO.pure(Start)
     }
@@ -73,7 +76,9 @@ class AuthorizationEndpointSpec extends CatsEffectSuite {
     for {
       codes <- InMemoryCodeStore.create[IO](clock)
       consents <- InMemoryConsentStore.create[IO]
-      _ <- if (consented) consents.grant(ConsentRecord(clientId, subject, unsafe(Scopes.parse("read")))) else IO.unit
+      _ <-
+        if (consented) consents.grant(ConsentRecord(clientId, subject, unsafe(Scopes.parse("read"))))
+        else IO.unit
       login <- SessionLogin.create[IO]
       _ <- if (authenticated) login.login(subject) else IO.unit
       clients <- InMemoryClientStore.create[IO](List(registered))
@@ -151,7 +156,8 @@ class AuthorizationEndpointSpec extends CatsEffectSuite {
       pair <- pushedSetup
       (endpoint, pushed) = pair
       _ <- pushed.save(
-        dev.oauth2.store.PushedRequest(pushedUri, unsafe(ClientId.from("client-2")), params, Start.plusSeconds(60L))
+        dev.oauth2.store
+          .PushedRequest(pushedUri, unsafe(ClientId.from("client-2")), params, Start.plusSeconds(60L))
       )
       answered <- endpoint(Map("client_id" -> clientId.value, "request_uri" -> pushedUri.value))
     } yield assertEquals(answered.left.toOption.map(_.code), Some("invalid_request"))

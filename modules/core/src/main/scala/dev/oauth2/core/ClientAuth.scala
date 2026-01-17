@@ -12,7 +12,8 @@ object ClientAuthMethod {
   case object PrivateKeyJwt extends ClientAuthMethod("private_key_jwt")
   case object ClientSecretJwt extends ClientAuthMethod("client_secret_jwt")
 
-  val all: List[ClientAuthMethod] = List(None, ClientSecretBasic, ClientSecretPost, PrivateKeyJwt, ClientSecretJwt)
+  val all: List[ClientAuthMethod] =
+    List(None, ClientSecretBasic, ClientSecretPost, PrivateKeyJwt, ClientSecretJwt)
 
   def from(raw: String): Either[ParseFailure, ClientAuthMethod] =
     all.find(_.value == raw).toRight(ParseFailure("ClientAuthMethod", "not a registered method"))
@@ -49,7 +50,7 @@ object ClientAuthInput {
 
   private def assertionOf(params: Map[String, String]): ValidatedNec[OAuth2Error, Option[ClientAssertion]] =
     (params.get("client_assertion"), params.get("client_assertion_type")) match {
-      case (scala.None, scala.None) => (scala.None: Option[ClientAssertion]).validNec
+      case (scala.None, scala.None)                => (scala.None: Option[ClientAssertion]).validNec
       case (Some(raw), Some(ClientAssertion.Type)) =>
         ClientAssertion
           .from(raw)
@@ -61,7 +62,9 @@ object ClientAuthInput {
 
   private def credentials(basic: Option[String]): ValidatedNec[OAuth2Error, Option[ClientCredentials]] =
     basic
-      .traverse(raw => ClientCredentials.fromBasic(raw).leftMap(_ => OAuth2Error.InvalidClient(): OAuth2Error))
+      .traverse(raw =>
+        ClientCredentials.fromBasic(raw).leftMap(_ => OAuth2Error.InvalidClient(): OAuth2Error)
+      )
       .toValidatedNec
 
   private def field[A](params: Map[String, String], name: String)(

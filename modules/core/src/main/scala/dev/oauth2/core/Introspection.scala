@@ -48,7 +48,8 @@ object IntrospectionResponse {
         "iat" -> issuedAt.getEpochSecond.toString,
         "nbf" -> notBefore.getEpochSecond.toString,
         "sub" -> Wire[Subject].encode(username)
-      ) ++ (if (scopes.value.isEmpty) Map.empty[String, String] else Map("scope" -> Wire[Scopes].encode(scopes)))
+      ) ++ (if (scopes.value.isEmpty) Map.empty[String, String]
+            else Map("scope" -> Wire[Scopes].encode(scopes)))
   }
 
   object Active {

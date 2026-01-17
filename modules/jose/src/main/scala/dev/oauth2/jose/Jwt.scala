@@ -59,7 +59,8 @@ object Jwt {
           claims.acr.map(value => "acr" -> Json.fromString(value.value)) ++
           claims.jkt.map(value => "cnf" -> Json.obj("jkt" -> Json.fromString(value.value))) ++
           (if (claims.scopes.value.isEmpty) Nil
-           else List("scope" -> Json.fromString(claims.scopes.value.map(_.value).toVector.sorted.mkString(" "))))
+           else
+             List("scope" -> Json.fromString(claims.scopes.value.map(_.value).toVector.sorted.mkString(" "))))
       )
       .noSpaces
 
@@ -73,18 +74,31 @@ object Jwt {
       tokenId <- string(cursor, "jti").flatMap(JwtId.from)
       issuedAt <- number(cursor, "iat")
       expiresAt <- number(cursor, "exp")
-      audience <- cursor.get[String]("aud").toOption.fold(
-        Right(None): Either[ParseFailure, Option[Audience]]
-      )(raw => Audience.from(raw).map(Some(_)))
-      scopes <- cursor.get[String]("scope").toOption.fold(
-        Right(Scopes.empty): Either[ParseFailure, Scopes]
-      )(raw => Scopes.parse(raw))
-      acr <- cursor.get[String]("acr").toOption.fold(
-        Right(None): Either[ParseFailure, Option[Acr]]
-      )(raw => Acr.from(raw).map(Some(_)))
-      jkt <- cursor.downField("cnf").get[String]("jkt").toOption.fold(
-        Right(None): Either[ParseFailure, Option[KeyThumbprint]]
-      )(raw => KeyThumbprint.from(raw).map(Some(_)))
+      audience <- cursor
+        .get[String]("aud")
+        .toOption
+        .fold(
+          Right(None): Either[ParseFailure, Option[Audience]]
+        )(raw => Audience.from(raw).map(Some(_)))
+      scopes <- cursor
+        .get[String]("scope")
+        .toOption
+        .fold(
+          Right(Scopes.empty): Either[ParseFailure, Scopes]
+        )(raw => Scopes.parse(raw))
+      acr <- cursor
+        .get[String]("acr")
+        .toOption
+        .fold(
+          Right(None): Either[ParseFailure, Option[Acr]]
+        )(raw => Acr.from(raw).map(Some(_)))
+      jkt <- cursor
+        .downField("cnf")
+        .get[String]("jkt")
+        .toOption
+        .fold(
+          Right(None): Either[ParseFailure, Option[KeyThumbprint]]
+        )(raw => KeyThumbprint.from(raw).map(Some(_)))
     } yield JwtClaims(issuer, subject, audience, clientId, scopes, issuedAt, expiresAt, tokenId, acr, jkt)
 
   private def string(cursor: io.circe.HCursor, name: String): Either[ParseFailure, String] =

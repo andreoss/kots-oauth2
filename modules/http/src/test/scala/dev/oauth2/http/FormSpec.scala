@@ -29,7 +29,10 @@ class FormSpec extends ScalaCheckSuite {
 
   test("a form body percent-decodes names and values") {
     assertEquals(Form.parse("scope=openid%20read"), Right(Map("scope" -> "openid read")))
-    assertEquals(Form.parse("redirect_uri=https%3A%2F%2Fexample.com%2Fcb"), Right(Map("redirect_uri" -> "https://example.com/cb")))
+    assertEquals(
+      Form.parse("redirect_uri=https%3A%2F%2Fexample.com%2Fcb"),
+      Right(Map("redirect_uri" -> "https://example.com/cb"))
+    )
     assertEquals(Form.parse("scope=openid+read"), Right(Map("scope" -> "openid read")))
   }
 
@@ -82,7 +85,9 @@ class FormSpec extends ScalaCheckSuite {
 
   property("a decoded form round trips percent-encoded parameters") {
     forAll(nameOf(4), nameOf(8)) { (name, value) =>
-      Form.parse(s"$name=${value.replace(" ", "+")}") == Right(Map(name -> value.replace(" ", "+").replace("+", " ")))
+      Form.parse(s"$name=${value.replace(" ", "+")}") == Right(
+        Map(name -> value.replace(" ", "+").replace("+", " "))
+      )
     }
   }
 

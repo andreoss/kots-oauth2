@@ -34,7 +34,9 @@ object Registration {
           .traverse(value =>
             value.asString
               .toRight(OAuth2Error.InvalidRedirectUri(): OAuth2Error)
-              .flatMap(raw => RedirectUri.from(raw).left.map(_ => OAuth2Error.InvalidRedirectUri(): OAuth2Error))
+              .flatMap(raw =>
+                RedirectUri.from(raw).left.map(_ => OAuth2Error.InvalidRedirectUri(): OAuth2Error)
+              )
           )
           .map(_.toSet)
       case _ => Left(OAuth2Error.InvalidRedirectUri(): OAuth2Error)
@@ -42,19 +44,22 @@ object Registration {
 
   private def authMethod(body: Map[String, Json]): Either[OAuth2Error, ClientAuthMethod] =
     body.get(TokenEndpointAuthMethod) match {
-      case None => Right(ClientAuthMethod.ClientSecretBasic)
+      case None        => Right(ClientAuthMethod.ClientSecretBasic)
       case Some(value) =>
         value.asString
           .toRight(OAuth2Error.InvalidClientMetadata(): OAuth2Error)
-          .flatMap(raw => ClientAuthMethod.from(raw).left.map(_ => OAuth2Error.InvalidClientMetadata(): OAuth2Error))
+          .flatMap(raw =>
+            ClientAuthMethod.from(raw).left.map(_ => OAuth2Error.InvalidClientMetadata(): OAuth2Error)
+          )
           .flatMap(method =>
-            Either.cond(Registrable.contains(method), method, OAuth2Error.InvalidClientMetadata(): OAuth2Error)
+            Either
+              .cond(Registrable.contains(method), method, OAuth2Error.InvalidClientMetadata(): OAuth2Error)
           )
     }
 
   private def scopesOf(body: Map[String, Json]): Either[OAuth2Error, Scopes] =
     body.get(Scope) match {
-      case None => Right(Scopes.empty)
+      case None        => Right(Scopes.empty)
       case Some(value) =>
         value.asString
           .toRight(OAuth2Error.InvalidClientMetadata(): OAuth2Error)

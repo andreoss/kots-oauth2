@@ -40,7 +40,9 @@ final class DeviceAuthorizationService[F[_]: Monad](
           rawUser <- entropy.bytes(DeviceAuthorizationService.UserCodeLetters)
           minted = (
             DeviceCode.from(Entropy.hex(rawDevice)).leftMap(DeviceAuthorizationService.failure),
-            UserCode.from(DeviceAuthorizationService.userCode(rawUser)).leftMap(DeviceAuthorizationService.failure)
+            UserCode
+              .from(DeviceAuthorizationService.userCode(rawUser))
+              .leftMap(DeviceAuthorizationService.failure)
           ).mapN((_, _))
           result <- minted.fold(
             error => Monad[F].pure(Left(error): Either[OAuth2Error, DeviceAuthorizationResponse]),
