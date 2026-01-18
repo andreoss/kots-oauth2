@@ -5,6 +5,7 @@ import cats.syntax.flatMap._
 import cats.syntax.functor._
 
 import dev.oauth2.core.Acr
+import dev.oauth2.core.Audience
 import dev.oauth2.core.Clock
 import dev.oauth2.core.Issuer
 import dev.oauth2.core.ParseFailure
@@ -16,7 +17,8 @@ import dev.oauth2.jose.JwtClaims
 final class BearerGuard[F[_]: Monad](
     keys: F[Either[ParseFailure, Jwks]],
     issuer: Issuer,
-    clock: Clock[F]
+    clock: Clock[F],
+    audience: Option[Audience] = None
 ) {
 
   def verify(
@@ -37,6 +39,8 @@ final class BearerGuard[F[_]: Monad](
               Jwt.claims(token, published, now) match {
                 case Left(_)                                  => Left(BearerGuard.invalidToken)
                 case Right(claims) if claims.issuer != issuer => Left(BearerGuard.invalidToken)
+                case Right(claims) if audience.exists(demanded => !claims.audience.contains(demanded)) =>
+                  Left(BearerGuard.invalidToken)
                 case Right(claims) if !Scopes.isSubsetOf(required, claims.scopes) =>
                   Left(BearerGuard.insufficientScope)
                 case Right(claims) if acr.exists(demanded => !claims.acr.contains(demanded)) =>
