@@ -1,0 +1,415 @@
+package dev.oauth2.host
+
+import java.nio.charset.StandardCharsets
+import java.time.Instant
+import java.util.Base64
+
+import cats.effect.IO
+import cats.effect.Ref
+import dev.oauth2.client.BearerGuard
+import dev.oauth2.core.Audience
+import dev.oauth2.core.AuthorizationCode
+import dev.oauth2.core.AuthorizationDetails
+import dev.oauth2.core.ClientAuthMethod
+import dev.oauth2.core.ClientId
+import dev.oauth2.core.ClientSecret
+import dev.oauth2.core.ClientSecretHash
+import dev.oauth2.core.Clock
+import dev.oauth2.core.CodeChallenge
+import dev.oauth2.core.CodeChallengeMethod
+import dev.oauth2.core.CodeVerifier
+import dev.oauth2.core.Entropy
+import dev.oauth2.core.Issuer
+import dev.oauth2.core.JwtId
+import dev.oauth2.core.LifetimePolicy
+import dev.oauth2.core.ParseFailure
+import dev.oauth2.core.Pkce
+import dev.oauth2.core.RedirectUri
+import dev.oauth2.core.Scopes
+import dev.oauth2.core.Subject
+import dev.oauth2.http.Form
+import dev.oauth2.http.Server
+import dev.oauth2.jose.Alg
+import dev.oauth2.jose.Dpop
+import dev.oauth2.jose.Fakes
+import dev.oauth2.jose.Jwks
+import dev.oauth2.server.AuthorizationEndpoint
+import dev.oauth2.server.AuthorizationService
+import dev.oauth2.server.DpopProofs
+import dev.oauth2.server.IntrospectionEndpoint
+import dev.oauth2.server.RegisteredClientAuthentication
+import dev.oauth2.server.SessionLogin
+import dev.oauth2.server.TokenEndpoint
+import dev.oauth2.server.TokenService
+import dev.oauth2.store.Client
+import dev.oauth2.store.CodeRecord
+import dev.oauth2.store.ConsentRecord
+import dev.oauth2.store.memory.InMemoryClientStore
+import dev.oauth2.store.memory.InMemoryCodeStore
+import dev.oauth2.store.memory.InMemoryConsentStore
+import dev.oauth2.store.memory.InMemoryDeviceStore
+import dev.oauth2.store.memory.InMemoryGrantStore
+import dev.oauth2.store.memory.InMemoryReplayStore
+import dev.oauth2.store.memory.InMemoryTokenStore
+import fs2.Stream
+import io.circe.Json
+import munit.CatsEffectSuite
+import org.http4s.BasicCredentials
+import org.http4s.Header
+import org.http4s.Headers
+import org.http4s.HttpRoutes
+import org.http4s.MediaType
+import org.http4s.Method
+import org.http4s.Request
+import org.http4s.Response
+import org.http4s.Status
+import org.http4s.Uri
+import org.http4s.headers.Authorization
+import org.http4s.headers.`Content-Type`
+import org.typelevel.ci.CIString
+
+class NegativeSpec extends CatsEffectSuite {
+
+  private val Start: Instant = Instant.parse("2025-01-01T00:00:00Z")
+
+  private val TokenUri: String = "http://localhost/token"
+
+  private def unsafe[A](parsed: Either[ParseFailure, A]): A =
+    parsed.fold(_ => sys.error("fixture"), identity)
+
+  private val clientId: ClientId = unsafe(ClientId.from("client-1"))
+
+  private val issuer: Issuer = unsafe(Issuer.from("https://server.example"))
+
+  private val verifier: CodeVerifier =
+    unsafe(CodeVerifier.from("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"))
+
+  private val challenge: CodeChallenge =
+    unsafe(CodeChallenge.from("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"))
+
+  private val recorded: CodeRecord = CodeRecord(
+    code = unsafe(AuthorizationCode.from("code-1")),
+    clientId = clientId,
+    redirectUri = unsafe(RedirectUri.from("https://client.example/cb")),
+    subject = unsafe(Subject.from("user-1")),
+    scopes = unsafe(Scopes.parse("read")),
+    details = AuthorizationDetails.empty,
+    pkce = Some(Pkce(challenge, CodeChallengeMethod.S256)),
+    expiresAt = Start.plusSeconds(60L)
+  )
+
+  private val registered: Client = Client(
+    clientId,
+    Set(unsafe(RedirectUri.from("https://client.example/cb"))),
+    unsafe(Scopes.parse("read")),
+    ClientAuthMethod.ClientSecretBasic,
+    Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
+  )
+
+  private val exchange: Map[String, String] = Map(
+    "grant_type" -> "authorization_code",
+    "code" -> "code-1",
+    "code_verifier" -> verifier.value,
+    "client_id" -> clientId.value
+  )
+
+  private val credentials: Map[String, String] =
+    Map("grant_type" -> "client_credentials", "client_id" -> clientId.value)
+
+  private def application: IO[
+    (HttpRoutes[IO], Ref[IO, Instant], SessionLogin[IO], InMemoryConsentStore[IO])
+  ] =
+    for {
+      moment <- Ref.of[IO, Instant](Start)
+      clock = new Clock[IO] { def instant: IO[Instant] = moment.get }
+      counter <- Ref.of[IO, Int](0)
+      entropy = new Entropy[IO] {
+        def bytes(n: Int): IO[Array[Byte]] =
+          counter.updateAndGet(_ + 1).map(calls => Array.fill(n)(calls.toByte))
+      }
+      codes <- InMemoryCodeStore.create[IO](clock)
+      _ <- codes.save(recorded)
+      tokens <- InMemoryTokenStore.create[IO](clock)
+      grants <- InMemoryGrantStore.create[IO]
+      devices <- InMemoryDeviceStore.create[IO](clock)
+      replays <- InMemoryReplayStore.create[IO](clock)
+      clients <- InMemoryClientStore.create[IO](List(registered))
+      consents <- InMemoryConsentStore.create[IO]
+      login <- SessionLogin.create[IO]
+      authentication = new RegisteredClientAuthentication[IO](clients)
+      service = new TokenService[IO](
+        codes,
+        tokens,
+        grants,
+        devices,
+        clock,
+        entropy,
+        LifetimePolicy.defaults,
+        Some(TokenService.Signing(issuer, Fakes.signingKey))
+      )
+      proofs = TokenEndpoint.Proofs(new DpopProofs[IO](replays, clock), TokenUri)
+      authorization = new AuthorizationEndpoint[IO](
+        clients,
+        login,
+        new AuthorizationService[IO](codes, consents, clock, entropy, LifetimePolicy.defaults),
+        issuer
+      )
+    } yield (
+      Interpreter.routes[IO](
+        List(
+          Server.authorize(authorization),
+          Server.token(new TokenEndpoint[IO](authentication, service, Some(proofs))),
+          Server.introspection(new IntrospectionEndpoint[IO](authentication, tokens, grants))
+        )
+      ),
+      moment,
+      login,
+      consents
+    )
+
+  private def post(form: Map[String, String], proof: Option[String] = None): Request[IO] =
+    Request[IO](
+      method = Method.POST,
+      uri = Uri.unsafeFromString(TokenUri),
+      headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)) ++
+        Headers(Authorization(BasicCredentials(clientId.value, "s3cret"))) ++
+        Headers(proof.toList.map(value => Header.Raw(CIString("DPoP"), value))),
+      body = Stream.emits(Form.render(form).getBytes(StandardCharsets.UTF_8).toSeq).covary[IO]
+    )
+
+  private def introspect(token: String): Request[IO] =
+    Request[IO](
+      method = Method.POST,
+      uri = Uri.unsafeFromString("http://localhost/introspection"),
+      headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)) ++
+        Headers(Authorization(BasicCredentials(clientId.value, "s3cret"))),
+      body = Stream
+        .emits(Form.render(Map("token" -> token)).getBytes(StandardCharsets.UTF_8).toSeq)
+        .covary[IO]
+    )
+
+  private def authorize(query: Map[String, String]): Request[IO] =
+    Request[IO](
+      method = Method.GET,
+      uri = Uri.unsafeFromString("http://localhost/authorize?" + Form.render(query))
+    )
+
+  private val requested: Map[String, String] = Map(
+    "response_type" -> "code",
+    "client_id" -> clientId.value,
+    "redirect_uri" -> "https://client.example/cb",
+    "scope" -> "read",
+    "state" -> "xyz",
+    "code_challenge" -> challenge.value,
+    "code_challenge_method" -> "S256"
+  )
+
+  private def body(response: Response[IO]): IO[String] =
+    response.body.compile.toVector.map(bytes => new String(bytes.toArray, StandardCharsets.UTF_8))
+
+  private def field(text: String, name: String): String =
+    io.circe.parser
+      .parse(text)
+      .toOption
+      .flatMap(_.hcursor.get[String](name).toOption)
+      .getOrElse(sys.error(s"no $name in $text"))
+
+  private def location(response: Response[IO]): Option[String] =
+    response.headers.headers.find(_.name.toString == "Location").map(_.value)
+
+  private def query(response: Response[IO]): Map[String, String] =
+    location(response)
+      .flatMap(value => Form.parse(value.dropWhile(_ != '?').drop(1)).toOption)
+      .getOrElse(sys.error("no redirect"))
+
+  private def encoded(json: Json): String =
+    Base64.getUrlEncoder.withoutPadding.encodeToString(json.noSpaces.getBytes(StandardCharsets.UTF_8))
+
+  private def forged(alg: String): String = {
+    val header = Json.obj(
+      "typ" -> Json.fromString("dpop+jwt"),
+      "alg" -> Json.fromString(alg),
+      "jwk" -> Json.obj(
+        "kty" -> Json.fromString("RSA"),
+        "n" -> Json.fromString(Fakes.Modulus),
+        "e" -> Json.fromString(Fakes.Exponent)
+      )
+    )
+    val payload = Json.obj(
+      "jti" -> Json.fromString("forged-1"),
+      "htm" -> Json.fromString("POST"),
+      "htu" -> Json.fromString(TokenUri),
+      "iat" -> Json.fromLong(Start.getEpochSecond)
+    )
+    encoded(header) + "." + encoded(payload) + "." + "AA"
+  }
+
+  private def proven(jti: String): String =
+    unsafe(
+      Dpop.prove(
+        Alg.RS256,
+        Fakes.signingPair.getPrivate,
+        Fakes.signingJwk,
+        unsafe(JwtId.from(jti)),
+        "POST",
+        TokenUri,
+        Start
+      )
+    )
+
+  test("a replayed code revokes the tokens it already issued") {
+    for {
+      tuple <- application
+      (served, _, _, _) = tuple
+      first <- served.run(post(exchange)).value
+      access <- body(first.get).map(field(_, "access_token"))
+      before <- served.run(introspect(access)).value
+      beforeText <- body(before.get)
+      replayed <- served.run(post(exchange)).value
+      replayedText <- body(replayed.get)
+      after <- served.run(introspect(access)).value
+      afterText <- body(after.get)
+    } yield {
+      assertEquals(first.get.status, Status.Ok)
+      assertEquals(field(beforeText, "active"), "true")
+      assertEquals(replayed.get.status, Status.BadRequest)
+      assertEquals(field(replayedText, "error"), "invalid_grant")
+      assertEquals(field(afterText, "active"), "false")
+    }
+  }
+
+  test("an unregistered redirect uri is refused without a redirect") {
+    for {
+      tuple <- application
+      (served, _, _, _) = tuple
+      answered <- served
+        .run(authorize(requested.updated("redirect_uri", "https://evil.example/cb")))
+        .value
+      response = answered.get
+      text <- body(response)
+    } yield {
+      assertEquals(response.status, Status.BadRequest)
+      assertEquals(location(response), None)
+      assertEquals(field(text, "error"), "invalid_request")
+      assert(!text.contains("evil.example"))
+    }
+  }
+
+  test("a downgrade to the plain challenge method is refused without a code") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      tuple <- application
+      (served, _, login, consents) = tuple
+      _ <- consents.grant(ConsentRecord(clientId, user, unsafe(Scopes.parse("read"))))
+      _ <- login.login(user)
+      answered <- served
+        .run(authorize(requested.updated("code_challenge_method", "plain")))
+        .value
+      response = answered.get
+    } yield {
+      assertEquals(response.status, Status.Found)
+      assertEquals(query(response).get("error"), Some("invalid_request"))
+      assertEquals(query(response).get("code"), None)
+    }
+  }
+
+  test("a token request without the proven verifier is refused") {
+    for {
+      tuple <- application
+      (served, _, _, _) = tuple
+      answered <- served.run(post(exchange - "code_verifier")).value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.BadRequest)
+      assertEquals(field(text, "error"), "invalid_request")
+    }
+  }
+
+  test("a proof by an unsigned or symmetric algorithm is refused") {
+    for {
+      tuple <- application
+      (served, _, _, _) = tuple
+      unsigned <- served.run(post(credentials, Some(forged("none")))).value
+      unsignedText <- body(unsigned.get)
+      symmetric <- served.run(post(credentials, Some(forged("HS256")))).value
+      symmetricText <- body(symmetric.get)
+    } yield {
+      assertEquals(unsigned.get.status, Status.BadRequest)
+      assertEquals(field(unsignedText, "error"), "invalid_dpop_proof")
+      assertEquals(symmetric.get.status, Status.BadRequest)
+      assertEquals(field(symmetricText, "error"), "invalid_dpop_proof")
+    }
+  }
+
+  test("a replayed proof is refused") {
+    val proof = proven("proof-1")
+    for {
+      tuple <- application
+      (served, _, _, _) = tuple
+      first <- served.run(post(credentials, Some(proof))).value
+      firstText <- body(first.get)
+      second <- served.run(post(credentials, Some(proof))).value
+      secondText <- body(second.get)
+    } yield {
+      assertEquals(first.get.status, Status.Ok)
+      assertEquals(field(firstText, "token_type"), "DPoP")
+      assertEquals(second.get.status, Status.BadRequest)
+      assertEquals(field(secondText, "error"), "invalid_dpop_proof")
+    }
+  }
+
+  test("an expired code is refused") {
+    for {
+      tuple <- application
+      (served, moment, _, _) = tuple
+      _ <- moment.set(Start.plusSeconds(61L))
+      answered <- served.run(post(exchange)).value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.BadRequest)
+      assertEquals(field(text, "error"), "invalid_grant")
+    }
+  }
+
+  test("an expired access token is introspected as inactive") {
+    for {
+      tuple <- application
+      (served, moment, _, _) = tuple
+      issued <- served.run(post(exchange)).value
+      access <- body(issued.get).map(field(_, "access_token"))
+      _ <- moment.set(Start.plusSeconds(3601L))
+      answered <- served.run(introspect(access)).value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(issued.get.status, Status.Ok)
+      assertEquals(field(text, "active"), "false")
+    }
+  }
+
+  test("a token minted for one resource is refused by another resource server") {
+    def guard(moment: Ref[IO, Instant], audience: String): BearerGuard[IO] =
+      new BearerGuard[IO](
+        IO.pure(Right(Jwks(List(Fakes.signingJwk)))),
+        issuer,
+        new Clock[IO] { def instant: IO[Instant] = moment.get },
+        Some(unsafe(Audience.from(audience)))
+      )
+    for {
+      tuple <- application
+      (served, moment, _, _) = tuple
+      issued <- served
+        .run(post(credentials.updated("resource", "https://api.example")))
+        .value
+      access <- body(issued.get).map(field(_, "access_token"))
+      foreign <- guard(moment, "https://other.example")
+        .verify(Some("Bearer " + access), unsafe(Scopes.parse("read")))
+      accepted <- guard(moment, "https://api.example")
+        .verify(Some("Bearer " + access), unsafe(Scopes.parse("read")))
+    } yield {
+      assertEquals(issued.get.status, Status.Ok)
+      assertEquals(foreign.left.toOption.map(_.status), Some(401))
+      assert(foreign.left.toOption.exists(_.header.contains("invalid_token")))
+      assertEquals(accepted.toOption.map(_.audience.map(_.value)), Some(Some("https://api.example")))
+    }
+  }
+}
