@@ -116,6 +116,19 @@ class NegativeSpec extends CatsEffectSuite {
   private val credentials: Map[String, String] =
     Map("grant_type" -> "client_credentials", "client_id" -> clientId.value)
 
+  private val mtlsId: ClientId = unsafe(ClientId.from("client-mtls"))
+
+  private val mtlsClient: Client = Client(
+    mtlsId,
+    Set.empty,
+    unsafe(Scopes.parse("read")),
+    ClientAuthMethod.SelfSignedTlsClientAuth,
+    None,
+    certificateThumbprint = Some(
+      unsafe(kots.oauth2.core.CertificateThumbprint.from(Fakes.ClientCertificateThumbprint))
+    )
+  )
+
   private def application: IO[
     (HttpRoutes[IO], Ref[IO, Instant], SessionLogin[IO], InMemoryConsentStore[IO])
   ] =
@@ -133,7 +146,7 @@ class NegativeSpec extends CatsEffectSuite {
       grants <- InMemoryGrantStore.create[IO]
       devices <- InMemoryDeviceStore.create[IO](clock)
       replays <- InMemoryReplayStore.create[IO](clock)
-      clients <- InMemoryClientStore.create[IO](List(registered))
+      clients <- InMemoryClientStore.create[IO](List(registered, mtlsClient))
       consents <- InMemoryConsentStore.create[IO]
       login <- SessionLogin.create[IO]
       authentication = new RegisteredClientAuthentication[IO](clients)
@@ -383,6 +396,48 @@ class NegativeSpec extends CatsEffectSuite {
     } yield {
       assertEquals(issued.get.status, Status.Ok)
       assertEquals(field(text, "active"), "false")
+    }
+  }
+
+  test("a binding is granted only to the client that proved its certificate") {
+    val mtlsRequest = Request[IO](
+      method = Method.POST,
+      uri = Uri.unsafeFromString(TokenUri),
+      headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)) ++
+        Headers(
+          Header.Raw(
+            CIString("X-Client-Cert"),
+            java.net.URLEncoder.encode(Fakes.ClientCertificatePem, "UTF-8")
+          )
+        ),
+      body = Stream
+        .emits(
+          Form
+            .render(Map("grant_type" -> "client_credentials", "client_id" -> mtlsId.value))
+            .getBytes(StandardCharsets.UTF_8)
+            .toSeq
+        )
+        .covary[IO]
+    )
+    def claimsOf(token: String) =
+      kots.oauth2.jose.Jwt
+        .claims(token, Jwks(List(Fakes.signingJwk)), Start)
+        .toOption
+        .get
+    for {
+      tuple <- application
+      (served, _, _, _) = tuple
+      bound <- served.run(mtlsRequest).value
+      boundToken <- body(bound.get).map(field(_, "access_token"))
+      plain <- served.run(post(credentials)).value
+      plainToken <- body(plain.get).map(field(_, "access_token"))
+    } yield {
+      assertEquals(bound.get.status, Status.Ok)
+      assertEquals(
+        claimsOf(boundToken).x5t.map(_.value),
+        Some(Fakes.ClientCertificateThumbprint)
+      )
+      assertEquals(claimsOf(plainToken).x5t, None)
     }
   }
 
