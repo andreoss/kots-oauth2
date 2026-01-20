@@ -7,6 +7,7 @@ import cats.effect.IO
 import kots.oauth2.core.AuthorizationCode
 import kots.oauth2.core.AuthorizationDetails
 import kots.oauth2.core.AuthorizationServerMetadata
+import kots.oauth2.core.CertificateThumbprint
 import kots.oauth2.core.ClientAuthMethod
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.ClientSecret
@@ -128,6 +129,17 @@ class InterpreterSpec extends CatsEffectSuite {
     Some(ClientSecretHash.of(unsafe(ClientSecret.from("s3cret"))))
   )
 
+  private val mtlsId: ClientId = unsafe(ClientId.from("client-mtls"))
+
+  private val mtlsClient: Client = Client(
+    mtlsId,
+    Set.empty,
+    unsafe(Scopes.parse("read")),
+    ClientAuthMethod.SelfSignedTlsClientAuth,
+    None,
+    certificateThumbprint = Some(unsafe(CertificateThumbprint.from(Fakes.ClientCertificateThumbprint)))
+  )
+
   private def wellKnown: Request[IO] =
     Request[IO](
       method = Method.GET,
@@ -185,7 +197,7 @@ class InterpreterSpec extends CatsEffectSuite {
       devices <- InMemoryDeviceStore.create[IO](clock)
       keys <- InMemoryKeyStore.create[IO]
       _ <- keys.add(published)
-      clients <- InMemoryClientStore.create[IO](List(registered))
+      clients <- InMemoryClientStore.create[IO](List(registered, mtlsClient))
       consents <- InMemoryConsentStore.create[IO]
       login <- SessionLogin.create[IO]
       pushed <- InMemoryPushedRequestStore.create[IO](clock)
@@ -996,6 +1008,66 @@ class InterpreterSpec extends CatsEffectSuite {
       assert(field(answeredText, "access_token").nonEmpty)
       assert(field(answeredText, "refresh_token").nonEmpty)
       assertEquals(field(replayedText, "error"), "invalid_grant")
+    }
+  }
+
+  test("a forwarded client certificate authenticates the mutual tls client") {
+    val request = Request[IO](
+      method = Method.POST,
+      uri = Uri.unsafeFromString("http://localhost/token"),
+      headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)) ++
+        Headers(
+          Header.Raw(
+            CIString(Endpoints.ClientCertHeader),
+            java.net.URLEncoder.encode(Fakes.ClientCertificatePem, "UTF-8")
+          )
+        ),
+      body = Stream
+        .emits(
+          Form
+            .render(Map("grant_type" -> "client_credentials", "client_id" -> mtlsId.value))
+            .getBytes(StandardCharsets.UTF_8)
+            .toSeq
+        )
+        .covary[IO]
+    )
+    for {
+      served <- routes
+      answered <- served.run(request).value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.Ok)
+      assert(field(text, "access_token").nonEmpty)
+    }
+  }
+
+  test("a certificate of another key is refused as invalid client") {
+    val request = Request[IO](
+      method = Method.POST,
+      uri = Uri.unsafeFromString("http://localhost/token"),
+      headers = Headers(`Content-Type`(MediaType.application.`x-www-form-urlencoded`)) ++
+        Headers(
+          Header.Raw(
+            CIString(Endpoints.ClientCertHeader),
+            java.net.URLEncoder.encode(Fakes.OtherCertificatePem, "UTF-8")
+          )
+        ),
+      body = Stream
+        .emits(
+          Form
+            .render(Map("grant_type" -> "client_credentials", "client_id" -> mtlsId.value))
+            .getBytes(StandardCharsets.UTF_8)
+            .toSeq
+        )
+        .covary[IO]
+    )
+    for {
+      served <- routes
+      answered <- served.run(request).value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.Unauthorized)
+      assert(text.contains("invalid_client"))
     }
   }
 
