@@ -108,6 +108,23 @@ class ErrorSpec extends ScalaCheckSuite {
     assertEquals(e.description, Some("ClientId: empty"))
   }
 
+  test("a rate limited answer shares the unavailable code with its own status") {
+    val limited = OAuth2Error.RateLimited(30L)
+    assertEquals(limited.code, "temporarily_unavailable")
+    assertEquals(limited.status, OAuth2Error.RateLimitStatus)
+    assertEquals(limited.body, Map("error" -> "temporarily_unavailable"))
+  }
+
+  test("a wire answer with the rate limit status decodes as rate limited") {
+    val decoded = OAuth2Error.fromWire(429, Map("error" -> "temporarily_unavailable"))
+    assertEquals(decoded, Right(OAuth2Error.RateLimited(0L)))
+    assertEquals(
+      OAuth2Error.fromWire(503, Map("error" -> "temporarily_unavailable")),
+      Right(OAuth2Error.TemporarilyUnavailable())
+    )
+    assert(OAuth2Error.fromWire(429, Map("error" -> "invalid_request")).isLeft)
+  }
+
   test("a wire body without a code is refused") {
     assert(OAuth2Error.fromWire(400, Map.empty).isLeft)
     assert(OAuth2Error.fromWire(400, Map("error_description" -> "gone")).isLeft)
