@@ -7,7 +7,7 @@ import cats.effect.IO
 import cats.effect.IOApp
 
 import kots.oauth2.store.sql.Migrations
-import kots.oauth2.store.sql.SqlTokenStore
+import kots.oauth2.store.sql.Schema
 
 object MigrateTool extends IOApp {
 
@@ -25,7 +25,7 @@ object MigrateTool extends IOApp {
     )
 
   private def dispatch(command: String, url: String): IO[ExitCode] =
-    Migrations.of(connect(url), SqlTokenStore.migrations) match {
+    Migrations.of(connect(url), Schema.migrations) match {
       case Left(reason)      => IO.println(reason).as(ExitCode.Error)
       case Right(migrations) =>
         command match {
