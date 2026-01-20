@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: sbt
+      - uses: sbt/setup-sbt@v1
+      - name: lint
+        run: sbt -batch scalafmtCheckAll scalafmtSbtCheck "scalafixAll --check"
+      - name: cross build, test, coverage
+        run: sbt -batch +coverage +test +coverageReport
+      - name: binary compatibility
+        run: sbt -batch compatibility
+      - name: publish
+        run: sbt -batch +publishLocal
+      - name: image
+        run: |
+          sbt -batch host/assembly
+          docker compose build
