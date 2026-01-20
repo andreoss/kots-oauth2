@@ -60,4 +60,16 @@ class TokenHashSpec extends ScalaCheckSuite {
       )
     }
   }
+
+  test("a stored hash rehydrates only from a sha-256 hex value") {
+    val token = AccessToken.from("at-1").toOption.get
+    val hash = AccessTokenHash.of(token)
+    assertEquals(AccessTokenHash.fromStored(hash.value), Right(hash))
+    assert(AccessTokenHash.fromStored("nothex").isLeft)
+    assert(AccessTokenHash.fromStored("A" * 64).isLeft)
+    val refresh = RefreshToken.from("rt-1").toOption.get
+    val refreshHash = RefreshTokenHash.of(refresh)
+    assertEquals(RefreshTokenHash.fromStored(refreshHash.value), Right(refreshHash))
+    assert(RefreshTokenHash.fromStored("").isLeft)
+  }
 }
