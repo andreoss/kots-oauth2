@@ -64,14 +64,15 @@ final class TokenEndpoint[F[_]: Monad](
       case Right(input)   =>
         authentication.authenticate(input.copy(certificate = certificate)).flatMap {
           case Left(error)   => Monad[F].pure(Left(error))
-          case Right(client) => grant(parameters, client, jkt)
+          case Right(client) => grant(parameters, client, jkt, TokenEndpoint.bound(client, certificate))
         }
     }
 
   private def grant(
       parameters: Map[String, String],
       client: Client,
-      jkt: Option[KeyThumbprint]
+      jkt: Option[KeyThumbprint],
+      x5t: Option[kots.oauth2.core.CertificateThumbprint]
   ): F[Either[OAuth2Error, TokenResponse]] = {
     def answered(issued: IssuedToken): TokenResponse =
       if (jkt.isDefined) TokenEndpoint.render(issued).copy(tokenType = TokenResponse.DpopTokenType)
@@ -81,15 +82,16 @@ final class TokenEndpoint[F[_]: Monad](
       case Right(request) =>
         request match {
           case code: TokenRequest.Code =>
-            tokens.authorizationCode(code, client, jkt).map(_.map(answered))
-          case refresh: TokenRequest.Refresh => tokens.refresh(refresh, client, jkt).map(_.map(answered))
+            tokens.authorizationCode(code, client, jkt, x5t).map(_.map(answered))
+          case refresh: TokenRequest.Refresh =>
+            tokens.refresh(refresh, client, jkt, x5t).map(_.map(answered))
           case credentials: TokenRequest.ClientCredentials =>
-            tokens.clientCredentials(credentials, client, jkt).map(_.map(answered))
+            tokens.clientCredentials(credentials, client, jkt, x5t).map(_.map(answered))
           case device: TokenRequest.Device =>
-            tokens.deviceCode(device, client, jkt).map(_.map(answered))
+            tokens.deviceCode(device, client, jkt, x5t).map(_.map(answered))
           case exchange: TokenRequest.Exchange =>
             tokens
-              .exchange(exchange, client, jkt)
+              .exchange(exchange, client, jkt, x5t)
               .map(
                 _.map(issued => answered(issued).copy(issuedTokenType = Some(ExchangeTokenType.AccessToken)))
               )
@@ -101,6 +103,17 @@ final class TokenEndpoint[F[_]: Monad](
 object TokenEndpoint {
 
   val ProofMethod: String = "POST"
+
+  private[server] def bound(
+      client: Client,
+      certificate: Option[kots.oauth2.core.ClientCertificate]
+  ): Option[kots.oauth2.core.CertificateThumbprint] =
+    client.authMethod match {
+      case kots.oauth2.core.ClientAuthMethod.TlsClientAuth |
+          kots.oauth2.core.ClientAuthMethod.SelfSignedTlsClientAuth =>
+        certificate.map(_.thumbprint)
+      case _ => None
+    }
 
   final case class Proofs[F[_]](validator: DpopProofs[F], uri: String)
 

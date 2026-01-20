@@ -5,6 +5,7 @@ import java.time.Instant
 
 import kots.oauth2.core.Acr
 import kots.oauth2.core.Audience
+import kots.oauth2.core.CertificateThumbprint
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.Issuer
 import kots.oauth2.core.JwtId
@@ -27,7 +28,8 @@ final case class JwtClaims(
     expiresAt: Instant,
     tokenId: JwtId,
     acr: Option[Acr] = None,
-    jkt: Option[KeyThumbprint] = None
+    jkt: Option[KeyThumbprint] = None,
+    x5t: Option[CertificateThumbprint] = None
 )
 
 object Jwt {
@@ -57,12 +59,20 @@ object Jwt {
         ) ++
           claims.audience.map(value => "aud" -> Json.fromString(value.value)) ++
           claims.acr.map(value => "acr" -> Json.fromString(value.value)) ++
-          claims.jkt.map(value => "cnf" -> Json.obj("jkt" -> Json.fromString(value.value))) ++
+          confirmation(claims) ++
           (if (claims.scopes.value.isEmpty) Nil
            else
              List("scope" -> Json.fromString(claims.scopes.value.map(_.value).toVector.sorted.mkString(" "))))
       )
       .noSpaces
+
+  val CertificateConfirmation: String = "x5t#S256"
+
+  private def confirmation(claims: JwtClaims): Option[(String, Json)] = {
+    val members = claims.jkt.map(value => "jkt" -> Json.fromString(value.value)).toList ++
+      claims.x5t.map(value => CertificateConfirmation -> Json.fromString(value.value)).toList
+    if (members.isEmpty) None else Some("cnf" -> Json.fromFields(members))
+  }
 
   private def parse(payload: String): Either[ParseFailure, JwtClaims] =
     for {
@@ -99,7 +109,26 @@ object Jwt {
         .fold(
           Right(None): Either[ParseFailure, Option[KeyThumbprint]]
         )(raw => KeyThumbprint.from(raw).map(Some(_)))
-    } yield JwtClaims(issuer, subject, audience, clientId, scopes, issuedAt, expiresAt, tokenId, acr, jkt)
+      x5t <- cursor
+        .downField("cnf")
+        .get[String](CertificateConfirmation)
+        .toOption
+        .fold(
+          Right(None): Either[ParseFailure, Option[CertificateThumbprint]]
+        )(raw => CertificateThumbprint.from(raw).map(Some(_)))
+    } yield JwtClaims(
+      issuer,
+      subject,
+      audience,
+      clientId,
+      scopes,
+      issuedAt,
+      expiresAt,
+      tokenId,
+      acr,
+      jkt,
+      x5t
+    )
 
   private def string(cursor: io.circe.HCursor, name: String): Either[ParseFailure, String] =
     cursor.get[String](name).left.map(_ => ParseFailure("Jwt", s"no $name claim"))

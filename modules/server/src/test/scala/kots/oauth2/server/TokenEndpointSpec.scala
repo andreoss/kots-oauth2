@@ -351,4 +351,92 @@ class TokenEndpointSpec extends CatsEffectSuite {
       result <- endpoint(basic("client-1", "s3cret"), codeParams("code-1").updated("client_id", "client-2"))
     } yield assertEquals(code(result), Some("invalid_client"))
   }
+
+  private val mtlsId: ClientId = unsafe(ClientId.from("client-mtls"))
+
+  private def mtlsSetup: IO[TokenEndpoint[IO]] = {
+    val clock = new Clock[IO] {
+      def instant: IO[Instant] = IO.pure(Start)
+    }
+    var calls: Int = 0
+    val entropy = new Entropy[IO] {
+      def bytes(n: Int): IO[Array[Byte]] = IO {
+        calls += 1
+        Array.fill(n)(calls.toByte)
+      }
+    }
+    val bound = Client(
+      mtlsId,
+      Set.empty,
+      unsafe(Scopes.parse("read")),
+      ClientAuthMethod.SelfSignedTlsClientAuth,
+      None,
+      certificateThumbprint = Some(
+        unsafe(
+          kots.oauth2.core.CertificateThumbprint
+            .from(kots.oauth2.jose.Fakes.ClientCertificateThumbprint)
+        )
+      )
+    )
+    for {
+      codes <- InMemoryCodeStore.create[IO](clock)
+      tokens <- InMemoryTokenStore.create[IO](clock)
+      grants <- InMemoryGrantStore.create[IO]
+      devices <- kots.oauth2.store.memory.InMemoryDeviceStore.create[IO](clock)
+      registry <- InMemoryClientStore.create[IO](List(client(), bound))
+    } yield new TokenEndpoint[IO](
+      new RegisteredClientAuthentication[IO](registry),
+      new TokenService[IO](
+        codes,
+        tokens,
+        grants,
+        devices,
+        clock,
+        entropy,
+        LifetimePolicy.defaults,
+        Some(
+          TokenService.Signing(
+            unsafe(kots.oauth2.core.Issuer.from("https://server.example")),
+            kots.oauth2.jose.Fakes.signingKey
+          )
+        )
+      )
+    )
+  }
+
+  private def mintedClaims(result: Either[OAuth2Error, TokenResponse]) =
+    kots.oauth2.jose.Jwt
+      .claims(
+        result.toOption.get.accessToken.value,
+        kots.oauth2.jose.Jwks(List(kots.oauth2.jose.Fakes.signingJwk)),
+        Start
+      )
+      .toOption
+      .get
+
+  test("a mutual tls token carries the certificate confirmation") {
+    val forwarded = java.net.URLEncoder.encode(kots.oauth2.jose.Fakes.ClientCertificatePem, "UTF-8")
+    for {
+      endpoint <- mtlsSetup
+      result <- endpoint(
+        None,
+        Map("grant_type" -> "client_credentials", "client_id" -> mtlsId.value),
+        None,
+        Some(forwarded)
+      )
+    } yield assertEquals(
+      mintedClaims(result).x5t.map(_.value),
+      Some(kots.oauth2.jose.Fakes.ClientCertificateThumbprint)
+    )
+  }
+
+  test("a secret client token carries no certificate confirmation") {
+    for {
+      endpoint <- mtlsSetup
+      result <- endpoint(
+        basic("client-1", "s3cret"),
+        Map("grant_type" -> "client_credentials", "client_id" -> clientId.value)
+      )
+    } yield assertEquals(mintedClaims(result).x5t, None)
+  }
 }

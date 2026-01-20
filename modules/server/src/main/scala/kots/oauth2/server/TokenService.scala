@@ -9,6 +9,7 @@ import kots.oauth2.core.AccessTokenHash
 import kots.oauth2.core.Audience
 import kots.oauth2.core.AuthorizationCode
 import kots.oauth2.core.AuthorizationDetails
+import kots.oauth2.core.CertificateThumbprint
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.Clock
 import kots.oauth2.core.Entropy
@@ -60,31 +61,34 @@ final class TokenService[F[_]: Monad](
   def authorizationCode(
       request: TokenRequest.Code,
       client: Client,
-      jkt: Option[KeyThumbprint] = None
+      jkt: Option[KeyThumbprint] = None,
+      x5t: Option[CertificateThumbprint] = None
   ): F[Either[OAuth2Error, IssuedToken]] =
     codes.consume(request.code).flatMap {
       case None         => replay(request.code)
       case Some(record) =>
         check(record, request, client).fold(
           error => Monad[F].pure(Left(error)),
-          _ => issue(record, request.resource.orElse(record.resource), client, jkt)
+          _ => issue(record, request.resource.orElse(record.resource), client, jkt, x5t)
         )
     }
 
   def refresh(
       request: TokenRequest.Refresh,
       client: Client,
-      jkt: Option[KeyThumbprint] = None
+      jkt: Option[KeyThumbprint] = None,
+      x5t: Option[CertificateThumbprint] = None
   ): F[Either[OAuth2Error, IssuedToken]] =
     tokens.findByRefresh(request.refreshToken).flatMap {
       case None         => reuse(request.refreshToken)
-      case Some(record) => rotate(record, request, client, jkt)
+      case Some(record) => rotate(record, request, client, jkt, x5t)
     }
 
   def clientCredentials(
       request: TokenRequest.ClientCredentials,
       client: Client,
-      jkt: Option[KeyThumbprint] = None
+      jkt: Option[KeyThumbprint] = None,
+      x5t: Option[CertificateThumbprint] = None
   ): F[Either[OAuth2Error, IssuedToken]] =
     if (!client.confidential) Monad[F].pure(Left(OAuth2Error.UnauthorizedClient(): OAuth2Error))
     else
@@ -109,7 +113,8 @@ final class TokenService[F[_]: Monad](
                     AuthorizationDetails.empty,
                     None,
                     audience,
-                    jkt = jkt
+                    jkt = jkt,
+                    x5t = x5t
                   )
                 )
             }
@@ -119,7 +124,8 @@ final class TokenService[F[_]: Monad](
   def deviceCode(
       request: TokenRequest.Device,
       client: Client,
-      jkt: Option[KeyThumbprint] = None
+      jkt: Option[KeyThumbprint] = None,
+      x5t: Option[CertificateThumbprint] = None
   ): F[Either[OAuth2Error, IssuedToken]] =
     devices.poll(request.deviceCode).flatMap {
       case None         => Monad[F].pure(Left(TokenService.rejected))
@@ -161,7 +167,8 @@ final class TokenService[F[_]: Monad](
                             AuthorizationDetails.empty,
                             refreshExpiresAt,
                             audience,
-                            jkt = jkt
+                            jkt = jkt,
+                            x5t = x5t
                           )
                         )
                     }
@@ -204,7 +211,8 @@ final class TokenService[F[_]: Monad](
       record: TokenRecord,
       request: TokenRequest.Refresh,
       client: Client,
-      jkt: Option[KeyThumbprint]
+      jkt: Option[KeyThumbprint],
+      x5t: Option[CertificateThumbprint]
   ): F[Either[OAuth2Error, IssuedToken]] =
     grants.find(record.grantId).flatMap {
       case Some(grant) if !grant.revoked && record.clientId == client.id =>
@@ -226,7 +234,8 @@ final class TokenService[F[_]: Monad](
                       record.details,
                       record.refreshExpiresAt,
                       narrowed.orElse(record.audience),
-                      jkt = jkt
+                      jkt = jkt,
+                      x5t = x5t
                     )
                   ).flatMap {
                     case Right(issued) =>
@@ -243,7 +252,8 @@ final class TokenService[F[_]: Monad](
       record: CodeRecord,
       resource: Option[ResourceIndicator],
       client: Client,
-      jkt: Option[KeyThumbprint]
+      jkt: Option[KeyThumbprint],
+      x5t: Option[CertificateThumbprint]
   ): F[Either[OAuth2Error, IssuedToken]] =
     clock.instant.flatMap { now =>
       val refreshExpiresAt =
@@ -262,7 +272,8 @@ final class TokenService[F[_]: Monad](
               record.details,
               refreshExpiresAt,
               audience,
-              jkt = jkt
+              jkt = jkt,
+              x5t = x5t
             )
           ).flatMap {
             case Right(issued) => codes.redeem(record.code, issued.record.grantId).as(Right(issued))
@@ -274,7 +285,8 @@ final class TokenService[F[_]: Monad](
   def exchange(
       request: TokenRequest.Exchange,
       client: Client,
-      jkt: Option[KeyThumbprint] = None
+      jkt: Option[KeyThumbprint] = None,
+      x5t: Option[CertificateThumbprint] = None
   ): F[Either[OAuth2Error, IssuedToken]] =
     bearer(request.subjectToken, client).flatMap {
       case Left(error)          => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
@@ -301,7 +313,8 @@ final class TokenService[F[_]: Monad](
                           None,
                           audience,
                           actor,
-                          jkt = jkt
+                          jkt = jkt,
+                          x5t = x5t
                         )
                       )
                     }
@@ -407,7 +420,8 @@ final class TokenService[F[_]: Monad](
               expiresAt = expiresAt,
               tokenId = tokenId,
               acr = mint.acr,
-              jkt = mint.jkt
+              jkt = mint.jkt,
+              x5t = mint.x5t
             )
           )
           token <- AccessToken.from(compact)
@@ -438,7 +452,8 @@ object TokenService {
       audience: Option[Audience] = None,
       actor: Option[Subject] = None,
       acr: Option[kots.oauth2.core.Acr] = None,
-      jkt: Option[kots.oauth2.core.KeyThumbprint] = None
+      jkt: Option[kots.oauth2.core.KeyThumbprint] = None,
+      x5t: Option[CertificateThumbprint] = None
   )
 
   private val rejected: OAuth2Error = OAuth2Error.InvalidGrant()

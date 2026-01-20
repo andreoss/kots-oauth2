@@ -75,6 +75,31 @@ class JwtSpec extends FunSuite {
     assertEquals(Jwt.claims(compact, published, Start), Right(bound))
   }
 
+  test("a certificate bound token round trips the certificate confirmation") {
+    val thumbprint = kots.oauth2.core.CertificateThumbprint.from(Fakes.ClientCertificateThumbprint)
+    val bound = claims.copy(x5t = thumbprint.toOption)
+    val compact = Jwt.issue(Fakes.signingKey, bound).toOption.get
+    val payload = new String(Base64.getUrlDecoder.decode(compact.split('.')(1)), "UTF-8")
+    val cursor = io.circe.parser.parse(payload).toOption.get.hcursor
+    assertEquals(
+      cursor.downField("cnf").get[String](Jwt.CertificateConfirmation).toOption,
+      Some(Fakes.ClientCertificateThumbprint)
+    )
+    assertEquals(Jwt.claims(compact, published, Start), Right(bound))
+  }
+
+  test("a token bound to a key and a certificate renders both confirmations") {
+    val bound = claims.copy(
+      jkt = Dpop.thumbprint(Fakes.signingJwk).toOption,
+      x5t = kots.oauth2.core.CertificateThumbprint.from(Fakes.ClientCertificateThumbprint).toOption
+    )
+    val compact = Jwt.issue(Fakes.signingKey, bound).toOption.get
+    val payload = new String(Base64.getUrlDecoder.decode(compact.split('.')(1)), "UTF-8")
+    val cursor = io.circe.parser.parse(payload).toOption.get.hcursor
+    assertEquals(cursor.downField("cnf").keys.map(_.toSet), Some(Set("jkt", Jwt.CertificateConfirmation)))
+    assertEquals(Jwt.claims(compact, published, Start), Right(bound))
+  }
+
   test("a jws of another type is not an access token") {
     val compact = Jws
       .sign(Alg.RS256, Fakes.keyId("key-1"), Fakes.signingPair.getPrivate, """{"sub":"user-1"}""")
