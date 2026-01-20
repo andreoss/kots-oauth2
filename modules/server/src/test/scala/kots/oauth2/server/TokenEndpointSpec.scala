@@ -414,6 +414,13 @@ class TokenEndpointSpec extends CatsEffectSuite {
       .toOption
       .get
 
+  test("a request without a body client id authenticates by the header alone") {
+    for {
+      endpoint <- setup()
+      result <- endpoint(basic("client-1", "s3cret"), Map("grant_type" -> "client_credentials"))
+    } yield assert(result.isRight)
+  }
+
   test("a mutual tls token carries the certificate confirmation") {
     val forwarded = java.net.URLEncoder.encode(kots.oauth2.jose.Fakes.ClientCertificatePem, "UTF-8")
     for {
