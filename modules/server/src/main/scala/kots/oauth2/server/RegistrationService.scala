@@ -105,7 +105,7 @@ final class RegistrationService[F[_]: Monad](
       registration: ClientRegistration,
       raw: String
   ): Either[OAuth2Error, Option[ClientSecret]] =
-    if (registration.authMethod == ClientAuthMethod.None) Right(None)
+    if (RegistrationService.secretless(registration.authMethod)) Right(None)
     else
       ClientSecret
         .from(raw)
@@ -118,6 +118,11 @@ object RegistrationService {
   val IdEntropyBytes: Int = 16
 
   val SecretEntropyBytes: Int = 32
+
+  private[server] def secretless(method: ClientAuthMethod): Boolean =
+    method == ClientAuthMethod.None ||
+      method == ClientAuthMethod.TlsClientAuth ||
+      method == ClientAuthMethod.SelfSignedTlsClientAuth
 
   private val rejected: OAuth2Error = OAuth2Error.InvalidClient()
 

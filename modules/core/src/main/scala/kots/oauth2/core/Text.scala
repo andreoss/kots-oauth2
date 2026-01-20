@@ -13,6 +13,12 @@ private[core] object Text {
   def printableToken(typeName: String, raw: String): Either[ParseFailure, String] =
     bounded(typeName, raw, TokenMaxLength)
 
+  def line(typeName: String, raw: String): Either[ParseFailure, String] =
+    if (raw.isEmpty) Left(ParseFailure(typeName, "empty"))
+    else if (raw.length > MaxLength) Left(ParseFailure(typeName, "too long"))
+    else if (!raw.forall(c => c >= 0x20 && c <= 0x7e)) Left(ParseFailure(typeName, "not printable"))
+    else Right(raw)
+
   private def bounded(typeName: String, raw: String, limit: Int): Either[ParseFailure, String] =
     if (raw.isEmpty) Left(ParseFailure(typeName, "empty"))
     else if (raw.length > limit) Left(ParseFailure(typeName, "too long"))

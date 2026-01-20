@@ -1,5 +1,7 @@
 package kots.oauth2.store
 
+import kots.oauth2.core.CertificateSubject
+import kots.oauth2.core.CertificateThumbprint
 import kots.oauth2.core.ClientAuthMethod
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.ClientSecret
@@ -17,7 +19,9 @@ final case class Client(
     secretHash: Option[ClientSecretHash],
     keys: Jwks = Jwks.empty,
     registrationTokenHash: Option[RegistrationTokenHash] = None,
-    secret: Option[ClientSecret] = None
+    secret: Option[ClientSecret] = None,
+    certificateSubject: Option[CertificateSubject] = None,
+    certificateThumbprint: Option[CertificateThumbprint] = None
 ) {
   def confidential: Boolean = authMethod != ClientAuthMethod.None
 

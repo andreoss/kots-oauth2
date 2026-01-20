@@ -20,7 +20,8 @@ trait TokenLogic[F[_]] {
   def apply(
       basic: Option[String],
       parameters: Map[String, String],
-      proof: Option[String] = None
+      proof: Option[String] = None,
+      certificate: Option[String] = None
   ): F[Either[OAuth2Error, TokenResponse]]
 }
 
@@ -113,12 +114,12 @@ object Server {
 
   def token[F[_]: Functor](logic: TokenLogic[F]): ServerEndpoint[Any, F] =
     ServerEndpoint
-      .public[(Option[String], Map[String, String], Option[String]), OAuth2Error, Map[
+      .public[(Option[String], Map[String, String], Option[String], Option[String]), OAuth2Error, Map[
         String,
         String
       ], Any, F](
         Endpoints.token,
-        _ => input => logic(input._1, input._2, input._3).map(_.map(TokenResponse.render))
+        _ => input => logic(input._1, input._2, input._3, input._4).map(_.map(TokenResponse.render))
       )
 
   def revocation[F[_]](logic: RevocationLogic[F]): ServerEndpoint[Any, F] =
