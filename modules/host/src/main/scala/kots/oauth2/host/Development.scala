@@ -63,6 +63,9 @@ import org.http4s.ember.server.EmberServerBuilder
 
 object Development {
 
+  val AnyHost: com.comcast.ip4s.Ipv4Address =
+    com.comcast.ip4s.Ipv4Address.fromBytes(0, 0, 0, 0)
+
   val SeedClientId: String = "dev-client"
 
   val SeedClientSecret: String = "dev-secret"
@@ -230,6 +233,7 @@ object Development {
           Resource.eval(secureEntropy[F]).flatMap { entropy =>
             EmberServerBuilder
               .default[F]
+              .withHost(Development.AnyHost)
               .withPort(port)
               .withHttpApp(Correlated(entropy, Measured(metrics, bound)).orNotFound)
               .build
