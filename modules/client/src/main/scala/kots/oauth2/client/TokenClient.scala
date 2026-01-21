@@ -184,6 +184,7 @@ object TokenClient {
       scope <- cursor
         .get[String]("scope")
         .toOption
+        .filter(_.nonEmpty)
         .fold(
           Right(Scopes.empty): Either[OAuth2Error, Scopes]
         )(raw => Scopes.parse(raw).left.map(_ => unreadable))
