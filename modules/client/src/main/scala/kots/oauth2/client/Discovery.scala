@@ -6,7 +6,6 @@ import cats.effect.Concurrent
 import cats.effect.kernel.Ref
 import cats.syntax.flatMap._
 import cats.syntax.functor._
-import cats.syntax.traverse._
 
 import kots.oauth2.core.Clock
 import kots.oauth2.core.EndpointUri
@@ -118,15 +117,16 @@ object Discovery {
       jwks <- string(cursor, "jwks_uri").flatMap(EndpointUri.from)
     } yield DiscoveredMetadata(declared, authorization, token, jwks)
 
-  private def keysOf(text: String): Either[ParseFailure, Jwks] =
+  def keys(text: String): Either[ParseFailure, Jwks] =
     for {
       json <- parse(text)
       entries <- json.hcursor
         .downField("keys")
         .values
         .toRight(ParseFailure("Discovery", "no keys array"))
-      keys <- entries.toList.traverse(keyOf)
-    } yield Jwks(keys)
+    } yield Jwks(entries.toList.flatMap(entry => keyOf(entry).toOption))
+
+  private def keysOf(text: String): Either[ParseFailure, Jwks] = keys(text)
 
   private def keyOf(entry: Json): Either[ParseFailure, Jwk] = {
     val cursor = entry.hcursor

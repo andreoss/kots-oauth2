@@ -146,6 +146,33 @@ class BearerGuardSpec extends CatsEffectSuite {
       .map(verified => assertEquals(verified.toOption.map(_.subject.value), Some("user-1")))
   }
 
+  test("a provider token of the plain jwt type is read only when allowed") {
+    val compact = kots.oauth2.jose.Jws
+      .sign(
+        kots.oauth2.jose.Alg.RS256,
+        Fakes.keyId("key-1"),
+        Fakes.signingPair.getPrivate,
+        Jwt.render(claims()),
+        "JWT"
+      )
+      .toOption
+      .get
+    val strict = guard()
+    val tolerant = new BearerGuard[IO](
+      IO.pure(Right(published)),
+      issuer,
+      clockAt(Start),
+      tokenTypes = Set(Jwt.AccessTokenType, "JWT")
+    )
+    for {
+      refused <- strict.verify(Some("Bearer " + compact), Scopes.empty)
+      accepted <- tolerant.verify(Some("Bearer " + compact), Scopes.empty)
+    } yield {
+      assert(refused.left.toOption.exists(_.header.contains("invalid_token")))
+      assertEquals(accepted.toOption.map(_.subject.value), Some("user-1"))
+    }
+  }
+
   test("an unavailable key set is challenged as invalid_token") {
     new BearerGuard[IO](IO.pure(Left(ParseFailure("Discovery", "down"))), issuer, clockAt(Start))
       .verify(bearer(claims()), Scopes.empty)

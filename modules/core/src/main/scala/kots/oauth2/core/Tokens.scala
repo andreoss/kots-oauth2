@@ -18,7 +18,7 @@ final case class RefreshToken private (value: String)
 
 object RefreshToken {
   def from(raw: String): Either[ParseFailure, RefreshToken] =
-    Text.printable("RefreshToken", raw).map(new RefreshToken(_))
+    Text.printableToken("RefreshToken", raw).map(new RefreshToken(_))
 }
 
 final case class DeviceCode private (value: String)

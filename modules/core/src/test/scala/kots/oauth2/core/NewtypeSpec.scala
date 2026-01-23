@@ -84,6 +84,17 @@ class NewtypeSpec extends ScalaCheckSuite {
     assertEquals(Issuer.from("https://example.com#f").isLeft, true)
   }
 
+  test("issuer allows plain http only on a loopback host") {
+    assertEquals(Issuer.from("http://localhost:8080/realms/x").map(_.value).isRight, true)
+    assertEquals(Issuer.from("http://127.0.0.1:9096").isRight, true)
+    assertEquals(Issuer.from("http://provider.example:8080").isLeft, true)
+  }
+
+  test("a refresh token carries a value as long as an access token") {
+    assertEquals(RefreshToken.from("a" * Text.TokenMaxLength).isRight, true)
+    assertEquals(RefreshToken.from("a" * (Text.TokenMaxLength + 1)).isLeft, true)
+  }
+
   test("redirect uri and resource indicator refuse fragments and relative references") {
     assertEquals(RedirectUri.from("https://example.com/cb#f").isLeft, true)
     assertEquals(RedirectUri.from("/cb").isLeft, true)

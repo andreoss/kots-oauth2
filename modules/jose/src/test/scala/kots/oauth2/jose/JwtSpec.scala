@@ -100,6 +100,37 @@ class JwtSpec extends FunSuite {
     assertEquals(Jwt.claims(compact, published, Start), Right(bound))
   }
 
+  test("a token naming its client by azp is read like client_id") {
+    val payload = io.circe.Json
+      .obj(
+        "iss" -> io.circe.Json.fromString("https://server.example"),
+        "sub" -> io.circe.Json.fromString("user-1"),
+        "azp" -> io.circe.Json.fromString("client-1"),
+        "jti" -> io.circe.Json.fromString("jwt-1"),
+        "iat" -> io.circe.Json.fromLong(Start.getEpochSecond),
+        "exp" -> io.circe.Json.fromLong(Start.plusSeconds(3600L).getEpochSecond)
+      )
+      .noSpaces
+    val compact = Jws
+      .sign(Alg.RS256, Fakes.keyId("key-1"), Fakes.signingPair.getPrivate, payload, Jwt.AccessTokenType)
+      .toOption
+      .get
+    val parsed = Jwt.claims(compact, published, Start).toOption.get
+    assertEquals(parsed.clientId.value, "client-1")
+  }
+
+  test("a plain jwt type is refused by default and read only when allowed") {
+    val compact = Jws
+      .sign(Alg.RS256, Fakes.keyId("key-1"), Fakes.signingPair.getPrivate, Jwt.render(claims), "JWT")
+      .toOption
+      .get
+    assert(Jwt.claims(compact, published, Start).isLeft)
+    assertEquals(
+      Jwt.claims(compact, published, Start, Set(Jwt.AccessTokenType, "JWT")),
+      Right(claims)
+    )
+  }
+
   test("a jws of another type is not an access token") {
     val compact = Jws
       .sign(Alg.RS256, Fakes.keyId("key-1"), Fakes.signingPair.getPrivate, """{"sub":"user-1"}""")
