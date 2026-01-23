@@ -19,6 +19,13 @@ object ClientSecretHash {
 
   def verify(hash: ClientSecretHash, secret: ClientSecret): Boolean =
     Digests.equal(hash.value, Digests.sha256Hex(secret.value))
+
+  def fromStored(raw: String): Either[ParseFailure, ClientSecretHash] =
+    Either.cond(
+      TokenHashes.isSha256Hex(raw),
+      new ClientSecretHash(raw),
+      TokenHashes.malformed("ClientSecretHash")
+    )
 }
 
 final case class ClientCredentials(id: ClientId, secret: ClientSecret)
@@ -57,4 +64,11 @@ object RegistrationTokenHash {
 
   def verify(hash: RegistrationTokenHash, token: RegistrationToken): Boolean =
     Digests.equal(hash.value, Digests.sha256Hex(token.value))
+
+  def fromStored(raw: String): Either[ParseFailure, RegistrationTokenHash] =
+    Either.cond(
+      TokenHashes.isSha256Hex(raw),
+      new RegistrationTokenHash(raw),
+      TokenHashes.malformed("RegistrationTokenHash")
+    )
 }

@@ -41,6 +41,23 @@ object Schema {
         "grant_id VARCHAR(512) NOT NULL, ord INT NOT NULL, detail_type VARCHAR(512) NOT NULL, " +
         "locations VARCHAR(2048) NOT NULL, actions VARCHAR(2048) NOT NULL, " +
         "fields VARCHAR(4096) NOT NULL, PRIMARY KEY(grant_id, ord))"
+    ),
+    Migration(
+      3,
+      "CREATE TABLE clients(" +
+        "client_id VARCHAR(512) PRIMARY KEY, redirect_uris VARCHAR(4096) NOT NULL, " +
+        "scopes VARCHAR(2048) NOT NULL, auth_method VARCHAR(64) NOT NULL, " +
+        "secret_hash VARCHAR(64), registration_token_hash VARCHAR(64), secret VARCHAR(512), " +
+        "certificate_subject VARCHAR(512), certificate_thumbprint VARCHAR(512));" +
+        "CREATE TABLE client_keys(" +
+        "client_id VARCHAR(512) NOT NULL, ord INT NOT NULL, kid VARCHAR(512) NOT NULL, " +
+        "alg VARCHAR(32) NOT NULL, params VARCHAR(8192) NOT NULL, PRIMARY KEY(client_id, ord));" +
+        "CREATE TABLE devices(" +
+        "device_code VARCHAR(512) PRIMARY KEY, user_code VARCHAR(64) NOT NULL, " +
+        "client_id VARCHAR(512) NOT NULL, scopes VARCHAR(2048) NOT NULL, " +
+        "expires_at TIMESTAMP NOT NULL, subject VARCHAR(512), denied BOOLEAN NOT NULL, " +
+        "last_polled_at TIMESTAMP, resource VARCHAR(512));" +
+        "CREATE INDEX devices_user ON devices(user_code)"
     )
   )
 }

@@ -84,4 +84,13 @@ class SecretsSpec extends ScalaCheckSuite {
       ClientSecretHash.of(secret(raw)).value == ClientSecretHash.of(secret(raw)).value
     }
   }
+
+  test("a stored secret hash rehydrates only from a sha-256 hex value") {
+    val hash = ClientSecretHash.of(secret("s3cret"))
+    assertEquals(ClientSecretHash.fromStored(hash.value), Right(hash))
+    assert(ClientSecretHash.fromStored("nothex").isLeft)
+    val registration = RegistrationTokenHash.of(RegistrationToken.from("registration-1").toOption.get)
+    assertEquals(RegistrationTokenHash.fromStored(registration.value), Right(registration))
+    assert(RegistrationTokenHash.fromStored("A" * 64).isLeft)
+  }
 }
