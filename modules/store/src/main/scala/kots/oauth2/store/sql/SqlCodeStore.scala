@@ -1,11 +1,9 @@
 package kots.oauth2.store.sql
 
 import java.sql.Connection
-import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.Timestamp
 
-import cats.effect.kernel.Resource
 import cats.effect.kernel.Sync
 import cats.syntax.flatMap._
 
@@ -24,12 +22,14 @@ import kots.oauth2.core.Wire
 import kots.oauth2.store.CodeRecord
 import kots.oauth2.store.CodeStore
 
-final class SqlCodeStore[F[_]: Sync] private (connect: F[Connection], clock: Clock[F]) extends CodeStore[F] {
+final class SqlCodeStore[F[_]: Sync] private (connect: F[Connection], clock: Clock[F])
+    extends SqlSessions[F](connect)
+    with CodeStore[F] {
 
   def save(record: CodeRecord): F[Unit] = session { connection =>
     withTransaction(connection) {
-      delete(connection, "DELETE FROM code_details WHERE code = ?", record.code.value)
-      delete(connection, "DELETE FROM codes WHERE code = ?", record.code.value)
+      update(connection, "DELETE FROM code_details WHERE code = ?", record.code.value)
+      update(connection, "DELETE FROM codes WHERE code = ?", record.code.value)
       insertRecord(connection, record)
     }
   }
@@ -45,7 +45,7 @@ final class SqlCodeStore[F[_]: Sync] private (connect: F[Connection], clock: Clo
                 removal.setString(1, code.value)
                 removal.executeUpdate()
               } finally removal.close()
-            delete(connection, "DELETE FROM code_details WHERE code = ?", code.value)
+            update(connection, "DELETE FROM code_details WHERE code = ?", code.value)
             if (removed == 1 && !record.isExpired(now)) Some(record) else None
           }
         }
@@ -54,7 +54,7 @@ final class SqlCodeStore[F[_]: Sync] private (connect: F[Connection], clock: Clo
 
   def redeem(code: AuthorizationCode, grant: GrantId): F[Unit] = session { connection =>
     withTransaction(connection) {
-      delete(connection, "DELETE FROM redeemed_codes WHERE code = ?", code.value)
+      update(connection, "DELETE FROM redeemed_codes WHERE code = ?", code.value)
       val insert = connection.prepareStatement(
         "INSERT INTO redeemed_codes(code, grant_id) VALUES(?, ?)"
       )
@@ -144,37 +144,6 @@ final class SqlCodeStore[F[_]: Sync] private (connect: F[Connection], clock: Clo
         Option(results.getString("resource")).map(value => DetailRows.required(ResourceIndicator.from(value)))
     )
 
-  private def optional(statement: PreparedStatement, index: Int, value: Option[String]): Unit =
-    value match {
-      case Some(present) => statement.setString(index, present)
-      case None          => statement.setNull(index, java.sql.Types.VARCHAR)
-    }
-
-  private def delete(connection: Connection, sql: String, values: String*): Unit = {
-    val statement = connection.prepareStatement(sql)
-    try {
-      values.zipWithIndex.foreach { case (value, index) => statement.setString(index + 1, value) }
-      statement.executeUpdate()
-      ()
-    } finally statement.close()
-  }
-
-  private def withTransaction[A](connection: Connection)(work: => A): A = {
-    connection.setAutoCommit(false)
-    scala.util.Try(work) match {
-      case scala.util.Success(outcome) =>
-        connection.commit()
-        outcome
-      case failure @ scala.util.Failure(_) =>
-        connection.rollback()
-        failure.get
-    }
-  }
-
-  private def session[A](use: Connection => A): F[A] =
-    Resource
-      .make(connect)(connection => Sync[F].blocking(connection.close()))
-      .use(connection => Sync[F].blocking(use(connection)))
 }
 
 object SqlCodeStore {

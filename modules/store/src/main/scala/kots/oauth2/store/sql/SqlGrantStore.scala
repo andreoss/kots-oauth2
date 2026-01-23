@@ -2,7 +2,6 @@ package kots.oauth2.store.sql
 
 import java.sql.Connection
 
-import cats.effect.kernel.Resource
 import cats.effect.kernel.Sync
 import cats.syntax.flatMap._
 
@@ -14,12 +13,14 @@ import kots.oauth2.core.Wire
 import kots.oauth2.store.Grant
 import kots.oauth2.store.GrantStore
 
-final class SqlGrantStore[F[_]: Sync] private (connect: F[Connection]) extends GrantStore[F] {
+final class SqlGrantStore[F[_]: Sync] private (connect: F[Connection])
+    extends SqlSessions[F](connect)
+    with GrantStore[F] {
 
   def save(grant: Grant): F[Unit] = session { connection =>
     withTransaction(connection) {
-      delete(connection, "DELETE FROM grant_details WHERE grant_id = ?", grant.id.value)
-      delete(connection, "DELETE FROM grants WHERE grant_id = ?", grant.id.value)
+      update(connection, "DELETE FROM grant_details WHERE grant_id = ?", grant.id.value)
+      update(connection, "DELETE FROM grants WHERE grant_id = ?", grant.id.value)
       val insert = connection.prepareStatement(
         "INSERT INTO grants(grant_id, client_id, subject, scopes, revoked) VALUES(?, ?, ?, ?, ?)"
       )
@@ -65,31 +66,6 @@ final class SqlGrantStore[F[_]: Sync] private (connect: F[Connection]) extends G
     } finally update.close()
   }
 
-  private def delete(connection: Connection, sql: String, value: String): Unit = {
-    val statement = connection.prepareStatement(sql)
-    try {
-      statement.setString(1, value)
-      statement.executeUpdate()
-      ()
-    } finally statement.close()
-  }
-
-  private def withTransaction[A](connection: Connection)(work: => A): A = {
-    connection.setAutoCommit(false)
-    scala.util.Try(work) match {
-      case scala.util.Success(outcome) =>
-        connection.commit()
-        outcome
-      case failure @ scala.util.Failure(_) =>
-        connection.rollback()
-        failure.get
-    }
-  }
-
-  private def session[A](use: Connection => A): F[A] =
-    Resource
-      .make(connect)(connection => Sync[F].blocking(connection.close()))
-      .use(connection => Sync[F].blocking(use(connection)))
 }
 
 object SqlGrantStore {

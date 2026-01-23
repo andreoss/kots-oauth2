@@ -1,11 +1,9 @@
 package kots.oauth2.store.sql
 
 import java.sql.Connection
-import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.Timestamp
 
-import cats.effect.kernel.Resource
 import cats.effect.kernel.Sync
 import cats.syntax.flatMap._
 
@@ -28,12 +26,13 @@ import kots.oauth2.store.TokenRecord
 import kots.oauth2.store.TokenStore
 
 final class SqlTokenStore[F[_]: Sync] private (connect: F[Connection], clock: Clock[F])
-    extends TokenStore[F] {
+    extends SqlSessions[F](connect)
+    with TokenStore[F] {
 
   def save(record: TokenRecord): F[Unit] = session { connection =>
     withTransaction(connection) {
-      delete(connection, "DELETE FROM token_details WHERE access_hash = ?", record.accessTokenHash.value)
-      delete(connection, "DELETE FROM tokens WHERE access_hash = ?", record.accessTokenHash.value)
+      update(connection, "DELETE FROM token_details WHERE access_hash = ?", record.accessTokenHash.value)
+      update(connection, "DELETE FROM tokens WHERE access_hash = ?", record.accessTokenHash.value)
       insertRecord(connection, record)
     }
   }
@@ -77,7 +76,7 @@ final class SqlTokenStore[F[_]: Sync] private (connect: F[Connection], clock: Cl
     withTransaction(connection) {
       dropByRefresh(connection, refreshToken)
       val hash = RefreshTokenHash.of(refreshToken).value
-      delete(connection, "DELETE FROM retired_tokens WHERE refresh_hash = ?", hash)
+      update(connection, "DELETE FROM retired_tokens WHERE refresh_hash = ?", hash)
       val insert = connection.prepareStatement(
         "INSERT INTO retired_tokens(refresh_hash, grant_id) VALUES(?, ?)"
       )
@@ -169,37 +168,28 @@ final class SqlTokenStore[F[_]: Sync] private (connect: F[Connection], clock: Cl
 
   private def dropByRefresh(connection: Connection, refreshToken: RefreshToken): Unit = {
     val hash = RefreshTokenHash.of(refreshToken).value
-    delete(
+    update(
       connection,
       "DELETE FROM token_details WHERE access_hash IN (SELECT access_hash FROM tokens " +
         "WHERE refresh_hash = ?)",
       hash
     )
-    delete(connection, "DELETE FROM tokens WHERE refresh_hash = ?", hash)
+    update(connection, "DELETE FROM tokens WHERE refresh_hash = ?", hash)
   }
 
   private def revokeGrantRows(connection: Connection, grantId: GrantId): Unit = {
-    delete(
+    update(
       connection,
       "DELETE FROM token_details WHERE access_hash IN (SELECT access_hash FROM tokens " +
         "WHERE grant_id = ?)",
       grantId.value
     )
-    delete(connection, "DELETE FROM tokens WHERE grant_id = ?", grantId.value)
+    update(connection, "DELETE FROM tokens WHERE grant_id = ?", grantId.value)
   }
 
   private def purge(connection: Connection, hash: AccessTokenHash): Unit = {
-    delete(connection, "DELETE FROM token_details WHERE access_hash = ?", hash.value)
-    delete(connection, "DELETE FROM tokens WHERE access_hash = ?", hash.value)
-  }
-
-  private def delete(connection: Connection, sql: String, values: String*): Unit = {
-    val statement = connection.prepareStatement(sql)
-    try {
-      values.zipWithIndex.foreach { case (value, index) => statement.setString(index + 1, value) }
-      statement.executeUpdate()
-      ()
-    } finally statement.close()
+    update(connection, "DELETE FROM token_details WHERE access_hash = ?", hash.value)
+    update(connection, "DELETE FROM tokens WHERE access_hash = ?", hash.value)
   }
 
   private def insertRecord(connection: Connection, record: TokenRecord): Unit = {
@@ -264,30 +254,8 @@ final class SqlTokenStore[F[_]: Sync] private (connect: F[Connection], clock: Cl
   private def detailsOf(connection: Connection, accessHash: String): AuthorizationDetails =
     DetailRows.read(connection, "token_details", "access_hash", accessHash)
 
-  private def optional(statement: PreparedStatement, index: Int, value: Option[String]): Unit =
-    value match {
-      case Some(present) => statement.setString(index, present)
-      case None          => statement.setNull(index, java.sql.Types.VARCHAR)
-    }
-
   private def required[A](parsed: Either[ParseFailure, A]): A = DetailRows.required(parsed)
 
-  private def withTransaction[A](connection: Connection)(work: => A): A = {
-    connection.setAutoCommit(false)
-    scala.util.Try(work) match {
-      case scala.util.Success(outcome) =>
-        connection.commit()
-        outcome
-      case failure @ scala.util.Failure(_) =>
-        connection.rollback()
-        failure.get
-    }
-  }
-
-  private def session[A](use: Connection => A): F[A] =
-    Resource
-      .make(connect)(connection => Sync[F].blocking(connection.close()))
-      .use(connection => Sync[F].blocking(use(connection)))
 }
 
 object SqlTokenStore {

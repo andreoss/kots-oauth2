@@ -5,7 +5,6 @@ import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.Timestamp
 
-import cats.effect.kernel.Resource
 import cats.effect.kernel.Sync
 import cats.syntax.flatMap._
 
@@ -21,7 +20,8 @@ import kots.oauth2.store.DeviceRecord
 import kots.oauth2.store.DeviceStore
 
 final class SqlDeviceStore[F[_]: Sync] private (connect: F[Connection], clock: Clock[F])
-    extends DeviceStore[F] {
+    extends SqlSessions[F](connect)
+    with DeviceStore[F] {
 
   def save(record: DeviceRecord): F[Unit] = session { connection =>
     withTransaction(connection) {
@@ -155,28 +155,6 @@ final class SqlDeviceStore[F[_]: Sync] private (connect: F[Connection], clock: C
         Option(results.getString("resource")).map(value => DetailRows.required(ResourceIndicator.from(value)))
     )
 
-  private def optional(statement: PreparedStatement, index: Int, value: Option[String]): Unit =
-    value match {
-      case Some(present) => statement.setString(index, present)
-      case None          => statement.setNull(index, java.sql.Types.VARCHAR)
-    }
-
-  private def withTransaction[A](connection: Connection)(work: => A): A = {
-    connection.setAutoCommit(false)
-    scala.util.Try(work) match {
-      case scala.util.Success(outcome) =>
-        connection.commit()
-        outcome
-      case failure @ scala.util.Failure(_) =>
-        connection.rollback()
-        failure.get
-    }
-  }
-
-  private def session[A](use: Connection => A): F[A] =
-    Resource
-      .make(connect)(connection => Sync[F].blocking(connection.close()))
-      .use(connection => Sync[F].blocking(use(connection)))
 }
 
 object SqlDeviceStore {
