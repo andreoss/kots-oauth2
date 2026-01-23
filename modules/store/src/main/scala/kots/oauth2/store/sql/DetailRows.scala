@@ -67,7 +67,7 @@ private[sql] object DetailRows {
   private def split(joined: String): List[String] =
     joined.split(' ').toList.filter(_.nonEmpty)
 
-  private def encodeFields(fields: Map[String, String]): String =
+  private[sql] def encodeFields(fields: Map[String, String]): String =
     fields.toList.sorted
       .map { case (name, value) =>
         URLEncoder.encode(name, StandardCharsets.UTF_8.name) + "=" +
@@ -75,7 +75,7 @@ private[sql] object DetailRows {
       }
       .mkString("&")
 
-  private def decodeFields(joined: String): Map[String, String] =
+  private[sql] def decodeFields(joined: String): Map[String, String] =
     joined
       .split('&')
       .toList

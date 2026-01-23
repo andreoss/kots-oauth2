@@ -1,8 +1,5 @@
 package kots.oauth2.store.sql
 
-import java.net.URLDecoder
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -17,16 +14,11 @@ import kots.oauth2.core.ClientAuthMethod
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.ClientSecret
 import kots.oauth2.core.ClientSecretHash
-import kots.oauth2.core.KeyId
-import kots.oauth2.core.ParseFailure
 import kots.oauth2.core.RedirectUri
 import kots.oauth2.core.RegistrationTokenHash
 import kots.oauth2.core.Scopes
 import kots.oauth2.core.Wire
-import kots.oauth2.jose.Alg
-import kots.oauth2.jose.Jwk
 import kots.oauth2.jose.Jwks
-import kots.oauth2.jose.Kty
 import kots.oauth2.store.Client
 import kots.oauth2.store.ClientStore
 
@@ -71,7 +63,7 @@ final class SqlClientStore[F[_]: Sync] private (connect: F[Connection]) extends 
           child.setInt(2, index)
           child.setString(3, key.kid.value)
           child.setString(4, key.alg.value)
-          child.setString(5, encodeParams(key.parameters))
+          child.setString(5, KeyRows.encode(key))
           child.executeUpdate()
           ()
         } finally child.close()
@@ -136,49 +128,11 @@ final class SqlClientStore[F[_]: Sync] private (connect: F[Connection]) extends 
       val keys = Iterator
         .continually(results)
         .takeWhile(_.next())
-        .map(entry => keyOf(entry.getString(1), entry.getString(2), decodeParams(entry.getString(3))))
+        .map(entry => KeyRows.keyOf(entry.getString(1), entry.getString(2), entry.getString(3)))
         .toList
       Jwks(keys)
     } finally select.close()
   }
-
-  private def keyOf(kid: String, alg: String, params: Map[String, String]): Jwk = {
-    val identifier = DetailRows.required(KeyId.from(kid))
-    val algorithm = DetailRows.required(Alg.from(alg))
-    def param(name: String): String =
-      params.getOrElse(name, DetailRows.required(Left(ParseFailure("Jwk", s"no $name parameter"))))
-    algorithm.kty match {
-      case Kty.Rsa => DetailRows.required(Jwk.rsa(identifier, algorithm, param("n"), param("e")))
-      case Kty.Ec  =>
-        DetailRows.required(Jwk.ec(identifier, algorithm, param("crv"), param("x"), param("y")))
-      case Kty.Okp => DetailRows.required(Jwk.okp(identifier, algorithm, param("crv"), param("x")))
-    }
-  }
-
-  private def encodeParams(params: Map[String, String]): String =
-    params.toList.sorted
-      .map { case (name, value) =>
-        URLEncoder.encode(name, StandardCharsets.UTF_8.name) + "=" +
-          URLEncoder.encode(value, StandardCharsets.UTF_8.name)
-      }
-      .mkString("&")
-
-  private def decodeParams(joined: String): Map[String, String] =
-    joined
-      .split('&')
-      .toList
-      .filter(_.nonEmpty)
-      .flatMap { pair =>
-        pair.split('=') match {
-          case Array(name, value) =>
-            List(
-              URLDecoder.decode(name, StandardCharsets.UTF_8.name) ->
-                URLDecoder.decode(value, StandardCharsets.UTF_8.name)
-            )
-          case _ => Nil
-        }
-      }
-      .toMap
 
   private def optional(statement: PreparedStatement, index: Int, value: Option[String]): Unit =
     value match {
