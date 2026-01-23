@@ -43,6 +43,8 @@ class HydraSpec extends CatsEffectSuite {
         "-e",
         "SECRETS_SYSTEM=example-system-secret-with-32-chars",
         "-e",
+        "STRATEGIES_ACCESS_TOKEN=jwt",
+        "-e",
         s"URLS_SELF_ISSUER=http://localhost:$PublicPort",
         "oryd/hydra:v2.2.0",
         "serve",
@@ -53,6 +55,10 @@ class HydraSpec extends CatsEffectSuite {
     hydra
       .use { _ =>
         EmberClientBuilder.default[IO].build.use { transport =>
+          val example = new ProviderExample[IO](transport)
+          val clock = new kots.oauth2.core.Clock[IO] {
+            def instant: IO[java.time.Instant] = IO.realTimeInstant
+          }
           for {
             _ <- Containers.awaitHttp(transport, s"http://localhost:$AdminPort/health/ready")
             created <- transport.status(
@@ -62,10 +68,25 @@ class HydraSpec extends CatsEffectSuite {
               ).withEntity(registration)
                 .withContentType(`Content-Type`(MediaType.application.json))
             )
-            granted <- new ProviderExample[IO](transport).grantFromDiscovery(
-              s"http://localhost:$PublicPort/.well-known/openid-configuration",
+            document <- example
+              .discover(s"http://localhost:$PublicPort/.well-known/openid-configuration")
+              .map(_.toOption.get)
+            granted <- example.credentials(
+              document.tokenEndpoint,
               unsafe(ClientId.from("example-client")),
-              unsafe(ClientSecret.from("example-secret"))
+              unsafe(ClientSecret.from("example-secret")),
+              None
+            )
+            published <- example.keys(document.jwksUri.get).map(_.toOption.get)
+            guard = new kots.oauth2.client.BearerGuard[IO](
+              IO.pure(Right(published)),
+              unsafe(kots.oauth2.core.Issuer.from(document.issuer)),
+              clock,
+              tokenTypes = Set(kots.oauth2.jose.Jwt.AccessTokenType, "JWT")
+            )
+            accepted <- guard.verify(
+              Some("Bearer " + granted.toOption.get.accessToken.value),
+              kots.oauth2.core.Scopes.empty
             )
           } yield {
             assertEquals(created, Status.Created)
@@ -73,6 +94,10 @@ class HydraSpec extends CatsEffectSuite {
             assert(grant.tokenType.equalsIgnoreCase("bearer"))
             assert(grant.accessToken.value.nonEmpty)
             assert(grant.expiresIn > 0L)
+            assert(published.keys.nonEmpty)
+            val claims = accepted.toOption.get
+            assertEquals(claims.clientId.value, "example-client")
+            assertEquals(claims.issuer.value, document.issuer)
           }
         }
       }

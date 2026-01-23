@@ -14,7 +14,11 @@ import org.http4s.Request
 import org.http4s.Uri
 import org.http4s.client.Client
 
-final case class ProviderDocument(issuer: String, tokenEndpoint: EndpointUri)
+final case class ProviderDocument(
+    issuer: String,
+    tokenEndpoint: EndpointUri,
+    jwksUri: Option[EndpointUri]
+)
 
 final class ProviderExample[F[_]: Concurrent](transport: Client[F]) {
 
@@ -26,6 +30,20 @@ final class ProviderExample[F[_]: Concurrent](transport: Client[F]) {
         )
       )
       .map(ProviderExample.document)
+
+  def keys(jwksUri: EndpointUri): F[Either[OAuth2Error, kots.oauth2.jose.Jwks]] =
+    transport
+      .expect[String](
+        Request[F](uri = Uri.unsafeFromString(jwksUri.value)).putHeaders(
+          org.http4s.headers.Accept(org.http4s.MediaType.application.json)
+        )
+      )
+      .map(text =>
+        kots.oauth2.client.Discovery
+          .keys(text)
+          .left
+          .map(failure => OAuth2Error.ServerError(Some(s"${failure.typeName}: ${failure.reason}")))
+      )
 
   def credentials(
       tokenEndpoint: EndpointUri,
@@ -61,5 +79,6 @@ object ProviderExample {
         .left
         .map(_ => unreadable)
         .flatMap(raw => EndpointUri.from(raw).left.map(_ => unreadable))
-    } yield ProviderDocument(issuer, endpoint)
+      jwks = cursor.get[String]("jwks_uri").toOption.flatMap(raw => EndpointUri.from(raw).toOption)
+    } yield ProviderDocument(issuer, endpoint, jwks)
 }
