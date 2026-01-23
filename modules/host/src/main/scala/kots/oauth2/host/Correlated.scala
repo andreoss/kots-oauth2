@@ -1,9 +1,9 @@
 package kots.oauth2.host
 
+import cats.syntax.all._
 import cats.Monad
 import cats.data.Kleisli
 import cats.data.OptionT
-import cats.syntax.functor._
 
 import kots.oauth2.core.Entropy
 import org.http4s.HttpRoutes
@@ -30,7 +30,7 @@ object Correlated {
 
   private def idOf[F[_]: Monad](entropy: Entropy[F], request: Request[F]): F[String] =
     request.headers.get(CIString(Header)).map(_.head.value) match {
-      case Some(carried) => Monad[F].pure(carried)
+      case Some(carried) => carried.pure[F]
       case None          => entropy.bytes(IdBytes).map(Entropy.hex)
     }
 }
