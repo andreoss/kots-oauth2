@@ -2,10 +2,9 @@ package kots.oauth2.client
 
 import java.time.Instant
 
+import cats.syntax.all._
 import cats.effect.Concurrent
 import cats.effect.kernel.Ref
-import cats.syntax.flatMap._
-import cats.syntax.functor._
 
 import kots.oauth2.core.Clock
 import kots.oauth2.core.EndpointUri
@@ -45,10 +44,10 @@ final class Discovery[F[_]: Concurrent] private (
 
   def key(kid: KeyId): F[Either[ParseFailure, Jwk]] =
     keys.flatMap {
-      case Left(failure) => Concurrent[F].pure(Left(failure): Either[ParseFailure, Jwk])
+      case Left(failure) => failure.asLeft[Jwk].pure[F]
       case Right(set)    =>
         set.find(kid) match {
-          case Some(found) => Concurrent[F].pure(Right(found): Either[ParseFailure, Jwk])
+          case Some(found) => found.asRight[ParseFailure].pure[F]
           case None        =>
             published.set(None) >> keys.map(
               _.flatMap(_.find(kid).toRight(ParseFailure("Discovery", "no key for the kid")))
@@ -65,11 +64,11 @@ final class Discovery[F[_]: Concurrent] private (
     clock.instant.flatMap { now =>
       cache.get.flatMap {
         case Some((fetchedAt, value)) if !Lifetime.isExpired(now, fetchedAt, ttl) =>
-          Concurrent[F].pure(Right(value): Either[ParseFailure, A])
+          value.asRight[ParseFailure].pure[F]
         case _ =>
           fetch.flatMap {
             case Right(value) => cache.set(Some((now, value))).as(Right(value): Either[ParseFailure, A])
-            case left         => Concurrent[F].pure(left)
+            case left         => left.pure[F]
           }
       }
     }
@@ -80,7 +79,7 @@ final class Discovery[F[_]: Concurrent] private (
 
   private def fetchKeys: F[Either[ParseFailure, Jwks]] =
     metadata.flatMap {
-      case Left(failure)   => Concurrent[F].pure(Left(failure): Either[ParseFailure, Jwks])
+      case Left(failure)   => failure.asLeft[Jwks].pure[F]
       case Right(document) => body(document.jwksUri.value).map(_.flatMap(Discovery.keysOf))
     }
 

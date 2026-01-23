@@ -33,7 +33,7 @@ final class RegistrationService[F[_]: Monad](
         RegistrationToken.from(Entropy.hex(tokenRaw)).leftMap(RegistrationService.failure)
       ).mapN((_, _, _))
       result <- minted.fold(
-        error => Monad[F].pure(Left(error): Either[OAuth2Error, ClientRegistrationResponse]),
+        error => error.asLeft[ClientRegistrationResponse].pure[F],
         { case (id, secret, token) =>
           clients
             .save(
@@ -66,7 +66,7 @@ final class RegistrationService[F[_]: Monad](
       registration: ClientRegistration
   ): F[Either[OAuth2Error, ClientRegistrationResponse]] =
     authorized(clientId, token).flatMap {
-      case Left(error)   => Monad[F].pure(Left(error): Either[OAuth2Error, ClientRegistrationResponse])
+      case Left(error)   => error.asLeft[ClientRegistrationResponse].pure[F]
       case Right(client) =>
         val changed = client.copy(
           redirectUris = registration.redirectUris,
@@ -80,7 +80,7 @@ final class RegistrationService[F[_]: Monad](
 
   def remove(clientId: String, token: Option[String]): F[Either[OAuth2Error, Unit]] =
     authorized(clientId, token).flatMap {
-      case Left(error)   => Monad[F].pure(Left(error): Either[OAuth2Error, Unit])
+      case Left(error)   => error.asLeft[Unit].pure[F]
       case Right(client) => clients.delete(client.id).as(Right(()): Either[OAuth2Error, Unit])
     }
 
@@ -91,7 +91,7 @@ final class RegistrationService[F[_]: Monad](
         .toRight(RegistrationService.rejected)
         .flatMap(raw => RegistrationToken.from(raw).leftMap(_ => RegistrationService.rejected))
     ).mapN((_, _)) match {
-      case Left(error)            => Monad[F].pure(Left(error): Either[OAuth2Error, Client])
+      case Left(error)            => error.asLeft[Client].pure[F]
       case Right((id, candidate)) =>
         clients.find(id).map {
           case Some(client)

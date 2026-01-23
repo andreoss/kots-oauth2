@@ -1,7 +1,7 @@
 package kots.oauth2.server
 
+import cats.syntax.all._
 import cats.Monad
-import cats.syntax.flatMap._
 
 import kots.oauth2.core.ClientAuthInput
 import kots.oauth2.core.DeviceAuthorizationRequest
@@ -19,13 +19,13 @@ final class DeviceAuthorizationEndpoint[F[_]: Monad](
       parameters: Map[String, String]
   ): F[Either[OAuth2Error, DeviceAuthorizationResponse]] =
     ClientAuthInput.from(basic, parameters).toEither match {
-      case Left(failures) => Monad[F].pure(Left(failures.head))
+      case Left(failures) => failures.head.asLeft.pure[F]
       case Right(input)   =>
         authentication.authenticate(input).flatMap {
-          case Left(error)   => Monad[F].pure(Left(error))
+          case Left(error)   => error.asLeft.pure[F]
           case Right(client) =>
             DeviceAuthorizationRequest.from(parameters).toEither match {
-              case Left(failures) => Monad[F].pure(Left(failures.head))
+              case Left(failures) => failures.head.asLeft.pure[F]
               case Right(request) => service.authorize(request, client)
             }
         }

@@ -1,8 +1,7 @@
 package kots.oauth2.client
 
+import cats.syntax.all._
 import cats.effect.Concurrent
-import cats.syntax.flatMap._
-import cats.syntax.functor._
 
 import kots.oauth2.core.AccessToken
 import kots.oauth2.core.AuthorizationCode
@@ -103,11 +102,9 @@ final class TokenClient[F[_]: Concurrent](
       case Some(signer) =>
         signer.proof(Method.POST.name, endpoint.value).flatMap {
           case Left(failure) =>
-            Concurrent[F].pure(
-              Left(
-                OAuth2Error.ServerError(Some(s"${failure.typeName}: ${failure.reason}"))
-              ): Either[OAuth2Error, TokenClient.Grant]
-            )
+            (OAuth2Error.ServerError(Some(s"${failure.typeName}: ${failure.reason}")): OAuth2Error)
+              .asLeft[TokenClient.Grant]
+              .pure[F]
           case Right(proof) =>
             transport
               .run(sent.putHeaders(org.http4s.Header.Raw(TokenClient.ProofHeader, proof)))
@@ -120,7 +117,7 @@ final class TokenClient[F[_]: Concurrent](
               .flatMap {
                 case Left(error) if error.code == TokenClient.NonceDemand && retry =>
                   attempt(form, credentials, retry = false)
-                case result => Concurrent[F].pure(result)
+                case result => result.pure[F]
               }
         }
     }

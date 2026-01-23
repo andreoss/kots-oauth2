@@ -1,8 +1,7 @@
 package kots.oauth2.server
 
+import cats.syntax.all._
 import cats.Monad
-import cats.syntax.flatMap._
-import cats.syntax.functor._
 
 import kots.oauth2.core.ClientAuthInput
 import kots.oauth2.core.ClientId
@@ -32,10 +31,10 @@ final class IntrospectionEndpoint[F[_]: Monad](
       parameters: Map[String, String]
   ): F[Either[OAuth2Error, IntrospectionResponse]] =
     ClientAuthInput.from(basic, parameters).toEither match {
-      case Left(failures) => Monad[F].pure(Left(failures.head))
+      case Left(failures) => failures.head.asLeft.pure[F]
       case Right(input)   =>
         authentication.authenticate(input).flatMap {
-          case Left(error)   => Monad[F].pure(Left(error))
+          case Left(error)   => error.asLeft.pure[F]
           case Right(client) => introspect(parameters, client)
         }
     }
@@ -45,10 +44,10 @@ final class IntrospectionEndpoint[F[_]: Monad](
       client: Client
   ): F[Either[OAuth2Error, IntrospectionResponse]] =
     IntrospectionRequest.from(parameters).toEither match {
-      case Left(failures) => Monad[F].pure(Left(failures.head))
+      case Left(failures) => failures.head.asLeft.pure[F]
       case Right(request) =>
         find(request, client.id)
-          .flatMap(found => found.fold(Monad[F].pure(IntrospectionResponse.inactive))(answer))
+          .flatMap(found => found.fold(IntrospectionResponse.inactive.pure[F])(answer))
           .flatMap(response =>
             auditLog
               .record(kots.oauth2.store.AuditEvent.Introspected(client.id, response.active))
@@ -66,7 +65,7 @@ final class IntrospectionEndpoint[F[_]: Monad](
       case Some(TokenTypeHint.RefreshToken) => byRefresh(request.token, clientId)
       case None                             =>
         byRefresh(request.token, clientId).flatMap {
-          case Some(record) => Monad[F].pure(Some(record))
+          case Some(record) => record.some.pure[F]
           case None         => byAccess(request.token, clientId)
         }
     }
@@ -77,7 +76,7 @@ final class IntrospectionEndpoint[F[_]: Monad](
   ): F[Option[(TokenTypeHint, TokenRecord)]] =
     RevocationToken
       .asAccessToken(token)
-      .fold(Monad[F].pure(Option.empty[TokenRecord]))(tokens.findByAccess)
+      .fold(Option.empty[TokenRecord].pure[F])(tokens.findByAccess)
       .map(owned(_, clientId).map(record => (TokenTypeHint.AccessToken: TokenTypeHint, record)))
 
   private def byRefresh(
@@ -86,7 +85,7 @@ final class IntrospectionEndpoint[F[_]: Monad](
   ): F[Option[(TokenTypeHint, TokenRecord)]] =
     RevocationToken
       .asRefreshToken(token)
-      .fold(Monad[F].pure(Option.empty[TokenRecord]))(tokens.findByRefresh)
+      .fold(Option.empty[TokenRecord].pure[F])(tokens.findByRefresh)
       .map(owned(_, clientId).map(record => (TokenTypeHint.RefreshToken: TokenTypeHint, record)))
 
   private def owned(record: Option[TokenRecord], clientId: ClientId): Option[TokenRecord] =

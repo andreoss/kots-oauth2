@@ -2,9 +2,8 @@ package kots.oauth2.server
 
 import java.time.Instant
 
+import cats.syntax.all._
 import cats.Monad
-import cats.syntax.flatMap._
-import cats.syntax.functor._
 
 import kots.oauth2.core.Clock
 import kots.oauth2.core.KeyThumbprint
@@ -22,13 +21,13 @@ final class DpopProofs[F[_]: Monad](
     clock.instant.flatMap { now =>
       Dpop.verify(compact) match {
         case Left(failure) =>
-          Monad[F].pure(Left(DpopProofs.invalid(failure.reason)): Either[OAuth2Error, KeyThumbprint])
+          DpopProofs.invalid(failure.reason).asLeft[KeyThumbprint].pure[F]
         case Right(proof) =>
           checked(proof, method, uri, now) match {
-            case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, KeyThumbprint])
+            case Left(error) => error.asLeft[KeyThumbprint].pure[F]
             case Right(())   =>
               demanded(proof.nonce).flatMap {
-                case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, KeyThumbprint])
+                case Left(error) => error.asLeft[KeyThumbprint].pure[F]
                 case Right(())   =>
                   replays.record(proof.jti, proof.issuedAt.plusSeconds(DpopProofs.WindowSeconds)).map {
                     case true  => Right(proof.thumbprint): Either[OAuth2Error, KeyThumbprint]
@@ -57,7 +56,7 @@ final class DpopProofs[F[_]: Monad](
 
   private def demanded(carried: Option[String]): F[Either[OAuth2Error, Unit]] =
     nonce match {
-      case None          => Monad[F].pure(Right(()): Either[OAuth2Error, Unit])
+      case None          => ().asRight[OAuth2Error].pure[F]
       case Some(current) =>
         current.map(expected =>
           Either.cond(carried.contains(expected), (), OAuth2Error.UseDpopNonce(): OAuth2Error)

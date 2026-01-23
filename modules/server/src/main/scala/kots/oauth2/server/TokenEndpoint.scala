@@ -2,9 +2,8 @@ package kots.oauth2.server
 
 import java.time.Duration
 
+import cats.syntax.all._
 import cats.Monad
-import cats.syntax.flatMap._
-import cats.syntax.functor._
 
 import kots.oauth2.core.ClientAuthInput
 import kots.oauth2.core.ExchangeTokenType
@@ -29,12 +28,12 @@ final class TokenEndpoint[F[_]: Monad](
       certificate: Option[String] = None
   ): F[Either[OAuth2Error, TokenResponse]] =
     certified(certificate) match {
-      case Left(error)      => Monad[F].pure(Left(error): Either[OAuth2Error, TokenResponse])
+      case Left(error)      => error.asLeft[TokenResponse].pure[F]
       case Right(presented) =>
         (dpop, proof) match {
           case (Some(config), Some(compact)) =>
             config.validator.validate(compact, TokenEndpoint.ProofMethod, config.uri).flatMap {
-              case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, TokenResponse])
+              case Left(error) => error.asLeft[TokenResponse].pure[F]
               case Right(jkt)  => authenticated(basic, parameters, Some(jkt), presented)
             }
           case _ => authenticated(basic, parameters, None, presented)
@@ -60,10 +59,10 @@ final class TokenEndpoint[F[_]: Monad](
       certificate: Option[kots.oauth2.core.ClientCertificate]
   ): F[Either[OAuth2Error, TokenResponse]] =
     ClientAuthInput.from(basic, parameters).toEither match {
-      case Left(failures) => Monad[F].pure(Left(failures.head))
+      case Left(failures) => failures.head.asLeft.pure[F]
       case Right(input)   =>
         authentication.authenticate(input.copy(certificate = certificate)).flatMap {
-          case Left(error)   => Monad[F].pure(Left(error))
+          case Left(error)   => error.asLeft.pure[F]
           case Right(client) => grant(parameters, client, jkt, TokenEndpoint.bound(client, certificate))
         }
     }
@@ -81,7 +80,7 @@ final class TokenEndpoint[F[_]: Monad](
       if (parameters.contains("client_id")) parameters
       else parameters + ("client_id" -> client.id.value)
     TokenRequest.from(enriched).toEither match {
-      case Left(failures) => Monad[F].pure(Left(failures.head))
+      case Left(failures) => failures.head.asLeft.pure[F]
       case Right(request) =>
         request match {
           case code: TokenRequest.Code =>

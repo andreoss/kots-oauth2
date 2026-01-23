@@ -29,9 +29,9 @@ final class PushedAuthorizationService[F[_]: Monad](
   ): F[Either[OAuth2Error, PushedAuthorizationResponse]] = {
     val stripped = parameters -- PushedAuthorizationService.AuthParameters
     AuthorizationRequest.from(stripped).toEither match {
-      case Left(failures)                                  => Monad[F].pure(Left(failures.head))
+      case Left(failures)                                  => failures.head.asLeft.pure[F]
       case Right(request) if request.clientId != client.id =>
-        Monad[F].pure(Left(OAuth2Error.InvalidRequest(Some("client_id does not match")): OAuth2Error))
+        (OAuth2Error.InvalidRequest(Some("client_id does not match")): OAuth2Error).asLeft.pure[F]
       case Right(_) =>
         val lifetime = LifetimePolicy.of(policy, TokenType.AuthorizationCode)
         for {
@@ -43,7 +43,7 @@ final class PushedAuthorizationService[F[_]: Monad](
               OAuth2Error.ServerError(Some(s"${failure.typeName}: ${failure.reason}")): OAuth2Error
             )
           result <- minted.fold(
-            error => Monad[F].pure(Left(error): Either[OAuth2Error, PushedAuthorizationResponse]),
+            error => error.asLeft[PushedAuthorizationResponse].pure[F],
             uri =>
               pushed
                 .save(PushedRequest(uri, client.id, stripped, Lifetime.expiresAt(now, lifetime)))

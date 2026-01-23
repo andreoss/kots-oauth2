@@ -4,9 +4,8 @@ import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.Base64
 
+import cats.syntax.all._
 import cats.Monad
-import cats.syntax.flatMap._
-import cats.syntax.functor._
 
 import kots.oauth2.core.ClientAssertion
 import kots.oauth2.core.ClientAuthInput
@@ -42,16 +41,16 @@ final class RegisteredClientAuthentication[F[_]: Monad](
         auditLog
           .record(kots.oauth2.store.AuditEvent.AuthenticationFailed(input.subject))
           .as(left: Either[OAuth2Error, Client])
-      case right => Monad[F].pure(right)
+      case right => right.pure[F]
     }
 
   private def resolved(input: ClientAuthInput): F[Either[OAuth2Error, Client]] =
     input.assertion match {
       case Some(raw) if input.basic.isEmpty && input.clientSecret.isEmpty => asserted(raw, input)
-      case Some(_) => Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
+      case Some(_) => RegisteredClientAuthentication.rejected.asLeft.pure[F]
       case None    =>
         input.subject match {
-          case None     => Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
+          case None     => RegisteredClientAuthentication.rejected.asLeft.pure[F]
           case Some(id) =>
             clients.find(id).map {
               case None         => Left(RegisteredClientAuthentication.rejected)
@@ -62,18 +61,18 @@ final class RegisteredClientAuthentication[F[_]: Monad](
 
   private def asserted(raw: ClientAssertion, input: ClientAuthInput): F[Either[OAuth2Error, Client]] =
     assertions match {
-      case None         => Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
+      case None         => RegisteredClientAuthentication.rejected.asLeft.pure[F]
       case Some(config) =>
         unverified(raw) match {
-          case Left(error)                                           => Monad[F].pure(Left(error))
+          case Left(error)                                           => error.asLeft.pure[F]
           case Right(claimed) if input.clientId.exists(_ != claimed) =>
-            Monad[F].pure(Left(RegisteredClientAuthentication.rejected))
+            RegisteredClientAuthentication.rejected.asLeft.pure[F]
           case Right(claimed) =>
             clients.find(claimed).flatMap {
               case Some(client) if RegisteredClientAuthentication.asserts(client.authMethod) =>
                 config.clock.instant.flatMap { now =>
                   verified(raw, client, config, now) match {
-                    case Left(error) => Monad[F].pure(Left(error): Either[OAuth2Error, Client])
+                    case Left(error) => error.asLeft[Client].pure[F]
                     case Right(seen) =>
                       config.replays.record(seen.tokenId, seen.expiresAt).map {
                         case true  => Right(client): Either[OAuth2Error, Client]
@@ -82,7 +81,7 @@ final class RegisteredClientAuthentication[F[_]: Monad](
                   }
                 }
               case _ =>
-                Monad[F].pure(Left(RegisteredClientAuthentication.rejected): Either[OAuth2Error, Client])
+                RegisteredClientAuthentication.rejected.asLeft[Client].pure[F]
             }
         }
     }

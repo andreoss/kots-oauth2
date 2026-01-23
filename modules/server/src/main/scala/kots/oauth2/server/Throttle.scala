@@ -1,7 +1,7 @@
 package kots.oauth2.server
 
+import cats.syntax.all._
 import cats.Monad
-import cats.syntax.flatMap._
 
 import kots.oauth2.core.OAuth2Error
 import kots.oauth2.http.DeviceAuthorizationLogic
@@ -50,7 +50,7 @@ object Throttle {
   ): F[Either[OAuth2Error, A]] =
     limiter.acquire(key(parameters)).flatMap {
       case Some(retryAfter) =>
-        Monad[F].pure(Left(OAuth2Error.RateLimited(retryAfter)): Either[OAuth2Error, A])
+        (OAuth2Error.RateLimited(retryAfter): OAuth2Error).asLeft[A].pure[F]
       case None => inner
     }
 }

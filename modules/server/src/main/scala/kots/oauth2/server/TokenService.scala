@@ -68,7 +68,7 @@ final class TokenService[F[_]: Monad](
       case None         => replay(request.code)
       case Some(record) =>
         check(record, request, client).fold(
-          error => Monad[F].pure(Left(error)),
+          error => error.asLeft.pure[F],
           _ => issue(record, request.resource.orElse(record.resource), client, jkt, x5t)
         )
     }
@@ -90,18 +90,18 @@ final class TokenService[F[_]: Monad](
       jkt: Option[KeyThumbprint] = None,
       x5t: Option[CertificateThumbprint] = None
   ): F[Either[OAuth2Error, IssuedToken]] =
-    if (!client.confidential) Monad[F].pure(Left(OAuth2Error.UnauthorizedClient(): OAuth2Error))
+    if (!client.confidential) (OAuth2Error.UnauthorizedClient(): OAuth2Error).asLeft.pure[F]
     else
       request.scope match {
         case Some(scopes) if !client.allowsScopes(scopes) =>
-          Monad[F].pure(Left(OAuth2Error.InvalidScope(): OAuth2Error))
+          (OAuth2Error.InvalidScope(): OAuth2Error).asLeft.pure[F]
         case requested =>
           clock.instant.flatMap(now =>
             (
               Subject.from(client.id.value).leftMap(TokenService.failure),
               bound(request.resource)
             ).mapN((_, _)) match {
-              case Left(error)              => Monad[F].pure(Left(error))
+              case Left(error)              => error.asLeft.pure[F]
               case Right((owner, audience)) =>
                 issue(
                   TokenService.Mint(
@@ -128,34 +128,31 @@ final class TokenService[F[_]: Monad](
       x5t: Option[CertificateThumbprint] = None
   ): F[Either[OAuth2Error, IssuedToken]] =
     devices.poll(request.deviceCode).flatMap {
-      case None         => Monad[F].pure(Left(TokenService.rejected))
+      case None         => TokenService.rejected.asLeft.pure[F]
       case Some(record) =>
         clock.instant.flatMap { now =>
-          if (record.clientId != client.id) Monad[F].pure(Left(TokenService.rejected))
-          else if (record.isExpired(now)) Monad[F].pure(Left(OAuth2Error.ExpiredToken(): OAuth2Error))
-          else if (record.denied) Monad[F].pure(Left(OAuth2Error.AccessDenied(): OAuth2Error))
+          if (record.clientId != client.id) TokenService.rejected.asLeft.pure[F]
+          else if (record.isExpired(now)) (OAuth2Error.ExpiredToken(): OAuth2Error).asLeft.pure[F]
+          else if (record.denied) (OAuth2Error.AccessDenied(): OAuth2Error).asLeft.pure[F]
           else
             record.subject match {
               case None =>
                 val early = record.lastPolledAt.exists(previous =>
                   now.isBefore(previous.plusSeconds(DeviceAuthorizationService.Interval.seconds))
                 )
-                Monad[F].pure(
-                  Left(
-                    if (early) OAuth2Error.SlowDown(): OAuth2Error
-                    else OAuth2Error.AuthorizationPending(): OAuth2Error
-                  )
-                )
+                val refusal: OAuth2Error =
+                  if (early) OAuth2Error.SlowDown() else OAuth2Error.AuthorizationPending()
+                refusal.asLeft.pure[F]
               case Some(subject) =>
                 devices.consume(request.deviceCode).flatMap {
-                  case None    => Monad[F].pure(Left(TokenService.rejected))
+                  case None    => TokenService.rejected.asLeft.pure[F]
                   case Some(_) =>
                     val refreshExpiresAt =
                       if (client.confidential)
                         Some(Lifetime.expiresAt(now, LifetimePolicy.of(policy, TokenType.Refresh)))
                       else None
                     bound(request.resource.orElse(record.resource)) match {
-                      case Left(error)     => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+                      case Left(error)     => error.asLeft[IssuedToken].pure[F]
                       case Right(audience) =>
                         issue(
                           TokenService.Mint(
@@ -179,7 +176,7 @@ final class TokenService[F[_]: Monad](
 
   private def replay(code: AuthorizationCode): F[Either[OAuth2Error, IssuedToken]] =
     codes.redeemed(code).flatMap {
-      case None        => Monad[F].pure(Left(TokenService.rejected))
+      case None        => TokenService.rejected.asLeft.pure[F]
       case Some(grant) => grants.revoke(grant) >> tokens.revokeGrant(grant).as(Left(TokenService.rejected))
     }
 
@@ -203,7 +200,7 @@ final class TokenService[F[_]: Monad](
 
   private def reuse(refreshToken: RefreshToken): F[Either[OAuth2Error, IssuedToken]] =
     tokens.rotated(refreshToken).flatMap {
-      case None        => Monad[F].pure(Left(TokenService.rejected))
+      case None        => TokenService.rejected.asLeft.pure[F]
       case Some(grant) => grants.revoke(grant) >> tokens.revokeGrant(grant).as(Left(TokenService.rejected))
     }
 
@@ -218,11 +215,11 @@ final class TokenService[F[_]: Monad](
       case Some(grant) if !grant.revoked && record.clientId == client.id =>
         request.scope match {
           case Some(scopes) if !Scopes.isSubsetOf(scopes, record.scopes) =>
-            Monad[F].pure(Left(OAuth2Error.InvalidScope(): OAuth2Error))
+            (OAuth2Error.InvalidScope(): OAuth2Error).asLeft.pure[F]
           case requested =>
             clock.instant.flatMap { now =>
               bound(request.resource) match {
-                case Left(error)     => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+                case Left(error)     => error.asLeft[IssuedToken].pure[F]
                 case Right(narrowed) =>
                   issue(
                     TokenService.Mint(
@@ -240,12 +237,12 @@ final class TokenService[F[_]: Monad](
                   ).flatMap {
                     case Right(issued) =>
                       tokens.retire(request.refreshToken, record.grantId).as(Right(issued))
-                    case left => Monad[F].pure(left)
+                    case left => left.pure[F]
                   }
               }
             }
         }
-      case _ => Monad[F].pure(Left(TokenService.rejected))
+      case _ => TokenService.rejected.asLeft.pure[F]
     }
 
   private def issue(
@@ -260,7 +257,7 @@ final class TokenService[F[_]: Monad](
         if (client.confidential) Some(Lifetime.expiresAt(now, LifetimePolicy.of(policy, TokenType.Refresh)))
         else None
       bound(resource) match {
-        case Left(error)     => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+        case Left(error)     => error.asLeft[IssuedToken].pure[F]
         case Right(audience) =>
           issue(
             TokenService.Mint(
@@ -277,7 +274,7 @@ final class TokenService[F[_]: Monad](
             )
           ).flatMap {
             case Right(issued) => codes.redeem(record.code, issued.record.grantId).as(Right(issued))
-            case left          => Monad[F].pure(left)
+            case left          => left.pure[F]
           }
       }
     }
@@ -289,17 +286,17 @@ final class TokenService[F[_]: Monad](
       x5t: Option[CertificateThumbprint] = None
   ): F[Either[OAuth2Error, IssuedToken]] =
     bearer(request.subjectToken, client).flatMap {
-      case Left(error)          => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+      case Left(error)          => error.asLeft[IssuedToken].pure[F]
       case Right(subjectRecord) =>
         actorOf(request.actorToken, client).flatMap {
-          case Left(error)  => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+          case Left(error)  => error.asLeft[IssuedToken].pure[F]
           case Right(actor) =>
             request.scope match {
               case Some(scopes) if !Scopes.isSubsetOf(scopes, subjectRecord.scopes) =>
-                Monad[F].pure(Left(OAuth2Error.InvalidScope(): OAuth2Error))
+                (OAuth2Error.InvalidScope(): OAuth2Error).asLeft.pure[F]
               case requested =>
                 audienceOf(request) match {
-                  case Left(error)     => Monad[F].pure(Left(error): Either[OAuth2Error, IssuedToken])
+                  case Left(error)     => error.asLeft[IssuedToken].pure[F]
                   case Right(audience) =>
                     clock.instant.flatMap { now =>
                       issue(
@@ -330,7 +327,7 @@ final class TokenService[F[_]: Monad](
           case Some(grant) if !grant.revoked => Right(record): Either[OAuth2Error, TokenRecord]
           case _                             => Left(TokenService.rejected)
         }
-      case _ => Monad[F].pure(Left(TokenService.rejected): Either[OAuth2Error, TokenRecord])
+      case _ => TokenService.rejected.asLeft[TokenRecord].pure[F]
     }
 
   private def actorOf(
@@ -338,7 +335,7 @@ final class TokenService[F[_]: Monad](
       client: Client
   ): F[Either[OAuth2Error, Option[Subject]]] =
     token match {
-      case None        => Monad[F].pure(Right(None): Either[OAuth2Error, Option[Subject]])
+      case None        => none[Subject].asRight[OAuth2Error].pure[F]
       case Some(value) => bearer(value, client).map(_.map(record => Some(record.subject)))
     }
 
@@ -369,7 +366,7 @@ final class TokenService[F[_]: Monad](
         else Right(None): Either[OAuth2Error, Option[RefreshToken]]
       ).mapN((_, _, _))
       result <- issued.fold(
-        error => Monad[F].pure(Left(error)),
+        error => error.asLeft.pure[F],
         { case (grantId, accessToken, refreshToken) =>
           val minted = TokenRecord(
             accessTokenHash = AccessTokenHash.of(accessToken),
@@ -433,7 +430,7 @@ final class TokenService[F[_]: Monad](
       entropy
         .bytes(TokenService.TokenEntropyBytes)
         .map(raw => GrantId.from(Entropy.hex(raw)).leftMap(TokenService.failure))
-    )(grantId => Monad[F].pure(Right(grantId): Either[OAuth2Error, GrantId]))
+    )(grantId => grantId.asRight[OAuth2Error].pure[F])
 }
 
 object TokenService {

@@ -1,8 +1,7 @@
 package kots.oauth2.client
 
+import cats.syntax.all._
 import cats.Monad
-import cats.syntax.flatMap._
-import cats.syntax.functor._
 
 import kots.oauth2.core.Acr
 import kots.oauth2.core.Audience
@@ -29,12 +28,12 @@ final class BearerGuard[F[_]: Monad](
   ): F[Either[BearerGuard.Challenge, JwtClaims]] =
     authorization.filter(_.startsWith(BearerGuard.Scheme)) match {
       case None =>
-        Monad[F].pure(Left(BearerGuard.missing): Either[BearerGuard.Challenge, JwtClaims])
+        BearerGuard.missing.asLeft[JwtClaims].pure[F]
       case Some(header) =>
         val token = header.drop(BearerGuard.Scheme.length)
         keys.flatMap {
           case Left(_) =>
-            Monad[F].pure(Left(BearerGuard.invalidToken): Either[BearerGuard.Challenge, JwtClaims])
+            BearerGuard.invalidToken.asLeft[JwtClaims].pure[F]
           case Right(published) =>
             clock.instant.map { now =>
               Jwt.claims(token, published, now, tokenTypes) match {
