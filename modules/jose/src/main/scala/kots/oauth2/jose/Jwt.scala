@@ -3,6 +3,8 @@ package kots.oauth2.jose
 import java.security.PrivateKey
 import java.time.Instant
 
+import cats.syntax.traverse._
+
 import kots.oauth2.core.Acr
 import kots.oauth2.core.Audience
 import kots.oauth2.core.CertificateThumbprint
@@ -93,38 +95,15 @@ object Jwt {
       tokenId <- string(cursor, "jti").flatMap(JwtId.from)
       issuedAt <- number(cursor, "iat")
       expiresAt <- number(cursor, "exp")
-      audience <- cursor
-        .get[String]("aud")
-        .toOption
-        .fold(
-          Right(None): Either[ParseFailure, Option[Audience]]
-        )(raw => Audience.from(raw).map(Some(_)))
-      scopes <- cursor
-        .get[String]("scope")
-        .toOption
-        .fold(
-          Right(Scopes.empty): Either[ParseFailure, Scopes]
-        )(raw => Scopes.parse(raw))
-      acr <- cursor
-        .get[String]("acr")
-        .toOption
-        .fold(
-          Right(None): Either[ParseFailure, Option[Acr]]
-        )(raw => Acr.from(raw).map(Some(_)))
-      jkt <- cursor
-        .downField("cnf")
-        .get[String]("jkt")
-        .toOption
-        .fold(
-          Right(None): Either[ParseFailure, Option[KeyThumbprint]]
-        )(raw => KeyThumbprint.from(raw).map(Some(_)))
+      audience <- cursor.get[String]("aud").toOption.traverse(Audience.from)
+      scopes <- cursor.get[String]("scope").toOption.traverse(Scopes.parse).map(_.getOrElse(Scopes.empty))
+      acr <- cursor.get[String]("acr").toOption.traverse(Acr.from)
+      jkt <- cursor.downField("cnf").get[String]("jkt").toOption.traverse(KeyThumbprint.from)
       x5t <- cursor
         .downField("cnf")
         .get[String](CertificateConfirmation)
         .toOption
-        .fold(
-          Right(None): Either[ParseFailure, Option[CertificateThumbprint]]
-        )(raw => CertificateThumbprint.from(raw).map(Some(_)))
+        .traverse(CertificateThumbprint.from)
     } yield JwtClaims(
       issuer,
       subject,
