@@ -220,6 +220,7 @@ class InterpreterSpec extends CatsEffectSuite {
         authentication,
         new DeviceAuthorizationService[IO](devices, clock, entropy, LifetimePolicy.defaults, verification)
       )
+      approval = new kots.oauth2.server.DeviceVerificationEndpoint[IO](devices, login)
     } yield (
       Interpreter.routes[IO](
         List(
@@ -238,6 +239,8 @@ class InterpreterSpec extends CatsEffectSuite {
           Server.revocation(revocation),
           Server.introspection(introspection),
           Server.deviceAuthorization(device),
+          Server.verification(approval),
+          Server.verificationDecision(approval),
           Server.metadata(metadata),
           Server.resourceMetadata(resource),
           Server.jwks(keys.jwks),
@@ -1269,5 +1272,67 @@ class InterpreterSpec extends CatsEffectSuite {
         .value
       answer <- body(introspected.get)
     } yield assert(answer.contains("username"), answer)
+  }
+
+  test("the verification address serves a page where a user code is entered") {
+    for {
+      pair <- application
+      (served, _, _, _) = pair
+      answered <- served
+        .run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/device")))
+        .value
+      response = answered.get
+      text <- body(response)
+    } yield {
+      assertEquals(response.status, Status.Ok)
+      assert(text.contains("user_code"), text)
+      assert(text.contains("form"), text)
+    }
+  }
+
+  test("a user code typed at the verification address approves the pending device grant") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      pair <- application
+      (served, _, login, _) = pair
+      _ <- login.login(user)
+      issued <- served
+        .run(postTo("/device_authorization", Map("scope" -> "read"), Some("s3cret")))
+        .value
+      text <- body(issued.get)
+      code = field(text, "device_code")
+      entered = field(text, "user_code")
+      approved <- served
+        .run(postTo("/device", Map("user_code" -> entered), None))
+        .value
+      polled <- served
+        .run(
+          postTo(
+            "/token",
+            Map("grant_type" -> "urn:ietf:params:oauth:grant-type:device_code", "device_code" -> code),
+            Some("s3cret")
+          )
+        )
+        .value
+      granted <- body(polled.get)
+    } yield {
+      assertEquals(approved.get.status, Status.Ok)
+      assertEquals(polled.get.status, Status.Ok)
+      assert(field(granted, "access_token").nonEmpty, granted)
+    }
+  }
+
+  test("an unknown user code is not approved") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      pair <- application
+      (served, _, login, _) = pair
+      _ <- login.login(user)
+      answered <- served.run(postTo("/device", Map("user_code" -> "ZZZZ-ZZZZ"), None)).value
+      text <- body(answered.get)
+    } yield {
+      assertEquals(answered.get.status, Status.Ok)
+      assert(text.contains("not approved"), text)
+    }
   }
 }

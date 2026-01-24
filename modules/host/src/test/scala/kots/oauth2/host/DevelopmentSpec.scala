@@ -154,4 +154,35 @@ class DevelopmentSpec extends CatsEffectSuite {
     assertEquals(DevServer.served(Some("https://issuer.example"), 8080), Right("https://issuer.example"))
     assert(DevServer.served(Some("not an issuer"), 8080).isLeft)
   }
+
+  test("the advertised verification address is a page a person can visit") {
+    val accepts = org.http4s.headers.Accept(org.http4s.MediaType.application.json)
+    val bound = for {
+      server <- Development.server[IO](Port.fromInt(28120).get, None, "http://localhost:28120")
+      client <- EmberClientBuilder.default[IO].build
+    } yield (server, client)
+    bound.use { case (server, client) =>
+      val base = s"http://localhost:${server.address.getPort}"
+      for {
+        device <- client.expect[String](
+          Request[IO](
+            method = Method.POST,
+            uri = Uri.unsafeFromString(s"$base/${kots.oauth2.http.Endpoints.DeviceAuthorizationPath}"),
+            headers = org.http4s.Headers(
+              Authorization(BasicCredentials(Development.SeedClientId, Development.SeedClientSecret)),
+              accepts
+            )
+          ).withEntity(UrlForm("scope" -> "read"))
+        )
+        advertised = field(device, "verification_uri")
+        visited <- client.run(Request[IO](uri = Uri.unsafeFromString(advertised))).use { response =>
+          response.bodyText.compile.string.map(response.status -> _)
+        }
+      } yield {
+        assertEquals(advertised, s"$base/${kots.oauth2.http.Endpoints.VerificationPath}")
+        assertEquals(visited._1, Status.Ok)
+        assert(visited._2.contains("user_code"), visited._2)
+      }
+    }
+  }
 }

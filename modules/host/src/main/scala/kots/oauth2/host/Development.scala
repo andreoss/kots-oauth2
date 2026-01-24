@@ -38,6 +38,7 @@ import kots.oauth2.server.AuthorizationEndpoint
 import kots.oauth2.server.AuthorizationService
 import kots.oauth2.server.DeviceAuthorizationEndpoint
 import kots.oauth2.server.DeviceAuthorizationService
+import kots.oauth2.server.DeviceVerificationEndpoint
 import kots.oauth2.server.IntrospectionEndpoint
 import kots.oauth2.server.PushedAuthorizationEndpoint
 import kots.oauth2.server.PushedAuthorizationService
@@ -181,6 +182,7 @@ object Development {
         issuers.map(TokenService.IdentityAssertions(issuer, _, replays, clock))
       )
       registration = new RegistrationEndpoint[F](new RegistrationService[F](clients, entropy))
+      verification = new DeviceVerificationEndpoint[F](devices, login)
     } yield assembledOf(
       List(codes.sweep, tokens.sweep, devices.sweep, pushed.sweep, replays.sweep),
       Interpreter.routes[F](
@@ -222,11 +224,13 @@ object Development {
                   clock,
                   entropy,
                   LifetimePolicy.defaults,
-                  endpoint(Endpoints.DeviceAuthorizationPath)
+                  endpoint(Endpoints.VerificationPath)
                 )
               )
             )
           ),
+          Server.verification(verification),
+          Server.verificationDecision(verification),
           Server.metadata(metadata),
           Server.resourceMetadata(resource),
           Server.jwks(keys.jwks),
