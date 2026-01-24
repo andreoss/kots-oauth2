@@ -16,14 +16,27 @@ object DevServer extends IOApp.Simple {
 
   val TrustedIssuersVariable: String = "OAUTH2_TRUSTED_ISSUERS"
 
+  val IssuerVariable: String = "OAUTH2_ISSUER"
+
   def run: IO[Unit] = serve(DefaultPort)
 
   def serve(port: Int): IO[Unit] =
     Port
       .fromInt(port)
       .fold(IO.raiseError[Unit](new IllegalStateException("no port")))(bound =>
-        assertionIssuers.use(issuers => Development.server[IO](bound, issuers).useForever)
+        IO(sys.env.get(IssuerVariable)).flatMap { configured =>
+          served(configured, port) match {
+            case Left(raw)    => IO.raiseError(new IllegalStateException(s"not an issuer: $raw"))
+            case Right(value) =>
+              assertionIssuers.use(issuers => Development.server[IO](bound, issuers, value).useForever)
+          }
+        }
       )
+
+  def served(configured: Option[String], port: Int): Either[String, String] = {
+    val candidate = configured.map(_.trim).filter(_.nonEmpty).getOrElse(s"http://localhost:$port")
+    Issuer.from(candidate).bimap(_ => candidate, _.value)
+  }
 
   def trusted(configured: Option[String]): Either[String, List[Issuer]] =
     configured.map(_.split(',').toList.map(_.trim).filter(_.nonEmpty)).getOrElse(Nil) match {

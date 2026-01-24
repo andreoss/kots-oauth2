@@ -111,4 +111,48 @@ class DevelopmentSpec extends CatsEffectSuite {
     )
     assert(DevServer.trusted(Some("not an issuer")).isLeft)
   }
+
+  test("the discovered document leads back to the server that published it") {
+    val accepts = org.http4s.headers.Accept(org.http4s.MediaType.application.json)
+    val bound = for {
+      server <- Development.server[IO](Port.fromInt(28100).get, None, "http://localhost:28100")
+      client <- EmberClientBuilder.default[IO].build
+    } yield (server, client)
+    bound.use {
+      case (server, client) =>
+          val base = s"http://localhost:${server.address.getPort}"
+          for {
+            metadata <- client.expect[String](
+              Request[IO](
+                uri = Uri.unsafeFromString(s"$base/.well-known/oauth-authorization-server"),
+                headers = org.http4s.Headers(accepts)
+              )
+            )
+            token <- client
+              .run(
+                Request[IO](
+                  method = Method.POST,
+                  uri = Uri.unsafeFromString(field(metadata, "token_endpoint")),
+                  headers = org.http4s.Headers(
+                    Authorization(
+                      BasicCredentials(Development.SeedClientId, Development.SeedClientSecret)
+                    ),
+                    accepts
+                  )
+                ).withEntity(UrlForm("grant_type" -> "client_credentials"))
+              )
+              .use(response => IO.pure(response.status))
+        } yield {
+          assertEquals(field(metadata, "issuer"), base)
+          assertEquals(token, Status.Ok)
+        }
+    }
+  }
+
+  test("the served issuer is read from configuration and falls back to the bound address") {
+    assertEquals(DevServer.served(None, 8080), Right("http://localhost:8080"))
+    assertEquals(DevServer.served(Some(""), 9000), Right("http://localhost:9000"))
+    assertEquals(DevServer.served(Some("https://issuer.example"), 8080), Right("https://issuer.example"))
+    assert(DevServer.served(Some("not an issuer"), 8080).isLeft)
+  }
 }

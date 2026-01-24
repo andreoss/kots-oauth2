@@ -102,12 +102,13 @@ object Development {
   def routes[F[_]: Async]: F[HttpRoutes[F]] = assembled[F]().map { case (bound, _) => bound }
 
   def assembled[F[_]: Async](
-      issuers: Option[AssertionIssuers[F]] = None
+      issuers: Option[AssertionIssuers[F]] = None,
+      served: String = SeedIssuer
   ): F[(HttpRoutes[F], List[F[Int]])] = {
     val clock = systemClock[F]
     def unsafe[A](parsed: Either[ParseFailure, A]): A =
       parsed.fold(failure => sys.error(failure.toString), identity)
-    val issuer = unsafe(Issuer.from(SeedIssuer))
+    val issuer = unsafe(Issuer.from(served))
     val clientId = unsafe(ClientId.from(SeedClientId))
     val subject = unsafe(Subject.from(SeedSubject))
     val scopes = unsafe(Scopes.parse("read write"))
@@ -118,7 +119,7 @@ object Development {
       ClientAuthMethod.ClientSecretBasic,
       Some(ClientSecretHash.of(unsafe(ClientSecret.from(SeedClientSecret))))
     )
-    def endpoint(path: String): EndpointUri = unsafe(EndpointUri.from(s"$SeedIssuer/$path"))
+    def endpoint(path: String): EndpointUri = unsafe(EndpointUri.from(s"${served}/${path}"))
     val metadata = AuthorizationServerMetadata.of(
       issuer,
       endpoint(Endpoints.AuthorizePath),
@@ -254,10 +255,11 @@ object Development {
 
   def server[F[_]: Async: fs2.io.net.Network](
       port: Port,
-      issuers: Option[AssertionIssuers[F]] = None
+      issuers: Option[AssertionIssuers[F]] = None,
+      served: String = SeedIssuer
   ): Resource[F, org.http4s.server.Server] =
     Resource
-      .eval(assembled[F](issuers))
+      .eval(assembled[F](issuers, served))
       .flatMap { case (bound, sweeps) =>
         Resource.eval(InMemoryMetrics.create[F]).flatMap { metrics =>
           Resource.eval(secureEntropy[F]).flatMap { entropy =>
