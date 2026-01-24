@@ -220,6 +220,23 @@ object Endpoints {
       )
       .errorOut(authorizeErrors)
 
+  val VerificationPath: String = "device"
+
+  val verificationParameters: Set[String] = Set("user_code")
+
+  lazy val verification: PublicEndpoint[Unit, OAuth2Error, String, Any] =
+    sttp.tapir.endpoint.get
+      .in(VerificationPath)
+      .out(noStore(htmlBodyUtf8))
+      .errorOut(authorizeErrors)
+
+  lazy val verificationDecision: PublicEndpoint[Map[String, String], OAuth2Error, String, Any] =
+    sttp.tapir.endpoint.post
+      .in(VerificationPath)
+      .in(formBody[Map[String, String]](Endpoints.strictForm(verificationParameters)))
+      .out(noStore(htmlBodyUtf8))
+      .errorOut(authorizeErrors)
+
   val DpopHeader: String = "DPoP"
 
   val ClientCertHeader: String = "X-Client-Cert"

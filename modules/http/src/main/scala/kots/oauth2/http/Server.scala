@@ -12,6 +12,12 @@ import kots.oauth2.jose.Jwks
 import io.circe.Json
 import sttp.tapir.server.ServerEndpoint
 
+trait VerificationLogic[F[_]] {
+  def page: F[Either[OAuth2Error, String]]
+
+  def decide(parameters: Map[String, String]): F[Either[OAuth2Error, String]]
+}
+
 trait AuthorizeLogic[F[_]] {
   def apply(parameters: Map[String, String]): F[Either[OAuth2Error, AuthorizationRedirect]]
 }
@@ -79,6 +85,18 @@ object Server {
     ServerEndpoint.public[Map[String, String], OAuth2Error, String, Any, F](
       Endpoints.authorize,
       _ => parameters => logic(parameters).map(_.map(_.location))
+    )
+
+  def verification[F[_]](logic: VerificationLogic[F]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[Unit, OAuth2Error, String, Any, F](
+      Endpoints.verification,
+      _ => _ => logic.page
+    )
+
+  def verificationDecision[F[_]](logic: VerificationLogic[F]): ServerEndpoint[Any, F] =
+    ServerEndpoint.public[Map[String, String], OAuth2Error, String, Any, F](
+      Endpoints.verificationDecision,
+      _ => parameters => logic.decide(parameters)
     )
 
   def par[F[_]: Functor](logic: ParLogic[F]): ServerEndpoint[Any, F] =
