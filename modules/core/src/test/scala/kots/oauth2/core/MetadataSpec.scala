@@ -75,7 +75,31 @@ class MetadataSpec extends FunSuite {
     assertEquals(minimal.revocationEndpoint, None)
     assertEquals(minimal.introspectionEndpoint, None)
     assertEquals(minimal.jwksUri, None)
+    assertEquals(minimal.registrationEndpoint, None)
+    assertEquals(minimal.deviceAuthorizationEndpoint, None)
+    assertEquals(minimal.pushedAuthorizationRequestEndpoint, None)
     assertEquals(minimal.scopesSupported, Scopes.empty)
+  }
+
+  test("the metadata advertises the registration, device and par endpoints it serves") {
+    val registration = unsafe(EndpointUri.from("https://server.example/register"))
+    val device = unsafe(EndpointUri.from("https://server.example/device_authorization"))
+    val par = unsafe(EndpointUri.from("https://server.example/par"))
+    val document = AuthorizationServerMetadata.of(
+      issuer,
+      authorization,
+      token,
+      None,
+      None,
+      None,
+      Scopes.empty,
+      registrationEndpoint = Some(registration),
+      deviceAuthorizationEndpoint = Some(device),
+      pushedAuthorizationRequestEndpoint = Some(par)
+    )
+    assertEquals(document.registrationEndpoint, Some(registration))
+    assertEquals(document.deviceAuthorizationEndpoint, Some(device))
+    assertEquals(document.pushedAuthorizationRequestEndpoint, Some(par))
   }
 
   test("the protected resource metadata carries the resource, its servers and scopes") {
