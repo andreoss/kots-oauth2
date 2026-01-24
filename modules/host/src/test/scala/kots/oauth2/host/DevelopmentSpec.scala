@@ -71,4 +71,44 @@ class DevelopmentSpec extends CatsEffectSuite {
       }
     }
   }
+
+  private def grants(text: String): List[String] =
+    io.circe.parser
+      .parse(text)
+      .toOption
+      .flatMap(_.hcursor.get[List[String]]("grant_types_supported").toOption)
+      .getOrElse(sys.error(s"no grant_types_supported in $text"))
+
+  test("the served metadata offers the assertion grant only where issuers are configured") {
+    def document(issuers: Option[kots.oauth2.server.AssertionIssuers[IO]]): IO[String] =
+      Development.assembled[IO](issuers).flatMap { case (served, _) =>
+        served
+          .run(
+            Request[IO](
+              uri = Uri.unsafeFromString(
+                "http://localhost/.well-known/oauth-authorization-server"
+              )
+            )
+          )
+          .value
+          .flatMap(_.fold(IO.pure(""))(_.bodyText.compile.string))
+      }
+    for {
+      without <- document(None)
+      configured <- document(Some(kots.oauth2.server.AssertionIssuers.static[IO](Map.empty)))
+    } yield {
+      assert(!grants(without).contains(kots.oauth2.core.GrantType.IdJag.value))
+      assert(grants(configured).contains(kots.oauth2.core.GrantType.IdJag.value))
+    }
+  }
+
+  test("the trusted issuer list is read from configuration and fails closed") {
+    assertEquals(DevServer.trusted(None), Right(Nil))
+    assertEquals(DevServer.trusted(Some("")), Right(Nil))
+    assertEquals(
+      DevServer.trusted(Some("https://idp.example, https://other.example")).map(_.map(_.value)),
+      Right(List("https://idp.example", "https://other.example"))
+    )
+    assert(DevServer.trusted(Some("not an issuer")).isLeft)
+  }
 }

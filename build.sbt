@@ -118,7 +118,7 @@ lazy val host = module("host")
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % Tapir,
       "org.http4s" %% "http4s-ember-server" % Http4s,
-      "org.http4s" %% "http4s-ember-client" % Http4s % Test,
+      "org.http4s" %% "http4s-ember-client" % Http4s,
       "org.typelevel" %% "cats-effect-testkit" % "3.6.0" % Test,
       "io.circe" %% "circe-parser" % Circe % Test,
       "com.h2database" % "h2" % "2.3.232" % Test
@@ -126,7 +126,7 @@ lazy val host = module("host")
   )
 
 lazy val example = Project("example", file("example"))
-  .dependsOn(client, http, core, jose)
+  .dependsOn(client, http, core, jose, host)
   .settings(commonSettings, testSettings)
   .settings(
     name := "oauth2-example",
