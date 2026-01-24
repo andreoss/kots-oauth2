@@ -28,10 +28,11 @@ object IntrospectionResponse {
       kind: TokenTypeHint,
       scopes: Scopes,
       clientId: ClientId,
-      username: Subject,
+      subject: Subject,
       issuedAt: Instant,
       expiresAt: Instant,
-      notBefore: Instant
+      notBefore: Instant,
+      username: Option[Subject] = None
   ) extends IntrospectionResponse(true)
 
   object Active {
@@ -45,10 +46,11 @@ object IntrospectionResponse {
       kind: TokenTypeHint,
       scopes: Scopes,
       clientId: ClientId,
-      username: Subject,
+      subject: Subject,
       issuedAt: Instant,
       expiresAt: Instant,
-      notBefore: Instant
+      notBefore: Instant,
+      username: Option[Subject] = None
   ): IntrospectionResponse =
-    Active(kind, scopes, clientId, username, issuedAt, expiresAt, notBefore)
+    Active(kind, scopes, clientId, subject, issuedAt, expiresAt, notBefore, username)
 }

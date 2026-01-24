@@ -17,12 +17,13 @@ object IntrospectionDocument {
         Map(
           IntrospectionResponse.ActiveFlag -> Json.True,
           "client_id" -> Json.fromString(Wire[ClientId].encode(active.clientId)),
-          "username" -> Json.fromString(Wire[Subject].encode(active.username)),
           "token_type" -> Json.fromString(IntrospectionResponse.Active.AccessTokenType),
           "exp" -> Json.fromLong(active.expiresAt.getEpochSecond),
           "iat" -> Json.fromLong(active.issuedAt.getEpochSecond),
           "nbf" -> Json.fromLong(active.notBefore.getEpochSecond),
-          "sub" -> Json.fromString(Wire[Subject].encode(active.username))
+          "sub" -> Json.fromString(Wire[Subject].encode(active.subject))
+        ) ++ active.username.map(owner =>
+          "username" -> Json.fromString(Wire[Subject].encode(owner))
         ) ++ (if (active.scopes.value.isEmpty) Map.empty[String, Json]
               else Map("scope" -> Json.fromString(Wire[Scopes].encode(active.scopes))))
     }

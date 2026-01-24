@@ -14,7 +14,9 @@ object ResponseType {
     all.find(_.value == raw).toRight(ParseFailure("ResponseType", "not code"))
 }
 
-sealed abstract class GrantType(val value: String)
+sealed abstract class GrantType(val value: String) {
+  def actsForAnOwner: Boolean = this != GrantType.ClientCredentials
+}
 
 object GrantType {
   case object AuthorizationCode extends GrantType("authorization_code")

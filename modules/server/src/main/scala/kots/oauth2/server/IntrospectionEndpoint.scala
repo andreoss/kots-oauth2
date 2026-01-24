@@ -110,7 +110,8 @@ object IntrospectionEndpoint {
       record.subject,
       record.issuedAt,
       IntrospectionEndpoint.expiry(kind, record),
-      record.issuedAt
+      record.issuedAt,
+      if (record.grant.actsForAnOwner) Some(record.subject) else None
     )
 
   private def expiry(kind: TokenTypeHint, record: TokenRecord): java.time.Instant =

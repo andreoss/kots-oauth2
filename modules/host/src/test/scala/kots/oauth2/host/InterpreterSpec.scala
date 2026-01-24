@@ -1238,4 +1238,36 @@ class InterpreterSpec extends CatsEffectSuite {
       assertEquals(member(answer, "token_type"), Some(io.circe.Json.fromString("Bearer")), answer)
     }
   }
+
+  test("introspection names no resource owner for a grant that has none") {
+    for {
+      served <- routes
+      granted <- served
+        .run(postTo("/token", Map("grant_type" -> "client_credentials"), Some("s3cret")))
+        .value
+      text <- body(granted.get)
+      access = field(text, "access_token")
+      introspected <- served
+        .run(postTo("/introspection", revoke(access, "access_token"), Some("s3cret")))
+        .value
+      answer <- body(introspected.get)
+    } yield {
+      assertEquals(member(answer, "active"), Some(io.circe.Json.True), answer)
+      assertEquals(member(answer, "sub"), Some(io.circe.Json.fromString(clientId.value)), answer)
+      assert(!answer.contains("username"), answer)
+    }
+  }
+
+  test("introspection names the resource owner of a grant that has one") {
+    for {
+      served <- routes
+      answered <- served.run(post(exchange, Some("s3cret"))).value
+      text <- body(answered.get)
+      access = field(text, "access_token")
+      introspected <- served
+        .run(postTo("/introspection", revoke(access, "access_token"), Some("s3cret")))
+        .value
+      answer <- body(introspected.get)
+    } yield assert(answer.contains("username"), answer)
+  }
 }

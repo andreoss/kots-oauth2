@@ -83,7 +83,7 @@ class IntrospectionSpec extends ScalaCheckSuite {
     assert(active.active)
     val details = active.asInstanceOf[IntrospectionResponse.Active]
     assertEquals(details.clientId.value, "client-1")
-    assertEquals(details.username.value, "user-1")
+    assertEquals(details.subject.value, "user-1")
     assertEquals(details.expiresAt, Start.plusSeconds(3600L))
     assertEquals(details.issuedAt, Start)
     assertEquals(details.notBefore, Start)
