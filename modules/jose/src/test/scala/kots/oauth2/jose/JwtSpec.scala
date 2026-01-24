@@ -22,7 +22,7 @@ class JwtSpec extends FunSuite {
   private val claims: JwtClaims = JwtClaims(
     issuer = unsafe(Issuer.from("https://server.example")),
     subject = unsafe(Subject.from("user-1")),
-    audience = Some(unsafe(Audience.from("https://api.example"))),
+    audience = List(unsafe(Audience.from("https://api.example"))),
     clientId = unsafe(ClientId.from("client-1")),
     scopes = unsafe(Scopes.parse("read write")),
     issuedAt = Start,
@@ -49,7 +49,7 @@ class JwtSpec extends FunSuite {
   }
 
   test("a token without an audience or scopes omits the claims") {
-    val bare = claims.copy(audience = None, scopes = Scopes.empty)
+    val bare = claims.copy(audience = Nil, scopes = Scopes.empty)
     val compact = Jwt.issue(Fakes.signingKey, bare).toOption.get
     val payload = new String(Base64.getUrlDecoder.decode(compact.split('.')(1)), "UTF-8")
     val cursor = io.circe.parser.parse(payload).toOption.get.hcursor
@@ -205,5 +205,22 @@ class JwtSpec extends FunSuite {
   test("an access token signed by an unpublished key is refused") {
     val compact = Jwt.issue(Fakes.signingKey, claims).toOption.get
     assert(Jwt.claims(compact, Jwks(List(Fakes.rsa("key-1"))), Start).isLeft)
+  }
+
+  test("a token with several audiences renders and reads them as an array") {
+    val many = claims.copy(
+      audience = List(
+        unsafe(Audience.from("https://api.example")),
+        unsafe(Audience.from("https://other.example"))
+      )
+    )
+    val compact = Jwt.issue(Fakes.signingKey, many).toOption.get
+    val payload = new String(Base64.getUrlDecoder.decode(compact.split('.')(1)), "UTF-8")
+    val cursor = io.circe.parser.parse(payload).toOption.get.hcursor
+    assertEquals(
+      cursor.get[List[String]]("aud").toOption,
+      Some(List("https://api.example", "https://other.example"))
+    )
+    assertEquals(Jwt.claims(compact, published, Start), Right(many))
   }
 }

@@ -605,7 +605,7 @@ class NegativeSpec extends CatsEffectSuite {
       assertEquals(issued.get.status, Status.Ok)
       assertEquals(foreign.left.toOption.map(_.status), Some(401))
       assert(foreign.left.toOption.exists(_.header.contains("invalid_token")))
-      assertEquals(accepted.toOption.map(_.audience.map(_.value)), Some(Some("https://api.example")))
+      assertEquals(accepted.toOption.map(_.audience.map(_.value)), Some(List("https://api.example")))
     }
   }
 }
