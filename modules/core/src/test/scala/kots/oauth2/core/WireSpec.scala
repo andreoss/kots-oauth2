@@ -58,6 +58,11 @@ class WireSpec extends ScalaCheckSuite {
     }
 
   roundTrip[ClientId]("ClientId", printable.map(raw => ClientId.from(raw).toOption.get))
+  roundTrip[ClientSecret]("ClientSecret", printable.map(raw => ClientSecret.from(raw).toOption.get))
+  roundTrip[Audience]("Audience", printable.map(raw => Audience.from(raw).toOption.get))
+  roundTrip[KeyId]("KeyId", printable.map(raw => KeyId.from(raw).toOption.get))
+  roundTrip[DeviceCode]("DeviceCode", printable.map(raw => DeviceCode.from(raw).toOption.get))
+  roundTrip[UserCode]("UserCode", printable.map(raw => UserCode.from(raw).toOption.get))
   roundTrip[Subject]("Subject", printable.map(raw => Subject.from(raw).toOption.get))
   roundTrip[GrantId]("GrantId", printable.map(raw => GrantId.from(raw).toOption.get))
   roundTrip[State]("State", printable.map(raw => State.from(raw).toOption.get))
@@ -110,6 +115,11 @@ class WireSpec extends ScalaCheckSuite {
   }
 
   refuses[ClientId]("ClientId", "")
+  refuses[ClientSecret]("ClientSecret", "")
+  refuses[Audience]("Audience", "")
+  refuses[KeyId]("KeyId", "")
+  refuses[DeviceCode]("DeviceCode", "")
+  refuses[UserCode]("UserCode", "")
   refuses[Scope]("Scope", "")
   refuses[Issuer]("Issuer", "https://example.com/?a=b")
   refuses[CodeChallengeMethod]("CodeChallengeMethod", "none")
