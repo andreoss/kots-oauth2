@@ -168,6 +168,20 @@ class TokenServiceSpec extends CatsEffectSuite {
     }
   }
 
+  test("a minted jwt access token names the issuer as audience when no resource is requested") {
+    for {
+      pair <- signedSetup
+      (service, _) = pair
+      issued <- service.clientCredentials(TokenRequest.ClientCredentials(None, clientId), client())
+    } yield {
+      val minted = issued.toOption.get
+      val published = kots.oauth2.jose.Jwks(List(kots.oauth2.jose.Fakes.signingJwk))
+      val parsed = kots.oauth2.jose.Jwt.claims(minted.accessToken.value, published, Start).toOption.get
+      assertEquals(parsed.audience.map(_.value), Some("https://server.example"))
+      assertEquals(parsed.notBefore, Some(parsed.issuedAt))
+    }
+  }
+
   test("a minted jwt access token is still found by its hash") {
     for {
       pair <- signedSetup

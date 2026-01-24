@@ -410,7 +410,7 @@ final class TokenService[F[_]: Monad](
             JwtClaims(
               issuer = signing.issuer,
               subject = mint.subject,
-              audience = mint.audience,
+              audience = audienceOf(signing, mint),
               clientId = mint.clientId,
               scopes = mint.scopes,
               issuedAt = mint.now,
@@ -418,12 +418,17 @@ final class TokenService[F[_]: Monad](
               tokenId = tokenId,
               acr = mint.acr,
               jkt = mint.jkt,
-              x5t = mint.x5t
+              x5t = mint.x5t,
+              notBefore = Some(mint.now)
             )
           )
           token <- AccessToken.from(compact)
         } yield token).leftMap(TokenService.failure)
     }
+
+  private def audienceOf(signing: TokenService.Signing, mint: TokenService.Mint): Option[Audience] =
+    mint.audience
+      .orElse(Audience.from(signing.issuer.value).toOption)
 
   private def grantIdOf(mint: TokenService.Mint): F[Either[OAuth2Error, GrantId]] =
     mint.grantId.fold(
