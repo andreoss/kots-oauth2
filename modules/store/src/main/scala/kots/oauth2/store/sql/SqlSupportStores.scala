@@ -10,6 +10,7 @@ import cats.syntax.flatMap._
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.Clock
 import kots.oauth2.core.GrantId
+import kots.oauth2.core.GrantType
 import kots.oauth2.core.KeyId
 import kots.oauth2.core.RequestUri
 import kots.oauth2.core.Scopes
@@ -227,16 +228,19 @@ final class SqlAuditLog[F[_]: Sync] private (connect: F[Connection])
 
   def record(event: AuditEvent): F[Unit] = session { connection =>
     val insert = connection.prepareStatement(
-      "INSERT INTO audit_events(name, client_id, subject, grant_id, active) VALUES(?, ?, ?, ?, ?)"
+      "INSERT INTO audit_events(name, client_id, subject, grant_id, active, grant_type) " +
+        "VALUES(?, ?, ?, ?, ?, ?)"
     )
     try {
       insert.setString(1, event.name)
+      insert.setNull(6, java.sql.Types.VARCHAR)
       event match {
-        case AuditEvent.Issued(clientId, subject, grantId) =>
+        case AuditEvent.Issued(clientId, subject, grantId, grant) =>
           insert.setString(2, clientId.value)
           insert.setString(3, subject.value)
           insert.setString(4, grantId.value)
           insert.setNull(5, java.sql.Types.BOOLEAN)
+          insert.setString(6, grant.value)
         case AuditEvent.Refreshed(clientId, subject, grantId) =>
           insert.setString(2, clientId.value)
           insert.setString(3, subject.value)
@@ -257,6 +261,11 @@ final class SqlAuditLog[F[_]: Sync] private (connect: F[Connection])
           insert.setNull(3, java.sql.Types.VARCHAR)
           insert.setNull(4, java.sql.Types.VARCHAR)
           insert.setNull(5, java.sql.Types.BOOLEAN)
+        case AuditEvent.AssertionReplayed(clientId) =>
+          insert.setString(2, clientId.value)
+          insert.setNull(3, java.sql.Types.VARCHAR)
+          insert.setNull(4, java.sql.Types.VARCHAR)
+          insert.setNull(5, java.sql.Types.BOOLEAN)
       }
       insert.executeUpdate()
       ()
@@ -267,7 +276,7 @@ final class SqlAuditLog[F[_]: Sync] private (connect: F[Connection])
     val statement = connection.createStatement()
     try {
       val results = statement.executeQuery(
-        "SELECT name, client_id, subject, grant_id, active FROM audit_events ORDER BY seq"
+        "SELECT name, client_id, subject, grant_id, active, grant_type FROM audit_events ORDER BY seq"
       )
       Iterator.continually(results).takeWhile(_.next()).map(eventOf).toList
     } finally statement.close()
@@ -277,11 +286,14 @@ final class SqlAuditLog[F[_]: Sync] private (connect: F[Connection])
     def client: ClientId = DetailRows.required(ClientId.from(results.getString("client_id")))
     def subject: Subject = DetailRows.required(Subject.from(results.getString("subject")))
     def grant: GrantId = DetailRows.required(GrantId.from(results.getString("grant_id")))
+    def grantType: GrantType =
+      DetailRows.required(GrantType.from(results.getString("grant_type")))
     results.getString("name") match {
-      case "issued"       => AuditEvent.Issued(client, subject, grant)
+      case "issued"       => AuditEvent.Issued(client, subject, grant, grantType)
       case "refreshed"    => AuditEvent.Refreshed(client, subject, grant)
       case "revoked"      => AuditEvent.Revoked(client, grant)
       case "introspected" => AuditEvent.Introspected(client, results.getBoolean("active"))
+      case "assertion_replayed" => AuditEvent.AssertionReplayed(client)
       case _              =>
         AuditEvent.AuthenticationFailed(
           Option(results.getString("client_id")).map(raw => DetailRows.required(ClientId.from(raw)))

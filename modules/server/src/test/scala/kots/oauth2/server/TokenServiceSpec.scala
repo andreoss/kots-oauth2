@@ -1035,7 +1035,7 @@ class TokenServiceSpec extends CatsEffectSuite {
       assertEquals(second.left.toOption.map(_.code), Some("invalid_grant"))
       assertEquals(
         events.last,
-        (kots.oauth2.store.AuditEvent.AuthenticationFailed(Some(clientId)): kots.oauth2.store.AuditEvent)
+        (kots.oauth2.store.AuditEvent.AssertionReplayed(clientId): kots.oauth2.store.AuditEvent)
       )
     }
   }
@@ -1128,5 +1128,39 @@ class TokenServiceSpec extends CatsEffectSuite {
       (service, _) = pair
       result <- service.idJag(idjag(assertion), client())
     } yield assertEquals(result.toOption.map(_.record.subject), Some(subject))
+  }
+
+  test("a refused scope leaves the identity assertion usable") {
+    val assertion = signed(identityClaims(scope = Some("read")))
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      refused <- service.idJag(idjag(assertion, scope = Some("read write")), client())
+      retried <- service.idJag(idjag(assertion, scope = Some("read")), client())
+    } yield {
+      assertEquals(refused.left.toOption.map(_.code), Some("invalid_scope"))
+      assertEquals(retried.toOption.map(_.record.scopes), Some(unsafe(Scopes.parse("read"))))
+    }
+  }
+
+  test("an identity assertion without a scope claim falls back to the registered scope") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(idjag(signed(identityClaims(scope = None))), client())
+    } yield assertEquals(result.toOption.map(_.record.scopes), Some(client().scopes))
+  }
+
+  test("the audit trail names the grant that issued a token") {
+    for {
+      audit <- InMemoryAuditLog.create[IO]
+      pair <- idjagSetup(audit = Some(audit))
+      (service, _) = pair
+      _ <- service.idJag(idjag(signed(identityClaims())), client())
+      events <- audit.events
+    } yield assertEquals(
+      events.collect { case issued: kots.oauth2.store.AuditEvent.Issued => issued.grant },
+      Vector(kots.oauth2.core.GrantType.IdJag: kots.oauth2.core.GrantType)
+    )
   }
 }

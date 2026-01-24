@@ -10,6 +10,7 @@ import cats.effect.Ref
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.Clock
 import kots.oauth2.core.GrantId
+import kots.oauth2.core.GrantType
 import kots.oauth2.core.ParseFailure
 import kots.oauth2.core.RequestUri
 import kots.oauth2.core.Scopes
@@ -128,12 +129,13 @@ class SqlSupportStoresSpec extends CatsEffectSuite {
   test("audit events read back in order with their fields") {
     val grant = unsafe(GrantId.from("grant-1"))
     val recorded = List(
-      AuditEvent.Issued(clientId, subject, grant),
+      AuditEvent.Issued(clientId, subject, grant, GrantType.IdJag),
       AuditEvent.Refreshed(clientId, subject, grant),
       AuditEvent.Revoked(clientId, grant),
       AuditEvent.Introspected(clientId, active = true),
       AuditEvent.AuthenticationFailed(Some(clientId)),
-      AuditEvent.AuthenticationFailed(None)
+      AuditEvent.AuthenticationFailed(None),
+      AuditEvent.AssertionReplayed(clientId)
     )
     for {
       log <- SqlAuditLog.create[IO](connect).toOption.get
