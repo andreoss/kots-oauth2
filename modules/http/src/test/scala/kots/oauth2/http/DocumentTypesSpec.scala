@@ -32,7 +32,10 @@ class DocumentTypesSpec extends FunSuite {
     document.foreach { case (name, value) =>
       if (numbers.contains(name)) assert(value.isNumber, s"$name is not a number: $value")
       else if (flags.contains(name)) assert(value.isBoolean, s"$name is not a boolean: $value")
-      else assert(value.isString, s"$name is not a string: $value")
+      else {
+        assert(value.isString, s"$name is not a string: $value")
+        assert(!value.asString.contains(""), s"$name is rendered empty")
+      }
     }
 
   private val token: Map[String, Json] =
@@ -92,5 +95,24 @@ class DocumentTypesSpec extends FunSuite {
     assertEquals(introspected("iat"), Json.fromLong(Start.getEpochSecond))
     assertEquals(introspected("nbf"), Json.fromLong(Start.getEpochSecond))
     assertEquals(IntrospectionDocument.render(IntrospectionResponse.inactive)("active"), Json.False)
+  }
+
+  test("a registration document carries no member with nothing to say") {
+    val registered = ClientRegistrationResponse.render(
+      ClientRegistrationResponse(
+        unsafe(ClientId.from("client-9")),
+        Some(unsafe(kots.oauth2.core.ClientSecret.from("s3cret-9"))),
+        kots.oauth2.core.ClientRegistration(
+          Set(unsafe(kots.oauth2.core.RedirectUri.from("https://client.example/cb"))),
+          kots.oauth2.core.ClientAuthMethod.ClientSecretBasic,
+          Scopes.empty
+        )
+      )
+    )
+    assert(!registered.contains(Registration.Scope), registered.toString)
+    assertEquals(registered(Registration.SecretExpiresAt), Json.fromLong(0L))
+    registered.foreach { case (name, value) =>
+      assert(!value.asString.contains(""), s"$name is rendered empty")
+    }
   }
 }
