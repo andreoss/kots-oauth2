@@ -61,8 +61,23 @@ class MetadataSpec extends FunSuite {
 
   test("the metadata offers every registered response type, grant type and method") {
     assertEquals(metadata.responseTypesSupported, ResponseType.all.toSet)
-    assertEquals(metadata.grantTypesSupported, GrantType.all.toSet)
+    assertEquals(metadata.grantTypesSupported, AuthorizationServerMetadata.DefaultGrantTypes)
     assertEquals(metadata.tokenEndpointAuthMethodsSupported, ClientAuthMethod.all.toSet)
+  }
+
+  test("the metadata advertises the assertion grant only where it is configured") {
+    assert(!metadata.grantTypesSupported.contains(GrantType.IdJag))
+    val asserting = AuthorizationServerMetadata.of(
+      issuer,
+      authorization,
+      token,
+      None,
+      None,
+      None,
+      Scopes.empty,
+      grantTypesSupported = GrantType.all.toSet
+    )
+    assert(asserting.grantTypesSupported.contains(GrantType.IdJag))
   }
 
   test("the metadata carries the scopes the server supports") {
