@@ -104,4 +104,36 @@ class RegistrationSpec extends FunSuite {
     )
     assert(!rendered.contains("client_secret"))
   }
+
+  test("an issued secret is accompanied by the moment it expires") {
+    val parsed =
+      Registration.parse(body("redirect_uris" -> uris, "scope" -> Json.fromString("read"))).toOption.get
+    val rendered = ClientRegistrationResponse.render(
+      ClientRegistrationResponse(
+        unsafe(kots.oauth2.core.ClientId.from("client-9")),
+        Some(unsafe(ClientSecret.from("s3cret-9"))),
+        parsed
+      )
+    )
+    assertEquals(rendered.get("client_secret_expires_at"), Some(Json.fromLong(0L)))
+  }
+
+  test("a response without a secret carries no expiry either") {
+    val parsed = Registration
+      .parse(body("redirect_uris" -> uris, "token_endpoint_auth_method" -> Json.fromString("none")))
+      .toOption
+      .get
+    val rendered = ClientRegistrationResponse.render(
+      ClientRegistrationResponse(unsafe(kots.oauth2.core.ClientId.from("client-9")), None, parsed)
+    )
+    assert(!rendered.contains("client_secret_expires_at"))
+  }
+
+  test("a registration for no scope omits the member rather than rendering it empty") {
+    val parsed = Registration.parse(body("redirect_uris" -> uris)).toOption.get
+    val rendered = ClientRegistrationResponse.render(
+      ClientRegistrationResponse(unsafe(kots.oauth2.core.ClientId.from("client-9")), None, parsed)
+    )
+    assert(!rendered.contains("scope"), rendered.toString)
+  }
 }

@@ -17,6 +17,8 @@ object Registration {
 
   val Scope: String = "scope"
 
+  val SecretExpiresAt: String = "client_secret_expires_at"
+
   val Registrable: Set[ClientAuthMethod] =
     Set(ClientAuthMethod.None, ClientAuthMethod.ClientSecretBasic, ClientAuthMethod.ClientSecretPost)
 
