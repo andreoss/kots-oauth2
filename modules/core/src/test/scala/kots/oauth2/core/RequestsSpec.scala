@@ -381,6 +381,51 @@ class RequestsSpec extends ScalaCheckSuite {
     )
   }
 
+  test("token request decodes a jwt bearer grant with the optional parameters") {
+    val decoded = TokenRequest.from(
+      Map(
+        "grant_type" -> "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion" -> "a.b.c",
+        "scope" -> "read write",
+        "resource" -> "https://api.example",
+        "client_id" -> Client
+      )
+    )
+    val request = valid(decoded).asInstanceOf[TokenRequest.IdJag]
+    assertEquals(request.assertion.value, "a.b.c")
+    assertEquals(request.scope.map(_.value.size), Some(2))
+    assertEquals(request.resource.map(_.value), Some("https://api.example"))
+    assertEquals(request.clientId.value, Client)
+  }
+
+  test("token request decodes a jwt bearer grant without the optional parameters") {
+    val decoded = TokenRequest.from(
+      Map(
+        "grant_type" -> "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion" -> "a.b.c",
+        "client_id" -> Client
+      )
+    )
+    val request = valid(decoded).asInstanceOf[TokenRequest.IdJag]
+    assertEquals(request.scope, None)
+    assertEquals(request.resource, None)
+  }
+
+  test("token request accumulates a missing assertion, client id and a malformed scope") {
+    val decoded = TokenRequest.from(
+      Map("grant_type" -> "urn:ietf:params:oauth:grant-type:jwt-bearer", "scope" -> "read  write")
+    )
+    assertEquals(errors(decoded).map(_.code), List("invalid_request", "invalid_request", "invalid_request"))
+    val malformed = TokenRequest.from(
+      Map(
+        "grant_type" -> "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion" -> "abc",
+        "client_id" -> Client
+      )
+    )
+    assertEquals(errors(malformed).map(_.code), List("invalid_request"))
+  }
+
   test("token exchange refuses a token type outside the allow-list") {
     val decoded = TokenRequest.from(
       Map(
