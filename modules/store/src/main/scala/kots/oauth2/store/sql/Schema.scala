@@ -77,6 +77,10 @@ object Schema {
     Migration(
       5,
       "ALTER TABLE audit_events ADD COLUMN grant_type VARCHAR(128)"
+    ),
+    Migration(
+      6,
+      "ALTER TABLE tokens ADD COLUMN grant_type VARCHAR(128)"
     )
   )
 }

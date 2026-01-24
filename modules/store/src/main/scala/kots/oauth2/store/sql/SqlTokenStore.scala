@@ -14,6 +14,7 @@ import kots.oauth2.core.AuthorizationDetails
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.Clock
 import kots.oauth2.core.GrantId
+import kots.oauth2.core.GrantType
 import kots.oauth2.core.ParseFailure
 import kots.oauth2.core.RefreshToken
 import kots.oauth2.core.RefreshTokenHash
@@ -195,8 +196,8 @@ final class SqlTokenStore[F[_]: Sync] private (connect: F[Connection], clock: Cl
   private def insertRecord(connection: Connection, record: TokenRecord): Unit = {
     val insert = connection.prepareStatement(
       "INSERT INTO tokens(access_hash, refresh_hash, grant_id, client_id, subject, scopes, " +
-        "issued_at, access_expires_at, refresh_expires_at, audience, actor) " +
-        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "issued_at, access_expires_at, refresh_expires_at, audience, actor, grant_type) " +
+        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     try {
       insert.setString(1, record.accessTokenHash.value)
@@ -213,6 +214,7 @@ final class SqlTokenStore[F[_]: Sync] private (connect: F[Connection], clock: Cl
       }
       optional(insert, 10, record.audience.map(_.value))
       optional(insert, 11, record.actor.map(_.value))
+      insert.setString(12, record.grant.value)
       insert.executeUpdate()
       ()
     } finally insert.close()
@@ -248,7 +250,10 @@ final class SqlTokenStore[F[_]: Sync] private (connect: F[Connection], clock: Cl
       accessExpiresAt = results.getTimestamp("access_expires_at").toInstant,
       refreshExpiresAt = Option(results.getTimestamp("refresh_expires_at")).map(_.toInstant),
       audience = Option(results.getString("audience")).map(value => required(Audience.from(value))),
-      actor = Option(results.getString("actor")).map(value => required(Subject.from(value)))
+      actor = Option(results.getString("actor")).map(value => required(Subject.from(value))),
+      grant = Option(results.getString("grant_type"))
+        .flatMap(raw => GrantType.from(raw).toOption)
+        .getOrElse(GrantType.AuthorizationCode)
     )
 
   private def detailsOf(connection: Connection, accessHash: String): AuthorizationDetails =
