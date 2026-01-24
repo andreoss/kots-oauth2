@@ -267,7 +267,8 @@ final class TokenService[F[_]: Monad](
     for {
       audience <- bound(request.resource)
       details <- narrowed(request.details, claims.details)
-      granted = if (claims.scopes.value.isEmpty) client.scopes else Scopes.intersect(client.scopes, claims.scopes)
+      granted =
+        if (claims.scopes.value.isEmpty) client.scopes else Scopes.intersect(client.scopes, claims.scopes)
       scopes <- request.scope match {
         case None         => Right(granted)
         case Some(wanted) =>
