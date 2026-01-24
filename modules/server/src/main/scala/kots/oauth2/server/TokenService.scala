@@ -9,6 +9,7 @@ import kots.oauth2.core.AccessTokenHash
 import kots.oauth2.core.Audience
 import kots.oauth2.core.AuthorizationCode
 import kots.oauth2.core.AuthorizationDetails
+import kots.oauth2.core.AuthorizationDetailsDocument
 import kots.oauth2.core.CertificateThumbprint
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.Clock
@@ -31,6 +32,7 @@ import kots.oauth2.core.Scopes
 import kots.oauth2.core.Subject
 import kots.oauth2.core.TokenRequest
 import kots.oauth2.core.TokenType
+import kots.oauth2.jose.Details
 import kots.oauth2.jose.Jws
 import kots.oauth2.jose.Jwt
 import kots.oauth2.jose.JwtClaims
@@ -264,6 +266,7 @@ final class TokenService[F[_]: Monad](
   ): Either[OAuth2Error, TokenService.Mint] =
     for {
       audience <- bound(request.resource)
+      details <- narrowed(request.details, claims.details)
       granted = if (claims.scopes.value.isEmpty) client.scopes else Scopes.intersect(client.scopes, claims.scopes)
       scopes <- request.scope match {
         case None         => Right(granted)
@@ -280,7 +283,7 @@ final class TokenService[F[_]: Monad](
       clientId = client.id,
       subject = claims.subject,
       scopes = scopes,
-      details = AuthorizationDetails.empty,
+      details = details,
       refreshExpiresAt = None,
       grant = GrantType.IdJag,
       audience = audience,
@@ -462,6 +465,21 @@ final class TokenService[F[_]: Monad](
       case None           => bound(request.resource)
     }
 
+  private def narrowed(
+      requested: Option[AuthorizationDetailsDocument],
+      asserted: AuthorizationDetails
+  ): Either[OAuth2Error, AuthorizationDetails] =
+    requested match {
+      case None           => Right(asserted)
+      case Some(document) =>
+        Details
+          .decode(document.value)
+          .leftMap(_ => TokenService.invalidDetails)
+          .flatMap(wanted =>
+            Either.cond(AuthorizationDetails.covers(asserted, wanted), wanted, TokenService.invalidDetails)
+          )
+    }
+
   private def bound(resource: Option[ResourceIndicator]): Either[OAuth2Error, Option[Audience]] =
     resource match {
       case None        => Right(None)
@@ -585,6 +603,8 @@ object TokenService {
   )
 
   private val rejected: OAuth2Error = OAuth2Error.InvalidGrant()
+
+  private val invalidDetails: OAuth2Error = OAuth2Error.InvalidAuthorizationDetails()
 
   private def failure(failure: kots.oauth2.core.ParseFailure): OAuth2Error =
     OAuth2Error.ServerError(Some(s"${failure.typeName}: ${failure.reason}"))

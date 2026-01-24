@@ -41,6 +41,11 @@ object OAuth2Error {
       errorUri: Option[String] = None
   ) extends OAuth2Error("unsupported_grant_type", 400)
 
+  final case class InvalidAuthorizationDetails(
+      description: Option[String] = None,
+      errorUri: Option[String] = None
+  ) extends OAuth2Error("invalid_authorization_details", 400)
+
   final case class InvalidScope(
       description: Option[String] = None,
       errorUri: Option[String] = None
@@ -118,6 +123,7 @@ object OAuth2Error {
     "unauthorized_client",
     "unsupported_grant_type",
     "invalid_scope",
+    "invalid_authorization_details",
     "access_denied",
     "unsupported_response_type",
     "server_error",

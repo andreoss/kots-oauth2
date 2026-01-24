@@ -1163,4 +1163,70 @@ class TokenServiceSpec extends CatsEffectSuite {
       Vector(kots.oauth2.core.GrantType.IdJag: kots.oauth2.core.GrantType)
     )
   }
+
+  private val readDetail: String =
+    """[{"type":"account","locations":["https://api.example"],"actions":["read"]}]"""
+
+  private val writeDetail: String =
+    """[{"type":"account","locations":["https://api.example"],"actions":["write"]}]"""
+
+  private def asserting(document: String, jti: String = "assertion-1"): String = {
+    val rendered = kots.oauth2.jose.Jwt.render(identityClaims(jti = jti))
+    rendered.dropRight(1) + ",\"authorization_details\":" + document + "}"
+  }
+
+  private def assertionOf(payload: String): String =
+    kots.oauth2.jose.Jws
+      .sign(
+        kots.oauth2.jose.Alg.RS256,
+        kots.oauth2.jose.Fakes.keyId("key-1"),
+        kots.oauth2.jose.Fakes.signingPair.getPrivate,
+        payload,
+        kots.oauth2.jose.Jwt.IdentityAssertionTyp
+      )
+      .toOption
+      .get
+
+  test("an identity assertion carries its authorization details into the grant") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(idjag(assertionOf(asserting(readDetail))), client())
+    } yield {
+      val details = result.toOption.get.record.details.value
+      assertEquals(details.map(_.detailType.value), List("account"))
+      assertEquals(details.flatMap(_.actions.map(_.value)), List("read"))
+    }
+  }
+
+  test("a requested detail outside the assertion is refused") {
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(
+        idjag(assertionOf(asserting(readDetail))).copy(
+          details = Some(unsafe(kots.oauth2.core.AuthorizationDetailsDocument.from(writeDetail)))
+        ),
+        client()
+      )
+    } yield assertEquals(result.left.toOption.map(_.code), Some("invalid_authorization_details"))
+  }
+
+  test("a requested detail covered by the assertion narrows the grant") {
+    val both =
+      """[{"type":"account","locations":["https://api.example"],"actions":["read","write"]}]"""
+    for {
+      pair <- idjagSetup()
+      (service, _) = pair
+      result <- service.idJag(
+        idjag(assertionOf(asserting(both))).copy(
+          details = Some(unsafe(kots.oauth2.core.AuthorizationDetailsDocument.from(readDetail)))
+        ),
+        client()
+      )
+    } yield assertEquals(
+      result.toOption.get.record.details.value.flatMap(_.actions.map(_.value)),
+      List("read")
+    )
+  }
 }

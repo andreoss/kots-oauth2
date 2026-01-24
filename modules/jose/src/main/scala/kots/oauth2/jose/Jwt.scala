@@ -7,6 +7,7 @@ import cats.syntax.traverse._
 
 import kots.oauth2.core.Acr
 import kots.oauth2.core.Audience
+import kots.oauth2.core.AuthorizationDetails
 import kots.oauth2.core.CertificateThumbprint
 import kots.oauth2.core.ClientId
 import kots.oauth2.core.Issuer
@@ -32,7 +33,8 @@ final case class JwtClaims(
     acr: Option[Acr] = None,
     jkt: Option[KeyThumbprint] = None,
     x5t: Option[CertificateThumbprint] = None,
-    notBefore: Option[Instant] = None
+    notBefore: Option[Instant] = None,
+    details: AuthorizationDetails = AuthorizationDetails.empty
 )
 
 object Jwt {
@@ -83,6 +85,7 @@ object Jwt {
           claims.notBefore.map(value => "nbf" -> Json.fromLong(value.getEpochSecond)) ++
           audienceOf(claims.audience) ++
           claims.acr.map(value => "acr" -> Json.fromString(value.value)) ++
+          (if (claims.details.value.isEmpty) Nil else List(Details.Claim -> Details.render(claims.details))) ++
           confirmation(claims) ++
           (if (claims.scopes.value.isEmpty) Nil
            else
@@ -124,6 +127,10 @@ object Jwt {
       audience <- audiences(cursor)
       scopes <- cursor.get[String]("scope").toOption.traverse(Scopes.parse).map(_.getOrElse(Scopes.empty))
       acr <- cursor.get[String]("acr").toOption.traverse(Acr.from)
+      details <- cursor
+        .downField(Details.Claim)
+        .focus
+        .fold(Right(AuthorizationDetails.empty): Either[ParseFailure, AuthorizationDetails])(Details.of)
       jkt <- cursor.downField("cnf").get[String]("jkt").toOption.traverse(KeyThumbprint.from)
       x5t <- cursor
         .downField("cnf")
@@ -142,7 +149,8 @@ object Jwt {
       acr,
       jkt,
       x5t,
-      notBefore
+      notBefore,
+      details
     )
 
   private def audiences(cursor: io.circe.HCursor): Either[ParseFailure, List[Audience]] =
