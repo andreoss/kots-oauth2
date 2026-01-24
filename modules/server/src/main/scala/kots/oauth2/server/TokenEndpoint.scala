@@ -97,6 +97,8 @@ final class TokenEndpoint[F[_]: Monad](
               .map(
                 _.map(issued => answered(issued).copy(issuedTokenType = Some(ExchangeTokenType.AccessToken)))
               )
+          case idjag: TokenRequest.IdJag =>
+            tokens.idJag(idjag, client, jkt, x5t).map(_.map(answered))
         }
     }
   }

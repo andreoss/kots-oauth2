@@ -2,7 +2,9 @@ package kots.oauth2.server
 
 import cats.Monad
 import cats.syntax.all._
+import java.nio.charset.StandardCharsets
 import java.time.Instant
+import java.util.Base64
 
 import kots.oauth2.core.AccessToken
 import kots.oauth2.core.AccessTokenHash
@@ -14,6 +16,7 @@ import kots.oauth2.core.ClientId
 import kots.oauth2.core.Clock
 import kots.oauth2.core.Entropy
 import kots.oauth2.core.GrantId
+import kots.oauth2.core.IdentityAssertion
 import kots.oauth2.core.Issuer
 import kots.oauth2.core.JwtId
 import kots.oauth2.core.KeyThumbprint
@@ -41,6 +44,7 @@ import kots.oauth2.store.DeviceStore
 import kots.oauth2.store.Grant
 import kots.oauth2.store.GrantStore
 import kots.oauth2.store.IssuedToken
+import kots.oauth2.store.ReplayStore
 import kots.oauth2.store.TokenRecord
 import kots.oauth2.store.TokenStore
 
@@ -53,7 +57,8 @@ final class TokenService[F[_]: Monad](
     entropy: Entropy[F],
     policy: LifetimePolicy,
     signer: Option[TokenService.Signing] = None,
-    audit: Option[AuditLog[F]] = None
+    audit: Option[AuditLog[F]] = None,
+    identityAssertions: Option[TokenService.IdentityAssertions[F]] = None
 ) {
 
   private val auditLog: AuditLog[F] = audit.getOrElse(AuditLog.noop[F])
@@ -173,6 +178,128 @@ final class TokenService[F[_]: Monad](
             }
         }
     }
+
+  def idJag(
+      request: TokenRequest.IdJag,
+      client: Client,
+      jkt: Option[KeyThumbprint] = None,
+      x5t: Option[CertificateThumbprint] = None
+  ): F[Either[OAuth2Error, IssuedToken]] =
+    identityAssertions match {
+      case None         => TokenService.rejected.asLeft[IssuedToken].pure[F]
+      case Some(config) =>
+        config.clock.instant.flatMap(now => asserted(request, client, config, now, jkt, x5t))
+    }
+
+  private def asserted(
+      request: TokenRequest.IdJag,
+      client: Client,
+      config: TokenService.IdentityAssertions[F],
+      now: Instant,
+      jkt: Option[KeyThumbprint],
+      x5t: Option[CertificateThumbprint]
+  ): F[Either[OAuth2Error, IssuedToken]] =
+    issuerOf(request.assertion) match {
+      case Left(error)   => error.asLeft[IssuedToken].pure[F]
+      case Right(issuer) =>
+        config.assertionIssuers.keys(issuer).flatMap {
+          case None       => TokenService.rejected.asLeft[IssuedToken].pure[F]
+          case Some(keys) =>
+            verified(request.assertion, keys, config, now) match {
+              case Left(error)   => error.asLeft[IssuedToken].pure[F]
+              case Right(claims) =>
+                if (claims.audience.map(_.value).forall(_ != config.issuer.value))
+                  TokenService.rejected.asLeft[IssuedToken].pure[F]
+                else if (claims.clientId != client.id)
+                  TokenService.rejected.asLeft[IssuedToken].pure[F]
+                else
+                  config.replays.record(claims.tokenId, claims.expiresAt).flatMap {
+                    case false =>
+                      auditLog
+                        .record(AuditEvent.AuthenticationFailed(Some(client.id)))
+                        .as(TokenService.rejected.asLeft[IssuedToken]: Either[OAuth2Error, IssuedToken])
+                    case true =>
+                      replayed(request, client, claims, now, jkt, x5t)
+                  }
+            }
+        }
+    }
+
+  private def replayed(
+      request: TokenRequest.IdJag,
+      client: Client,
+      claims: JwtClaims,
+      now: Instant,
+      jkt: Option[KeyThumbprint],
+      x5t: Option[CertificateThumbprint]
+  ): F[Either[OAuth2Error, IssuedToken]] =
+    assertedMint(request, client, claims, now, jkt, x5t) match {
+      case Left(error) => error.asLeft[IssuedToken].pure[F]
+      case Right(mint) => issue(mint)
+    }
+
+  private def verified(
+      assertion: IdentityAssertion,
+      keys: kots.oauth2.jose.Jwks,
+      config: TokenService.IdentityAssertions[F],
+      now: Instant
+  ): Either[OAuth2Error, JwtClaims] =
+    Jwt
+      .claims(assertion.value, keys, now, Set(Jwt.IdentityAssertionTyp), config.skew)
+      .left
+      .map(_ => TokenService.rejected)
+
+  private def issuerOf(assertion: IdentityAssertion): Either[OAuth2Error, Issuer] =
+    assertion.value.split('.') match {
+      case Array(_, payload, _) =>
+        for {
+          decoded <- bytesOf(payload)
+          json <- io.circe.parser
+            .parse(new String(decoded, StandardCharsets.UTF_8))
+            .left
+            .map(_ => TokenService.rejected)
+          value <- json.hcursor.get[String]("iss").left.map(_ => TokenService.rejected)
+          issuer <- Issuer.from(value).left.map(_ => TokenService.rejected)
+        } yield issuer
+      case _ => Left(TokenService.rejected)
+    }
+
+  private def bytesOf(raw: String): Either[OAuth2Error, Array[Byte]] =
+    try Right(Base64.getUrlDecoder.decode(raw))
+    catch { case _: IllegalArgumentException => Left(TokenService.rejected) }
+
+  private def assertedMint(
+      request: TokenRequest.IdJag,
+      client: Client,
+      claims: JwtClaims,
+      now: Instant,
+      jkt: Option[KeyThumbprint],
+      x5t: Option[CertificateThumbprint]
+  ): Either[OAuth2Error, TokenService.Mint] =
+    for {
+      audience <- bound(request.resource)
+      granted = Scopes.intersect(client.scopes, claims.scopes)
+      scopes <- request.scope match {
+        case None         => Right(granted)
+        case Some(wanted) =>
+          Either.cond(
+            Scopes.isSubsetOf(wanted, granted),
+            wanted,
+            (OAuth2Error.InvalidScope(): OAuth2Error)
+          )
+      }
+    } yield TokenService.Mint(
+      grantId = None,
+      now = now,
+      clientId = client.id,
+      subject = claims.subject,
+      scopes = scopes,
+      details = AuthorizationDetails.empty,
+      refreshExpiresAt = None,
+      audience = audience,
+      jkt = jkt,
+      x5t = x5t
+    )
 
   private def replay(code: AuthorizationCode): F[Either[OAuth2Error, IssuedToken]] =
     codes.redeemed(code).flatMap {
@@ -442,6 +569,14 @@ object TokenService {
   val TokenEntropyBytes: Int = 32
 
   final case class Signing(issuer: Issuer, key: SigningKey)
+
+  final case class IdentityAssertions[F[_]](
+      issuer: Issuer,
+      assertionIssuers: AssertionIssuers[F],
+      replays: ReplayStore[F],
+      clock: Clock[F],
+      skew: java.time.Duration = java.time.Duration.ofSeconds(60L)
+  )
 
   private[server] final case class Mint(
       grantId: Option[GrantId],
