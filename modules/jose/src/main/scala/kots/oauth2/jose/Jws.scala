@@ -31,6 +31,12 @@ object Jws {
       .map(signature => input + "." + encode(signature))
   }
 
+  def unverified(compact: String, name: String): Either[ParseFailure, String] =
+    compact.split('.') match {
+      case Array(_, payload, _) => parse(payload).flatMap(field(_, name))
+      case _                    => Left(ParseFailure("Jws", "not a compact jws"))
+    }
+
   def verify(compact: String, keys: Jwks, typ: String = Type): Either[ParseFailure, String] =
     compact.split('.') match {
       case Array(header, payload, signature) =>
