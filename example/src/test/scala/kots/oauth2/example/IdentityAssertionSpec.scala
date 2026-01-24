@@ -170,8 +170,8 @@ class IdentityAssertionSpec extends CatsEffectSuite {
           assertion("live-3", now, typ = kots.oauth2.jose.Jwt.AccessTokenType)
         )
       } yield {
+        assert(granted._2.contains("access_token"), s"${granted._1}: ${granted._2}")
         assertEquals(granted._1, Status.Ok)
-        assert(granted._2.contains("access_token"), granted._2)
         assert(!granted._2.contains("refresh_token"), granted._2)
         assertEquals(replayed._1, Status.BadRequest)
         assert(replayed._2.contains("invalid_grant"), replayed._2)

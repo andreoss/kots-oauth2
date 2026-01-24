@@ -117,6 +117,17 @@ class EndpointsSpec extends FunSuite {
     }
   }
 
+  test("the form codec carries every parameter a registered grant decodes") {
+    val raw = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=a.b.c" +
+      "&client_id=client-1&scope=read&resource=https%3A%2F%2Fapi.example" +
+      "&authorization_details=%5B%7B%22type%22%3A%22account%22%7D%5D"
+    Endpoints.formParameters.decode(raw) match {
+      case DecodeResult.Value(params) =>
+        assert(kots.oauth2.core.TokenRequest.from(params).isValid)
+      case other => fail("the assertion grant was refused: " + other)
+    }
+  }
+
   test("the form codec decodes the parameters a token request carries") {
     val raw = "grant_type=authorization_code&code=abc&code_verifier=xyz"
     assertEquals(
