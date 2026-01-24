@@ -76,31 +76,21 @@ class IntrospectionSpec extends ScalaCheckSuite {
   }
 
   test("an inactive token is answered with the active flag alone") {
-    val body = IntrospectionResponse.inactive.body
-    assertEquals(body, Map("active" -> "false"))
     assert(!IntrospectionResponse.inactive.active)
   }
 
-  test("an active token is answered with its metadata") {
+  test("an active token carries the metadata it was built with") {
     assert(active.active)
-    assertEquals(
-      active.body,
-      Map(
-        "active" -> "true",
-        "scope" -> "read",
-        "client_id" -> "client-1",
-        "username" -> "user-1",
-        "token_type" -> "Bearer",
-        "exp" -> Start.plusSeconds(3600L).getEpochSecond.toString,
-        "iat" -> Start.getEpochSecond.toString,
-        "nbf" -> Start.getEpochSecond.toString,
-        "sub" -> "user-1"
-      )
-    )
+    val details = active.asInstanceOf[IntrospectionResponse.Active]
+    assertEquals(details.clientId.value, "client-1")
+    assertEquals(details.username.value, "user-1")
+    assertEquals(details.expiresAt, Start.plusSeconds(3600L))
+    assertEquals(details.issuedAt, Start)
+    assertEquals(details.notBefore, Start)
   }
 
-  test("an active token without a scope answers no scope") {
-    val body = IntrospectionResponse
+  test("an active token without a scope keeps an empty scope") {
+    val answered = IntrospectionResponse
       .active(
         TokenTypeHint.RefreshToken,
         Scopes.empty,
@@ -110,9 +100,9 @@ class IntrospectionSpec extends ScalaCheckSuite {
         Start,
         Start
       )
-      .body
-    assert(!body.contains("scope"))
-    assertEquals(body("token_type"), "refresh_token")
+      .asInstanceOf[IntrospectionResponse.Active]
+    assert(answered.scopes.value.isEmpty)
+    assertEquals(IntrospectionResponse.Active.tokenType(answered.kind), "refresh_token")
   }
 
   property("a decoded introspection request keeps the token and the hint it was given") {
@@ -122,7 +112,7 @@ class IntrospectionSpec extends ScalaCheckSuite {
     }
   }
 
-  property("an active introspection body always carries the active flag") {
+  property("an active introspection answer always carries the active flag") {
     forAll(genToken, Gen.oneOf(TokenTypeHint.all)) { (_, hint) =>
       IntrospectionResponse
         .active(
@@ -134,7 +124,7 @@ class IntrospectionSpec extends ScalaCheckSuite {
           Start,
           Start
         )
-        .body("active") == "true"
+        .active
     }
   }
 }

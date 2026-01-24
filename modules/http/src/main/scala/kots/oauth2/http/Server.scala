@@ -82,7 +82,7 @@ object Server {
     )
 
   def par[F[_]: Functor](logic: ParLogic[F]): ServerEndpoint[Any, F] =
-    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any, F](
+    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, Json], Any, F](
       Endpoints.par,
       _ => input => logic(input._1, input._2).map(_.map(PushedAuthorizationResponse.render))
     )
@@ -116,7 +116,7 @@ object Server {
     ServerEndpoint
       .public[(Option[String], Map[String, String], Option[String], Option[String]), OAuth2Error, Map[
         String,
-        String
+        Json
       ], Any, F](
         Endpoints.token,
         _ => input => logic(input._1, input._2, input._3, input._4).map(_.map(TokenResponse.render))
@@ -129,13 +129,13 @@ object Server {
     )
 
   def introspection[F[_]: Functor](logic: IntrospectionLogic[F]): ServerEndpoint[Any, F] =
-    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any, F](
+    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, Json], Any, F](
       Endpoints.introspection,
-      _ => input => logic(input._1, input._2).map(_.map(_.body))
+      _ => input => logic(input._1, input._2).map(_.map(IntrospectionDocument.render))
     )
 
   def deviceAuthorization[F[_]: Functor](logic: DeviceAuthorizationLogic[F]): ServerEndpoint[Any, F] =
-    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, String], Any, F](
+    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, Map[String, Json], Any, F](
       Endpoints.deviceAuthorization,
       _ => input => logic(input._1, input._2).map(_.map(DeviceAuthorizationResponse.render))
     )

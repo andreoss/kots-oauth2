@@ -245,6 +245,9 @@ class NegativeSpec extends CatsEffectSuite {
   private def body(response: Response[IO]): IO[String] =
     response.body.compile.toVector.map(bytes => new String(bytes.toArray, StandardCharsets.UTF_8))
 
+  private def member(text: String, name: String): Option[io.circe.Json] =
+    io.circe.parser.parse(text).toOption.flatMap(_.hcursor.downField(name).focus)
+
   private def field(text: String, name: String): String =
     io.circe.parser
       .parse(text)
@@ -309,10 +312,10 @@ class NegativeSpec extends CatsEffectSuite {
       afterText <- body(after.get)
     } yield {
       assertEquals(first.get.status, Status.Ok)
-      assertEquals(field(beforeText, "active"), "true")
+      assertEquals(member(beforeText, "active"), Some(io.circe.Json.True))
       assertEquals(replayed.get.status, Status.BadRequest)
       assertEquals(field(replayedText, "error"), "invalid_grant")
-      assertEquals(field(afterText, "active"), "false")
+      assertEquals(member(afterText, "active"), Some(io.circe.Json.False))
     }
   }
 
@@ -420,7 +423,7 @@ class NegativeSpec extends CatsEffectSuite {
       text <- body(answered.get)
     } yield {
       assertEquals(issued.get.status, Status.Ok)
-      assertEquals(field(text, "active"), "false")
+      assertEquals(member(text, "active"), Some(io.circe.Json.False))
     }
   }
 
@@ -519,7 +522,7 @@ class NegativeSpec extends CatsEffectSuite {
       assertEquals(rotated.get.status, Status.Ok)
       assertEquals(reused.get.status, Status.BadRequest)
       assertEquals(field(reusedText, "error"), "invalid_grant")
-      assertEquals(field(afterText, "active"), "false")
+      assertEquals(member(afterText, "active"), Some(io.circe.Json.False))
     }
   }
 

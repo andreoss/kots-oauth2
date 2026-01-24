@@ -8,6 +8,7 @@ import kots.oauth2.core.OAuth2Error
 import kots.oauth2.core.ParseFailure
 import kots.oauth2.core.RefreshToken
 import kots.oauth2.core.Scopes
+import io.circe.Json
 import munit.FunSuite
 import sttp.monad.IdentityMonad
 import sttp.tapir.server.ServerEndpoint
@@ -50,7 +51,7 @@ class ServerSpec extends FunSuite {
     type PRINCIPAL = Unit
     type INPUT = (Option[String], Map[String, String])
     type ERROR_OUTPUT = OAuth2Error
-    type OUTPUT = Map[String, String]
+    type OUTPUT = Map[String, Json]
   }
 
   private type BoundToken[F[_]] = ServerEndpoint[Any, F] {
@@ -58,7 +59,7 @@ class ServerSpec extends FunSuite {
     type PRINCIPAL = Unit
     type INPUT = (Option[String], Map[String, String], Option[String], Option[String])
     type ERROR_OUTPUT = OAuth2Error
-    type OUTPUT = Map[String, String]
+    type OUTPUT = Map[String, Json]
   }
 
   private def run(
@@ -69,11 +70,11 @@ class ServerSpec extends FunSuite {
 
   test("a token response renders its type, lifetime, scope and refresh token") {
     val rendered = TokenResponse.render(TokenResponse(accessToken, 3600L, scopes, Some(refreshToken)))
-    assertEquals(rendered("access_token"), "at-1")
-    assertEquals(rendered("token_type"), "Bearer")
-    assertEquals(rendered("expires_in"), "3600")
-    assertEquals(rendered("scope"), "openid read")
-    assertEquals(rendered("refresh_token"), "rt-1")
+    assertEquals(rendered("access_token"), Json.fromString("at-1"))
+    assertEquals(rendered("token_type"), Json.fromString("Bearer"))
+    assertEquals(rendered("expires_in"), Json.fromLong(3600L))
+    assertEquals(rendered("scope"), Json.fromString("openid read"))
+    assertEquals(rendered("refresh_token"), Json.fromString("rt-1"))
   }
 
   test("a token response without a scope or a refresh token renders neither") {
@@ -91,8 +92,11 @@ class ServerSpec extends FunSuite {
         Some(kots.oauth2.core.ExchangeTokenType.AccessToken)
       )
     )
-    assertEquals(rendered("issued_token_type"), "urn:ietf:params:oauth:token-type:access_token")
-    assertEquals(rendered("token_type"), "Bearer")
+    assertEquals(
+      rendered("issued_token_type"),
+      Json.fromString("urn:ietf:params:oauth:token-type:access_token")
+    )
+    assertEquals(rendered("token_type"), Json.fromString("Bearer"))
   }
 
   test("the bound logic answers through the described endpoint") {
@@ -114,10 +118,10 @@ class ServerSpec extends FunSuite {
       out,
       Right(
         Map(
-          "access_token" -> "at-1",
-          "token_type" -> "Bearer",
-          "expires_in" -> "3600",
-          "scope" -> "openid read"
+          "access_token" -> Json.fromString("at-1"),
+          "token_type" -> Json.fromString("Bearer"),
+          "expires_in" -> Json.fromLong(3600L),
+          "scope" -> Json.fromString("openid read")
         )
       )
     )
@@ -166,7 +170,7 @@ class ServerSpec extends FunSuite {
     val rendered = TokenResponse.render(
       TokenResponse(accessToken, 60L, Scopes.empty, None, tokenType = "DPoP")
     )
-    assertEquals(rendered("token_type"), "DPoP")
+    assertEquals(rendered("token_type"), Json.fromString("DPoP"))
   }
 
   test("an introspection answer is rendered as the endpoint body") {
@@ -175,7 +179,10 @@ class ServerSpec extends FunSuite {
       def apply(basic: Option[String], parameters: Map[String, String]) = Right(response)
     }
     val bound = Server.introspection(logic).asInstanceOf[Bound[Id]]
-    assertEquals(bound.logic(IdentityMonad)(())((None, Map("token" -> "at-1"))), Right(response.body))
+    assertEquals(
+      bound.logic(IdentityMonad)(())((None, Map("token" -> "at-1"))),
+      Right(IntrospectionDocument.render(response))
+    )
     assertEquals(
       bound.showPathTemplate(showQueryParam = None),
       Endpoints.introspection.showPathTemplate(showQueryParam = None)
@@ -230,11 +237,11 @@ class ServerSpec extends FunSuite {
       5L
     )
     val rendered = DeviceAuthorizationResponse.render(response)
-    assertEquals(rendered("device_code"), "device-1")
-    assertEquals(rendered("user_code"), "BCDF-GHJK")
-    assertEquals(rendered("verification_uri"), "https://server.example/device")
-    assertEquals(rendered("expires_in"), "1800")
-    assertEquals(rendered("interval"), "5")
+    assertEquals(rendered("device_code"), Json.fromString("device-1"))
+    assertEquals(rendered("user_code"), Json.fromString("BCDF-GHJK"))
+    assertEquals(rendered("verification_uri"), Json.fromString("https://server.example/device"))
+    assertEquals(rendered("expires_in"), Json.fromLong(1800L))
+    assertEquals(rendered("interval"), Json.fromLong(5L))
     assertEquals(
       rendered.keySet,
       Set("device_code", "user_code", "verification_uri", "expires_in", "interval")
