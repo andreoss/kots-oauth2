@@ -102,7 +102,7 @@ class IntrospectionSpec extends ScalaCheckSuite {
       )
       .asInstanceOf[IntrospectionResponse.Active]
     assert(answered.scopes.value.isEmpty)
-    assertEquals(IntrospectionResponse.Active.tokenType(answered.kind), "refresh_token")
+    assertEquals(answered.kind, TokenTypeHint.RefreshToken)
   }
 
   property("a decoded introspection request keeps the token and the hint it was given") {

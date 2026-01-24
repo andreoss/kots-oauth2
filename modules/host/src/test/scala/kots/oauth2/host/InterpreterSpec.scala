@@ -1222,4 +1222,20 @@ class InterpreterSpec extends CatsEffectSuite {
       assertEquals(token.get.status, Status.Unauthorized)
     }
   }
+
+  test("introspection answers the access token type whichever token was asked about") {
+    for {
+      served <- routes
+      answered <- served.run(post(exchange, Some("s3cret"))).value
+      text <- body(answered.get)
+      refresh = field(text, "refresh_token")
+      introspected <- served
+        .run(postTo("/introspection", revoke(refresh, "refresh_token"), Some("s3cret")))
+        .value
+      answer <- body(introspected.get)
+    } yield {
+      assertEquals(member(answer, "active"), Some(io.circe.Json.True), answer)
+      assertEquals(member(answer, "token_type"), Some(io.circe.Json.fromString("Bearer")), answer)
+    }
+  }
 }

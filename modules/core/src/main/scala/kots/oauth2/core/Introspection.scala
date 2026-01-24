@@ -36,10 +36,7 @@ object IntrospectionResponse {
 
   object Active {
 
-    def tokenType(kind: TokenTypeHint): String = kind match {
-      case TokenTypeHint.AccessToken  => "Bearer"
-      case TokenTypeHint.RefreshToken => "refresh_token"
-    }
+    val AccessTokenType: String = "Bearer"
   }
 
   def inactive: IntrospectionResponse = Inactive

@@ -18,7 +18,7 @@ object IntrospectionDocument {
           IntrospectionResponse.ActiveFlag -> Json.True,
           "client_id" -> Json.fromString(Wire[ClientId].encode(active.clientId)),
           "username" -> Json.fromString(Wire[Subject].encode(active.username)),
-          "token_type" -> Json.fromString(IntrospectionResponse.Active.tokenType(active.kind)),
+          "token_type" -> Json.fromString(IntrospectionResponse.Active.AccessTokenType),
           "exp" -> Json.fromLong(active.expiresAt.getEpochSecond),
           "iat" -> Json.fromLong(active.issuedAt.getEpochSecond),
           "nbf" -> Json.fromLong(active.notBefore.getEpochSecond),

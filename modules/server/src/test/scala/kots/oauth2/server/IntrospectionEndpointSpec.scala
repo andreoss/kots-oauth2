@@ -127,14 +127,15 @@ class IntrospectionEndpointSpec extends CatsEffectSuite {
     }
   }
 
-  test("a refresh token is active as a refresh token with its own expiry") {
+  test("a refresh token is active with its own expiry") {
     for {
       pair <- setup()
       (endpoint, _) = pair
       result <- introspect(endpoint, "rt-1", Some("refresh_token"))
       body = kots.oauth2.http.IntrospectionDocument.render(result.toOption.get)
     } yield {
-      assertEquals(body("token_type"), io.circe.Json.fromString("refresh_token"))
+      assertEquals(result.toOption.get.asInstanceOf[kots.oauth2.core.IntrospectionResponse.Active].kind, TokenTypeHint.RefreshToken)
+      assertEquals(body("token_type"), io.circe.Json.fromString("Bearer"))
       assertEquals(body("exp"), io.circe.Json.fromLong(Start.plusSeconds(7200L).getEpochSecond))
     }
   }
@@ -147,8 +148,8 @@ class IntrospectionEndpointSpec extends CatsEffectSuite {
       access <- introspect(endpoint, "at-1")
     } yield {
       assertEquals(
-        kots.oauth2.http.IntrospectionDocument.render(refresh.toOption.get)("token_type"),
-        io.circe.Json.fromString("refresh_token")
+        refresh.toOption.get.asInstanceOf[kots.oauth2.core.IntrospectionResponse.Active].kind,
+        TokenTypeHint.RefreshToken
       )
       assertEquals(
         kots.oauth2.http.IntrospectionDocument.render(access.toOption.get)("token_type"),
