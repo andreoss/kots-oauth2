@@ -49,6 +49,20 @@ final class SqlDeviceStore[F[_]: Sync] private (connect: F[Connection], clock: C
     }
   }
 
+  def pending(userCode: UserCode): F[Option[DeviceRecord]] =
+    clock.instant.flatMap(now =>
+      session { connection =>
+        val select = connection.prepareStatement(
+          "SELECT * FROM devices WHERE user_code = ? AND subject IS NULL AND denied = FALSE"
+        )
+        try {
+          select.setString(1, userCode.value)
+          val results = select.executeQuery()
+          if (results.next()) Some(row(results)).filter(!_.isExpired(now)) else None
+        } finally select.close()
+      }
+    )
+
   def approve(userCode: UserCode, subject: Subject): F[Boolean] =
     decide(userCode, "subject = ?", statement => statement.setString(1, subject.value))
 

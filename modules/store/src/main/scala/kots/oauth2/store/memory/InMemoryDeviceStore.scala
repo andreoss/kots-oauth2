@@ -20,6 +20,13 @@ final class InMemoryDeviceStore[F[_]: Monad] private (
   def save(record: DeviceRecord): F[Unit] =
     state.update(_.updated(record.deviceCode, record))
 
+  def pending(userCode: UserCode): F[Option[DeviceRecord]] =
+    clock.instant.flatMap(now =>
+      state.get.map(
+        _.values.find(record => record.userCode == userCode && !record.decided && !record.isExpired(now))
+      )
+    )
+
   def approve(userCode: UserCode, subject: Subject): F[Boolean] =
     decide(userCode, record => record.copy(subject = Some(subject)))
 

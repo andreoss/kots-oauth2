@@ -30,6 +30,8 @@ trait DeviceStore[F[_]] {
 
   def save(record: DeviceRecord): F[Unit]
 
+  def pending(userCode: UserCode): F[Option[DeviceRecord]]
+
   def approve(userCode: UserCode, subject: Subject): F[Boolean]
 
   def deny(userCode: UserCode): F[Boolean]
