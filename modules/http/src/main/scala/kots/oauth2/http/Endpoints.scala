@@ -209,9 +209,12 @@ object Endpoints {
       errorVariant(StatusCode.ServiceUnavailable)
     )
 
-  lazy val authorize: PublicEndpoint[Map[String, String], OAuth2Error, String, Any] =
+  val SessionCookie: String = "session"
+
+  lazy val authorize: PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, String, Any] =
     sttp.tapir.endpoint.get
       .in(AuthorizePath)
+      .in(cookie[Option[String]](SessionCookie))
       .in(queryParams.mapDecode(strictQuery(authorizeParameters))(sttp.model.QueryParams.fromMap))
       .out(
         statusCode(StatusCode.Found)
@@ -222,17 +225,20 @@ object Endpoints {
 
   val VerificationPath: String = "device"
 
-  val verificationParameters: Set[String] = Set("user_code")
+  val verificationParameters: Set[String] = Set("user_code", "request_token", "approve")
 
-  lazy val verification: PublicEndpoint[Unit, OAuth2Error, String, Any] =
+  lazy val verification: PublicEndpoint[Option[String], OAuth2Error, String, Any] =
     sttp.tapir.endpoint.get
       .in(VerificationPath)
+      .in(cookie[Option[String]](SessionCookie))
       .out(noStore(htmlBodyUtf8))
       .errorOut(authorizeErrors)
 
-  lazy val verificationDecision: PublicEndpoint[Map[String, String], OAuth2Error, String, Any] =
+  lazy val verificationDecision
+      : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, String, Any] =
     sttp.tapir.endpoint.post
       .in(VerificationPath)
+      .in(cookie[Option[String]](SessionCookie))
       .in(formBody[Map[String, String]](Endpoints.strictForm(verificationParameters)))
       .out(noStore(htmlBodyUtf8))
       .errorOut(authorizeErrors)

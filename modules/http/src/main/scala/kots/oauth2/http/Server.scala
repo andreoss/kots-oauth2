@@ -13,13 +13,19 @@ import io.circe.Json
 import sttp.tapir.server.ServerEndpoint
 
 trait VerificationLogic[F[_]] {
-  def page: F[Either[OAuth2Error, String]]
+  def page(session: Option[String]): F[Either[OAuth2Error, String]]
 
-  def decide(parameters: Map[String, String]): F[Either[OAuth2Error, String]]
+  def decide(
+      session: Option[String],
+      parameters: Map[String, String]
+  ): F[Either[OAuth2Error, String]]
 }
 
 trait AuthorizeLogic[F[_]] {
-  def apply(parameters: Map[String, String]): F[Either[OAuth2Error, AuthorizationRedirect]]
+  def apply(
+      session: Option[String],
+      parameters: Map[String, String]
+  ): F[Either[OAuth2Error, AuthorizationRedirect]]
 }
 
 trait TokenLogic[F[_]] {
@@ -82,21 +88,21 @@ trait ReadinessLogic[F[_]] {
 object Server {
 
   def authorize[F[_]: Functor](logic: AuthorizeLogic[F]): ServerEndpoint[Any, F] =
-    ServerEndpoint.public[Map[String, String], OAuth2Error, String, Any, F](
+    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, String, Any, F](
       Endpoints.authorize,
-      _ => parameters => logic(parameters).map(_.map(_.location))
+      _ => input => logic(input._1, input._2).map(_.map(_.location))
     )
 
   def verification[F[_]](logic: VerificationLogic[F]): ServerEndpoint[Any, F] =
-    ServerEndpoint.public[Unit, OAuth2Error, String, Any, F](
+    ServerEndpoint.public[Option[String], OAuth2Error, String, Any, F](
       Endpoints.verification,
-      _ => _ => logic.page
+      _ => session => logic.page(session)
     )
 
   def verificationDecision[F[_]](logic: VerificationLogic[F]): ServerEndpoint[Any, F] =
-    ServerEndpoint.public[Map[String, String], OAuth2Error, String, Any, F](
+    ServerEndpoint.public[(Option[String], Map[String, String]), OAuth2Error, String, Any, F](
       Endpoints.verificationDecision,
-      _ => parameters => logic.decide(parameters)
+      _ => input => logic.decide(input._1, input._2)
     )
 
   def par[F[_]: Functor](logic: ParLogic[F]): ServerEndpoint[Any, F] =

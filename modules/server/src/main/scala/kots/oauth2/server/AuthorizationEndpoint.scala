@@ -28,13 +28,20 @@ final class AuthorizationEndpoint[F[_]: Monad](
   private def invalid(reason: String): F[Either[OAuth2Error, AuthorizationRedirect]] =
     (OAuth2Error.InvalidRequest(Some(reason)): OAuth2Error).asLeft[AuthorizationRedirect].pure[F]
 
-  def apply(parameters: Map[String, String]): F[Either[OAuth2Error, AuthorizationRedirect]] =
+  def apply(
+      session: Option[String],
+      parameters: Map[String, String]
+  ): F[Either[OAuth2Error, AuthorizationRedirect]] =
     parameters.get("request_uri") match {
-      case None      => handle(parameters)
-      case Some(raw) => resolve(raw, parameters)
+      case None      => handle(presented(session), parameters)
+      case Some(raw) => resolve(presented(session), raw, parameters)
     }
 
+  private def presented(session: Option[String]): Option[SessionId] =
+    session.flatMap(raw => SessionId.from(raw).toOption)
+
   private def resolve(
+      session: Option[SessionId],
       raw: String,
       parameters: Map[String, String]
   ): F[Either[OAuth2Error, AuthorizationRedirect]] =
@@ -54,13 +61,16 @@ final class AuthorizationEndpoint[F[_]: Monad](
         case (Right(uri), Some(store)) =>
           store.consume(uri).flatMap {
             case Some(record) if parameters.get("client_id").contains(record.clientId.value) =>
-              handle(record.parameters)
+              handle(session, record.parameters)
             case _ =>
               invalid("unknown request_uri")
           }
       }
 
-  private def handle(parameters: Map[String, String]): F[Either[OAuth2Error, AuthorizationRedirect]] =
+  private def handle(
+      session: Option[SessionId],
+      parameters: Map[String, String]
+  ): F[Either[OAuth2Error, AuthorizationRedirect]] =
     AuthorizationRequest.from(parameters).toEither match {
       case Left(failures) => failures.head.asLeft.pure[F]
       case Right(request) =>
@@ -71,7 +81,7 @@ final class AuthorizationEndpoint[F[_]: Monad](
             service.target(client, request.redirectUri) match {
               case Left(error)   => error.asLeft.pure[F]
               case Right(target) =>
-                login.subject.flatMap {
+                login.subject(session).flatMap {
                   case None =>
                     AuthorizationEndpoint
                       .refused(target, OAuth2Error.AccessDenied(), request.state, issuer)
