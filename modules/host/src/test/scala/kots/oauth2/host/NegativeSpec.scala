@@ -226,11 +226,14 @@ class NegativeSpec extends CatsEffectSuite {
         .covary[IO]
     )
 
+  private val session: kots.oauth2.server.SessionId =
+    unsafe(kots.oauth2.server.SessionId.from("session-1"))
+
   private def authorize(query: Map[String, String]): Request[IO] =
     Request[IO](
       method = Method.GET,
       uri = Uri.unsafeFromString("http://localhost/authorize?" + Form.render(query))
-    )
+    ).addCookie(kots.oauth2.http.Endpoints.SessionCookie, session.value)
 
   private val requested: Map[String, String] = Map(
     "response_type" -> "code",
@@ -342,7 +345,7 @@ class NegativeSpec extends CatsEffectSuite {
       tuple <- application
       (served, _, login, consents) = tuple
       _ <- consents.grant(ConsentRecord(clientId, user, unsafe(Scopes.parse("read"))))
-      _ <- login.login(user)
+      _ <- login.login(session, user)
       answered <- served
         .run(authorize(requested.updated("code_challenge_method", "plain")))
         .value
@@ -475,7 +478,7 @@ class NegativeSpec extends CatsEffectSuite {
       tuple <- application
       (served, _, login, consents) = tuple
       _ <- consents.grant(ConsentRecord(clientId, user, unsafe(Scopes.parse("read"))))
-      _ <- login.login(user)
+      _ <- login.login(session, user)
       answered <- served.run(authorize(requested - "code_challenge")).value
       response = answered.get
       text <- body(response)

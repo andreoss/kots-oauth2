@@ -47,6 +47,7 @@ import kots.oauth2.server.AssertionIssuers
 import kots.oauth2.server.RegistrationEndpoint
 import kots.oauth2.server.RegistrationService
 import kots.oauth2.server.RevocationEndpoint
+import kots.oauth2.server.SessionId
 import kots.oauth2.server.SessionLogin
 import kots.oauth2.server.Throttle
 import kots.oauth2.server.TokenEndpoint
@@ -78,6 +79,10 @@ object Development {
   val SeedClientSecret: String = "dev-secret"
 
   val SeedSubject: String = "dev-user"
+
+  val SeedSession: String = "dev-session"
+
+  val SeedFormSecret: String = "dev-form-secret"
 
   val SeedKeyId: String = "dev-key"
 
@@ -160,7 +165,7 @@ object Development {
       consents <- InMemoryConsentStore.create[F]
       _ <- consents.grant(ConsentRecord(clientId, subject, scopes))
       login <- SessionLogin.create[F]
-      _ <- login.login(subject)
+      _ <- login.login(unsafe(SessionId.from(SeedSession)), subject)
       audit <- InMemoryAuditLog.create[F]
       limiter <- InMemoryRateLimiter.create[F](clock, 1000, 60)
       authentication = new RegisteredClientAuthentication[F](
@@ -182,7 +187,7 @@ object Development {
         issuers.map(TokenService.IdentityAssertions(issuer, _, replays, clock))
       )
       registration = new RegistrationEndpoint[F](new RegistrationService[F](clients, entropy))
-      verification = new DeviceVerificationEndpoint[F](devices, login)
+      verification = new DeviceVerificationEndpoint[F](devices, login, SeedFormSecret)
     } yield assembledOf(
       List(codes.sweep, tokens.sweep, devices.sweep, pushed.sweep, replays.sweep),
       Interpreter.routes[F](

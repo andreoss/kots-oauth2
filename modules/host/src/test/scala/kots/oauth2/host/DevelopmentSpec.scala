@@ -175,11 +175,19 @@ class DevelopmentSpec extends CatsEffectSuite {
           ).withEntity(UrlForm("scope" -> "read"))
         )
         advertised = field(device, "verification_uri")
-        visited <- client.run(Request[IO](uri = Uri.unsafeFromString(advertised))).use { response =>
+        anonymous <- client.run(Request[IO](uri = Uri.unsafeFromString(advertised))).use { response =>
           response.bodyText.compile.string.map(response.status -> _)
         }
+        visited <- client
+          .run(
+            Request[IO](uri = Uri.unsafeFromString(advertised))
+              .addCookie(kots.oauth2.http.Endpoints.SessionCookie, Development.SeedSession)
+          )
+          .use(response => response.bodyText.compile.string.map(response.status -> _))
       } yield {
         assertEquals(advertised, s"$base/${kots.oauth2.http.Endpoints.VerificationPath}")
+        assertEquals(anonymous._1, Status.Ok)
+        assert(anonymous._2.contains("sign in first"), anonymous._2)
         assertEquals(visited._1, Status.Ok)
         assert(visited._2.contains("user_code"), visited._2)
       }

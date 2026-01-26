@@ -220,7 +220,7 @@ class InterpreterSpec extends CatsEffectSuite {
         authentication,
         new DeviceAuthorizationService[IO](devices, clock, entropy, LifetimePolicy.defaults, verification)
       )
-      approval = new kots.oauth2.server.DeviceVerificationEndpoint[IO](devices, login)
+      approval = new kots.oauth2.server.DeviceVerificationEndpoint[IO](devices, login, "form-secret")
     } yield (
       Interpreter.routes[IO](
         List(
@@ -268,6 +268,18 @@ class InterpreterSpec extends CatsEffectSuite {
 
   private def body(response: Response[IO]): IO[String] =
     response.body.compile.toVector.map(bytes => new String(bytes.toArray, StandardCharsets.UTF_8))
+
+  private val session: kots.oauth2.server.SessionId =
+    unsafe(kots.oauth2.server.SessionId.from("session-1"))
+
+  private def formToken(text: String): String =
+    "name=\"request_token\" value=\"([^\"]+)\"".r
+      .findFirstMatchIn(text)
+      .map(_.group(1))
+      .getOrElse(sys.error(s"no request token in $text"))
+
+  private def signed(request: Request[IO]): Request[IO] =
+    request.addCookie(kots.oauth2.http.Endpoints.SessionCookie, session.value)
 
   private def field(text: String, name: String): String =
     io.circe.parser
@@ -675,8 +687,10 @@ class InterpreterSpec extends CatsEffectSuite {
       tuple <- application
       (served, _, login, consents) = tuple
       _ <- consents.grant(ConsentRecord(clientId, user, unsafe(Scopes.parse("read"))))
-      _ <- login.login(user)
-      answered <- served.run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString(uri))).value
+      _ <- login.login(session, user)
+      answered <- served
+        .run(signed(Request[IO](method = Method.GET, uri = Uri.unsafeFromString(uri))))
+        .value
       response = answered.get
       location = response.headers.headers.find(_.name.toString == "Location").map(_.value).get
       query = Form.parse(location.dropWhile(_ != '?').drop(1)).toOption.get
@@ -820,7 +834,7 @@ class InterpreterSpec extends CatsEffectSuite {
       tuple <- application
       (served, _, login, consents) = tuple
       _ <- consents.grant(ConsentRecord(clientId, user, unsafe(Scopes.parse("read"))))
-      _ <- login.login(user)
+      _ <- login.login(session, user)
       parAnswer <- served
         .run(
           postTo(
@@ -842,11 +856,13 @@ class InterpreterSpec extends CatsEffectSuite {
       requestUri = field(parText, "request_uri")
       authorized <- served
         .run(
-          Request[IO](
-            method = Method.GET,
-            uri = Uri.unsafeFromString(
-              s"http://localhost/authorize?client_id=${clientId.value}&request_uri=" +
-                java.net.URLEncoder.encode(requestUri, "UTF-8")
+          signed(
+            Request[IO](
+              method = Method.GET,
+              uri = Uri.unsafeFromString(
+                s"http://localhost/authorize?client_id=${clientId.value}&request_uri=" +
+                  java.net.URLEncoder.encode(requestUri, "UTF-8")
+              )
             )
           )
         )
@@ -1274,17 +1290,21 @@ class InterpreterSpec extends CatsEffectSuite {
     } yield assert(answer.contains("username"), answer)
   }
 
-  test("the verification address serves a page where a user code is entered") {
+  test("the verification address serves a page to whoever is signed in") {
+    val user = unsafe(Subject.from("user-1"))
+    val visit = Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/device"))
     for {
       pair <- application
-      (served, _, _, _) = pair
-      answered <- served
-        .run(Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/device")))
-        .value
-      response = answered.get
-      text <- body(response)
+      (served, _, login, _) = pair
+      _ <- login.login(session, user)
+      anonymous <- served.run(visit).value
+      anonymousText <- body(anonymous.get)
+      answered <- served.run(signed(visit)).value
+      text <- body(answered.get)
     } yield {
-      assertEquals(response.status, Status.Ok)
+      assertEquals(anonymous.get.status, Status.Ok)
+      assert(anonymousText.contains("sign in first"), anonymousText)
+      assertEquals(answered.get.status, Status.Ok)
       assert(text.contains("user_code"), text)
       assert(text.contains("form"), text)
     }
@@ -1295,15 +1315,28 @@ class InterpreterSpec extends CatsEffectSuite {
     for {
       pair <- application
       (served, _, login, _) = pair
-      _ <- login.login(user)
+      _ <- login.login(session, user)
       issued <- served
         .run(postTo("/device_authorization", Map("scope" -> "read"), Some("s3cret")))
         .value
       text <- body(issued.get)
       code = field(text, "device_code")
       entered = field(text, "user_code")
+      confirm <- served
+        .run(signed(postTo("/device", Map("user_code" -> entered), None)))
+        .value
+      confirmText <- body(confirm.get)
+      token = formToken(confirmText)
       approved <- served
-        .run(postTo("/device", Map("user_code" -> entered), None))
+        .run(
+          signed(
+            postTo(
+              "/device",
+              Map("user_code" -> entered, "request_token" -> token, "approve" -> "yes"),
+              None
+            )
+          )
+        )
         .value
       polled <- served
         .run(
@@ -1327,12 +1360,103 @@ class InterpreterSpec extends CatsEffectSuite {
     for {
       pair <- application
       (served, _, login, _) = pair
-      _ <- login.login(user)
-      answered <- served.run(postTo("/device", Map("user_code" -> "ZZZZ-ZZZZ"), None)).value
+      _ <- login.login(session, user)
+      answered <- served.run(signed(postTo("/device", Map("user_code" -> "ZZZZ-ZZZZ"), None))).value
       text <- body(answered.get)
     } yield {
       assertEquals(answered.get.status, Status.Ok)
       assert(text.contains("not approved"), text)
+    }
+  }
+
+  test("a device grant is not approved by a caller that presented no session") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      pair <- application
+      (served, _, login, _) = pair
+      _ <- login.login(session, user)
+      issued <- served
+        .run(postTo("/device_authorization", Map("scope" -> "read"), Some("s3cret")))
+        .value
+      text <- body(issued.get)
+      code = field(text, "device_code")
+      entered = field(text, "user_code")
+      approved <- served.run(postTo("/device", Map("user_code" -> entered), None)).value
+      approvedText <- body(approved.get)
+      polled <- served
+        .run(
+          postTo(
+            "/token",
+            Map("grant_type" -> "urn:ietf:params:oauth:grant-type:device_code", "device_code" -> code),
+            Some("s3cret")
+          )
+        )
+        .value
+      answer <- body(polled.get)
+    } yield {
+      assert(!approvedText.contains("<p>approved</p>"), approvedText)
+      assertEquals(polled.get.status, Status.BadRequest, answer)
+      assertEquals(field(answer, "error"), "authorization_pending", answer)
+    }
+  }
+
+  test("an approval carrying another session's request token is refused") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      pair <- application
+      (served, _, login, _) = pair
+      _ <- login.login(session, user)
+      issued <- served
+        .run(postTo("/device_authorization", Map("scope" -> "read"), Some("s3cret")))
+        .value
+      text <- body(issued.get)
+      code = field(text, "device_code")
+      entered = field(text, "user_code")
+      forged <- served
+        .run(
+          signed(
+            postTo(
+              "/device",
+              Map("user_code" -> entered, "request_token" -> "not-the-token", "approve" -> "yes"),
+              None
+            )
+          )
+        )
+        .value
+      forgedText <- body(forged.get)
+      polled <- served
+        .run(
+          postTo(
+            "/token",
+            Map("grant_type" -> "urn:ietf:params:oauth:grant-type:device_code", "device_code" -> code),
+            Some("s3cret")
+          )
+        )
+        .value
+      answer <- body(polled.get)
+    } yield {
+      assert(!forgedText.contains("<p>approved"), forgedText)
+      assertEquals(field(answer, "error"), "authorization_pending", answer)
+    }
+  }
+
+  test("the verification page names the client and the scope before approval") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      pair <- application
+      (served, _, login, _) = pair
+      _ <- login.login(session, user)
+      issued <- served
+        .run(postTo("/device_authorization", Map("scope" -> "read"), Some("s3cret")))
+        .value
+      text <- body(issued.get)
+      entered = field(text, "user_code")
+      confirm <- served.run(signed(postTo("/device", Map("user_code" -> entered), None))).value
+      shown <- body(confirm.get)
+    } yield {
+      assert(shown.contains(clientId.value), shown)
+      assert(shown.contains("read"), shown)
+      assert(!shown.contains("<p>approved"), shown)
     }
   }
 }
