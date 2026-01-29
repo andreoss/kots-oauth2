@@ -234,8 +234,8 @@ object Development {
               )
             )
           ),
-          Server.verification(verification),
-          Server.verificationDecision(verification),
+          Server.verification(Throttle.verification(limiter, verification)),
+          Server.verificationDecision(Throttle.verification(limiter, verification)),
           Server.metadata(metadata),
           Server.resourceMetadata(resource),
           Server.jwks(keys.jwks),

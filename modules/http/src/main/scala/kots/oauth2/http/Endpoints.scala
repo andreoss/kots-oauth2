@@ -232,7 +232,7 @@ object Endpoints {
       .in(VerificationPath)
       .in(cookie[Option[String]](SessionCookie))
       .out(noStore(htmlBodyUtf8))
-      .errorOut(authorizeErrors)
+      .errorOut(errors)
 
   lazy val verificationDecision
       : PublicEndpoint[(Option[String], Map[String, String]), OAuth2Error, String, Any] =
@@ -241,7 +241,7 @@ object Endpoints {
       .in(cookie[Option[String]](SessionCookie))
       .in(formBody[Map[String, String]](Endpoints.strictForm(verificationParameters)))
       .out(noStore(htmlBodyUtf8))
-      .errorOut(authorizeErrors)
+      .errorOut(errors)
 
   val DpopHeader: String = "DPoP"
 

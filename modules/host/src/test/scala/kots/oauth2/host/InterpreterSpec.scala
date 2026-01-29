@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets
 import java.time.Instant
 
 import cats.effect.IO
+import cats.syntax.all._
 import kots.oauth2.core.AuthorizationCode
 import kots.oauth2.core.AuthorizationDetails
 import kots.oauth2.core.AuthorizationServerMetadata
@@ -220,6 +221,7 @@ class InterpreterSpec extends CatsEffectSuite {
         authentication,
         new DeviceAuthorizationService[IO](devices, clock, entropy, LifetimePolicy.defaults, verification)
       )
+      limiter <- kots.oauth2.store.memory.InMemoryRateLimiter.create[IO](clock, 30, 60L)
       approval = new kots.oauth2.server.DeviceVerificationEndpoint[IO](devices, login, "form-secret")
     } yield (
       Interpreter.routes[IO](
@@ -239,8 +241,8 @@ class InterpreterSpec extends CatsEffectSuite {
           Server.revocation(revocation),
           Server.introspection(introspection),
           Server.deviceAuthorization(device),
-          Server.verification(approval),
-          Server.verificationDecision(approval),
+          Server.verification(kots.oauth2.server.Throttle.verification(limiter, approval)),
+          Server.verificationDecision(kots.oauth2.server.Throttle.verification(limiter, approval)),
           Server.metadata(metadata),
           Server.resourceMetadata(resource),
           Server.jwks(keys.jwks),
@@ -1458,5 +1460,20 @@ class InterpreterSpec extends CatsEffectSuite {
       assert(shown.contains("read"), shown)
       assert(!shown.contains("<p>approved"), shown)
     }
+  }
+
+  test("repeated user code entry is refused for rate") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      pair <- application
+      (served, _, login, _) = pair
+      _ <- login.login(session, user)
+      answers <- (1 to 60).toList.traverse(attempt =>
+        served
+          .run(signed(postTo("/device", Map("user_code" -> f"ZZZZ-ZZZ$attempt%01d"), None)))
+          .value
+          .map(_.map(_.status))
+      )
+    } yield assert(answers.exists(_.contains(Status.TooManyRequests)), answers.take(5).toString)
   }
 }
