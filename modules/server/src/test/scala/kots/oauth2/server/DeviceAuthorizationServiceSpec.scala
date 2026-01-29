@@ -113,4 +113,16 @@ class DeviceAuthorizationServiceSpec extends CatsEffectSuite {
       answered <- service.authorize(request(Some("admin")), client)
     } yield assertEquals(answered.left.toOption.map(_.code), Some("invalid_scope"))
   }
+
+  test("every letter of the alphabet is drawn as often as any other") {
+    val counts = (0 to 255)
+      .map(_.toByte)
+      .flatMap(byte => DeviceAuthorizationService.acceptable(byte).toList)
+      .groupBy(identity)
+      .view
+      .mapValues(_.size)
+      .toMap
+    assertEquals(counts.keySet, DeviceAuthorizationService.Alphabet.toSet)
+    assertEquals(counts.values.toSet.size, 1, counts.toString)
+  }
 }

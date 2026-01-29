@@ -37,7 +37,7 @@ final class DeviceAuthorizationService[F[_]: Monad](
         for {
           now <- clock.instant
           rawDevice <- entropy.bytes(DeviceAuthorizationService.DeviceEntropyBytes)
-          rawUser <- entropy.bytes(DeviceAuthorizationService.UserCodeLetters)
+          rawUser <- DeviceAuthorizationService.drawn(entropy)
           minted = (
             DeviceCode.from(Entropy.hex(rawDevice)).leftMap(DeviceAuthorizationService.failure),
             UserCode
@@ -85,12 +85,29 @@ object DeviceAuthorizationService {
 
   val UserCodeLetters: Int = 8
 
+  val UserCodeDraw: Int = 32
+
   val Alphabet: String = "BCDFGHJKLMNPQRSTVWXZ"
 
   val Interval: Lifetime = Lifetime.fromSeconds(5L).toOption.get
 
+  val Acceptable: Int = 256 - (256 % Alphabet.length)
+
+  def acceptable(byte: Byte): Option[Char] = {
+    val value = byte & 0xff
+    if (value >= Acceptable) None else Some(Alphabet(value % Alphabet.length))
+  }
+
+  def drawn[F[_]: cats.Monad](entropy: Entropy[F]): F[Array[Byte]] =
+    cats.Monad[F].tailRecM(Array.empty[Byte]) { gathered =>
+      entropy.bytes(UserCodeDraw).map { drawn =>
+        val kept = gathered ++ drawn.filter(byte => acceptable(byte).isDefined)
+        if (kept.length >= UserCodeLetters) Right(kept) else Left(kept)
+      }
+    }
+
   def userCode(raw: Array[Byte]): String = {
-    val letters = raw.take(UserCodeLetters).map(b => Alphabet((b & 0x7f) % Alphabet.length))
+    val letters = raw.flatMap(acceptable).take(UserCodeLetters)
     new String(letters.take(UserCodeLetters / 2)) + "-" + new String(letters.drop(UserCodeLetters / 2))
   }
 
