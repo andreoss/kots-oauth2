@@ -24,8 +24,7 @@ trait Login[F[_]] {
   def subject(session: Option[SessionId]): F[Option[Subject]]
 }
 
-final class SessionLogin[F[_]: Functor] private (state: Ref[F, Map[SessionId, Subject]])
-    extends Login[F] {
+final class SessionLogin[F[_]: Functor] private (state: Ref[F, Map[SessionId, Subject]]) extends Login[F] {
 
   def subject(session: Option[SessionId]): F[Option[Subject]] =
     state.get.map(sessions => session.flatMap(sessions.get))
