@@ -241,8 +241,8 @@ class InterpreterSpec extends CatsEffectSuite {
           Server.revocation(revocation),
           Server.introspection(introspection),
           Server.deviceAuthorization(device),
-          Server.verification(kots.oauth2.server.Throttle.verification(limiter, approval)),
-          Server.verificationDecision(kots.oauth2.server.Throttle.verification(limiter, approval)),
+          Server.verification(kots.oauth2.server.Throttle.verification(limiter, login, approval)),
+          Server.verificationDecision(kots.oauth2.server.Throttle.verification(limiter, login, approval)),
           Server.metadata(metadata),
           Server.resourceMetadata(resource),
           Server.jwks(keys.jwks),
@@ -1475,5 +1475,23 @@ class InterpreterSpec extends CatsEffectSuite {
           .map(_.map(_.status))
       )
     } yield assert(answers.exists(_.contains(Status.TooManyRequests)), answers.take(5).toString)
+  }
+
+  test("entry by a stranger does not spend what the signed in owner is allowed") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      pair <- application
+      (served, _, login, _) = pair
+      _ <- login.login(session, user)
+      _ <- (1 to 60).toList.traverse(attempt =>
+        served
+          .run(
+            postTo("/device", Map("user_code" -> f"ZZZZ-ZZZ$attempt%01d"), None)
+              .addCookie(kots.oauth2.http.Endpoints.SessionCookie, "stranger")
+          )
+          .value
+      )
+      owner <- served.run(signed(postTo("/device", Map("user_code" -> "ZZZZ-ZZZZ"), None))).value
+    } yield assertEquals(owner.map(_.status), Some(Status.Ok))
   }
 }

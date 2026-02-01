@@ -50,18 +50,26 @@ object Throttle {
 
   def verification[F[_]: Monad](
       limiter: RateLimiter[F],
+      login: Login[F],
       inner: VerificationLogic[F]
   ): VerificationLogic[F] =
     new VerificationLogic[F] {
       def page(session: Option[String]) = inner.page(session)
 
       def decide(session: Option[String], parameters: Map[String, String]) =
-        limiter.acquire(VerificationKey).flatMap {
-          case Some(retryAfter) =>
-            (OAuth2Error.RateLimited(retryAfter): OAuth2Error).asLeft[String].pure[F]
-          case None => inner.decide(session, parameters)
+        login.subject(session.flatMap(raw => SessionId.from(raw).toOption)).flatMap {
+          case None    => inner.decide(session, parameters)
+          case Some(_) =>
+            limiter.acquire(entry(session)).flatMap {
+              case Some(retryAfter) =>
+                (OAuth2Error.RateLimited(retryAfter): OAuth2Error).asLeft[String].pure[F]
+              case None => inner.decide(session, parameters)
+            }
         }
     }
+
+  private def entry(session: Option[String]): String =
+    VerificationKey + " " + session.getOrElse(AnonymousKey)
 
   private def limited[F[_]: Monad, A](limiter: RateLimiter[F], parameters: Map[String, String])(
       inner: => F[Either[OAuth2Error, A]]
