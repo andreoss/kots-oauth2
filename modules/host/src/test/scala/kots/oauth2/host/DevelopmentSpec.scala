@@ -1,6 +1,7 @@
 package kots.oauth2.host
 
 import cats.effect.IO
+import cats.syntax.all._
 import com.comcast.ip4s.Port
 import munit.CatsEffectSuite
 import org.http4s.BasicCredentials
@@ -190,6 +191,55 @@ class DevelopmentSpec extends CatsEffectSuite {
         assert(anonymous._2.contains("sign in first"), anonymous._2)
         assertEquals(visited._1, Status.Ok)
         assert(visited._2.contains("user_code"), visited._2)
+      }
+    }
+  }
+
+  test("entry is budgeted for a person typing while the token endpoint keeps its own") {
+    val codes = List(
+      "BCDF-GHJK",
+      "BCDF-GHJL",
+      "BCDF-GHJM",
+      "BCDF-GHJN",
+      "BCDF-GHJP",
+      "BCDF-GHJQ",
+      "BCDF-GHJR",
+      "BCDF-GHJS",
+      "BCDF-GHJT",
+      "BCDF-GHJV",
+      "BCDF-GHJW",
+      "BCDF-GHJX"
+    )
+    Development.assembled[IO]().flatMap { case (served, _) =>
+      def entry(code: String): IO[Option[Status]] =
+        served
+          .run(
+            Request[IO](
+              method = Method.POST,
+              uri = Uri.unsafeFromString(s"http://localhost/${kots.oauth2.http.Endpoints.VerificationPath}")
+            ).withEntity(UrlForm("user_code" -> code))
+              .addCookie(kots.oauth2.http.Endpoints.SessionCookie, Development.SeedSession)
+          )
+          .value
+          .map(_.map(_.status))
+      for {
+        answers <- codes.traverse(entry)
+        token <- served
+          .run(
+            Request[IO](
+              method = Method.POST,
+              uri = Uri.unsafeFromString("http://localhost/token"),
+              headers = org.http4s.Headers(
+                Authorization(BasicCredentials(Development.SeedClientId, Development.SeedClientSecret))
+              )
+            ).withEntity(UrlForm("grant_type" -> "client_credentials"))
+          )
+          .value
+          .map(_.map(_.status))
+      } yield {
+        assertEquals(answers.head, Some(Status.Ok))
+        assert(answers.contains(Some(Status.TooManyRequests)), answers.toString)
+        assertEquals(token, Some(Status.Ok))
       }
     }
   }

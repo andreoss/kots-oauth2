@@ -88,6 +88,10 @@ object Development {
 
   val SeedIssuer: String = "https://dev.example"
 
+  val EntryAttempts: Int = 10
+
+  val EntryWindow: Long = 60
+
   def systemClock[F[_]: Async]: Clock[F] =
     new Clock[F] {
       def instant: F[java.time.Instant] = Async[F].delay(java.time.Instant.now())
@@ -168,6 +172,7 @@ object Development {
       _ <- login.login(unsafe(SessionId.from(SeedSession)), subject)
       audit <- InMemoryAuditLog.create[F]
       limiter <- InMemoryRateLimiter.create[F](clock, 1000, 60)
+      entries <- InMemoryRateLimiter.create[F](clock, EntryAttempts, EntryWindow)
       authentication = new RegisteredClientAuthentication[F](
         clients,
         Some(RegisteredClientAuthentication.Assertions(issuer, replays, clock)),
@@ -234,8 +239,8 @@ object Development {
               )
             )
           ),
-          Server.verification(Throttle.verification(limiter, login, verification)),
-          Server.verificationDecision(Throttle.verification(limiter, login, verification)),
+          Server.verification(Throttle.verification(entries, login, verification)),
+          Server.verificationDecision(Throttle.verification(entries, login, verification)),
           Server.metadata(metadata),
           Server.resourceMetadata(resource),
           Server.jwks(keys.jwks),
