@@ -62,11 +62,18 @@ final class DeviceVerificationEndpoint[F[_]: Monad](
                 DeviceVerificationEndpoint.token(secret, id, code)
               ) =>
             DeviceVerificationEndpoint.forged.asRight[OAuth2Error].pure[F]
-          case Some(_) =>
+          case Some(_) if DeviceVerificationEndpoint.approves(parameters) =>
             devices
               .approve(code, subject)
               .map(decided =>
                 if (decided) DeviceVerificationEndpoint.granted(record).asRight[OAuth2Error]
+                else DeviceVerificationEndpoint.unknown.asRight[OAuth2Error]
+              )
+          case Some(_) =>
+            devices
+              .deny(code)
+              .map(decided =>
+                if (decided) DeviceVerificationEndpoint.refused(record).asRight[OAuth2Error]
                 else DeviceVerificationEndpoint.unknown.asRight[OAuth2Error]
               )
         }
@@ -92,6 +99,13 @@ object DeviceVerificationEndpoint {
 
   val TokenParameter: String = "request_token"
 
+  val DecisionParameter: String = "approve"
+
+  val Approval: String = "yes"
+
+  def approves(parameters: Map[String, String]): Boolean =
+    parameters.get(DecisionParameter).forall(_ == Approval)
+
   private val Head: String = "<!doctype html><title>Device</title>"
 
   val entry: String =
@@ -111,10 +125,15 @@ object DeviceVerificationEndpoint {
       escaped(Wire[UserCode].encode(record.userCode)) + "\">" +
       "<input type=\"hidden\" name=\"request_token\" value=\"" + escaped(token) + "\">" +
       "<button type=\"submit\" name=\"approve\" value=\"yes\">approve</button>" +
+      "<button type=\"submit\" name=\"approve\" value=\"no\">refuse</button>" +
       "</form>"
 
   def granted(record: DeviceRecord): String =
     Head + "<p>approved " + escaped(Wire[ClientId].encode(record.clientId)) +
+      " for " + escaped(scopeOf(record)) + "</p>"
+
+  def refused(record: DeviceRecord): String =
+    Head + "<p>refused " + escaped(Wire[ClientId].encode(record.clientId)) +
       " for " + escaped(scopeOf(record)) + "</p>"
 
   val unknown: String = Head + "<p>not approved</p>" + entry

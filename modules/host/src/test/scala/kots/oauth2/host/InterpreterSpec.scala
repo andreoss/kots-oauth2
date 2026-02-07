@@ -1494,4 +1494,68 @@ class InterpreterSpec extends CatsEffectSuite {
       owner <- served.run(signed(postTo("/device", Map("user_code" -> "ZZZZ-ZZZZ"), None))).value
     } yield assertEquals(owner.map(_.status), Some(Status.Ok))
   }
+
+  test("a device grant refused at the screen is denied and the poll says so") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      pair <- application
+      (served, _, login, _) = pair
+      _ <- login.login(session, user)
+      issued <- served
+        .run(postTo("/device_authorization", Map("scope" -> "read"), Some("s3cret")))
+        .value
+      text <- body(issued.get)
+      code = field(text, "device_code")
+      entered = field(text, "user_code")
+      confirm <- served.run(signed(postTo("/device", Map("user_code" -> entered), None))).value
+      confirmText <- body(confirm.get)
+      token = formToken(confirmText)
+      refused <- served
+        .run(
+          signed(
+            postTo(
+              "/device",
+              Map("user_code" -> entered, "request_token" -> token, "approve" -> "no"),
+              None
+            )
+          )
+        )
+        .value
+      refusedText <- body(refused.get)
+      polled <- served
+        .run(
+          postTo(
+            "/token",
+            Map("grant_type" -> "urn:ietf:params:oauth:grant-type:device_code", "device_code" -> code),
+            Some("s3cret")
+          )
+        )
+        .value
+      answered <- body(polled.get)
+    } yield {
+      assertEquals(refused.get.status, Status.Ok)
+      assert(refusedText.contains("refused"), refusedText)
+      assert(!refusedText.contains("approved"), refusedText)
+      assertEquals(field(answered, "error"), "access_denied")
+    }
+  }
+
+  test("the screen offers the refusal it reads") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      pair <- application
+      (served, _, login, _) = pair
+      _ <- login.login(session, user)
+      issued <- served
+        .run(postTo("/device_authorization", Map("scope" -> "read"), Some("s3cret")))
+        .value
+      text <- body(issued.get)
+      entered = field(text, "user_code")
+      confirm <- served.run(signed(postTo("/device", Map("user_code" -> entered), None))).value
+      shown <- body(confirm.get)
+    } yield {
+      assert(shown.contains("value=\"no\""), shown)
+      assert(shown.contains("value=\"yes\""), shown)
+    }
+  }
 }
