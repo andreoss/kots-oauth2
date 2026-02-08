@@ -223,6 +223,20 @@ object Endpoints {
       )
       .errorOut(authorizeErrors)
 
+  val FrameOptionsHeader: String = "X-Frame-Options"
+
+  val DenyFrames: String = "DENY"
+
+  val ContentSecurityPolicyHeader: String = "Content-Security-Policy"
+
+  val NoFrameAncestors: String = "frame-ancestors 'none'"
+
+  private[http] def screen[A](out: EndpointOutput[A]): EndpointOutput[A] =
+    noStore(out)
+      .and(header(ContentSecurityPolicyHeader, NoFrameAncestors))
+      .and(header(FrameOptionsHeader, DenyFrames))
+      .and(header(ReferrerPolicyHeader, NoReferrer))
+
   val VerificationPath: String = "device"
 
   val verificationParameters: Set[String] = Set("user_code", "request_token", "approve")
@@ -231,7 +245,7 @@ object Endpoints {
     sttp.tapir.endpoint.get
       .in(VerificationPath)
       .in(cookie[Option[String]](SessionCookie))
-      .out(noStore(htmlBodyUtf8))
+      .out(screen(htmlBodyUtf8))
       .errorOut(errors)
 
   lazy val verificationDecision
@@ -240,7 +254,7 @@ object Endpoints {
       .in(VerificationPath)
       .in(cookie[Option[String]](SessionCookie))
       .in(formBody[Map[String, String]](Endpoints.strictForm(verificationParameters)))
-      .out(noStore(htmlBodyUtf8))
+      .out(screen(htmlBodyUtf8))
       .errorOut(errors)
 
   val DpopHeader: String = "DPoP"

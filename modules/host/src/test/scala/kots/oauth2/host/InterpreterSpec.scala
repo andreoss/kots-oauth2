@@ -1558,4 +1558,32 @@ class InterpreterSpec extends CatsEffectSuite {
       assert(shown.contains("value=\"yes\""), shown)
     }
   }
+
+  test("the screen refuses to be framed and leaks no referrer") {
+    def carried(response: Response[IO], name: String): Option[String] =
+      response.headers.get(CIString(name)).map(_.head.value)
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      pair <- application
+      (served, _, login, _) = pair
+      _ <- login.login(session, user)
+      shown <- served
+        .run(
+          signed(
+            Request[IO](method = Method.GET, uri = Uri.unsafeFromString("http://localhost/device"))
+          )
+        )
+        .value
+      decided <- served.run(signed(postTo("/device", Map("user_code" -> "ZZZZ-ZZZZ"), None))).value
+    } yield {
+      List(shown.get, decided.get).foreach { answer =>
+        assertEquals(
+          carried(answer, Endpoints.ContentSecurityPolicyHeader),
+          Some(Endpoints.NoFrameAncestors)
+        )
+        assertEquals(carried(answer, Endpoints.FrameOptionsHeader), Some(Endpoints.DenyFrames))
+        assertEquals(carried(answer, Endpoints.ReferrerPolicyHeader), Some(Endpoints.NoReferrer))
+      }
+    }
+  }
 }
