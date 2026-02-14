@@ -48,4 +48,23 @@ class MemoryPushedRequestStoreSpec extends CatsEffectSuite {
       taken <- pushed.consume(uri)
     } yield assertEquals(taken, None)
   }
+
+  test("a pushed request is read without being spent and an expired one reads as none") {
+    for {
+      pushed <- InMemoryPushedRequestStore.create[IO](clockOf(new TestClock(start, Duration.ofSeconds(1L))))
+      _ <- pushed.save(record(start.plusSeconds(60L)))
+      read <- pushed.peek(uri)
+      again <- pushed.peek(uri)
+      taken <- pushed.consume(uri)
+      gone <- pushed.peek(uri)
+      _ <- pushed.save(record(start))
+      dead <- pushed.peek(uri)
+    } yield {
+      assertEquals(read.map(_.uri), Some(uri))
+      assertEquals(again.map(_.uri), Some(uri))
+      assertEquals(taken.map(_.uri), Some(uri))
+      assertEquals(gone, None)
+      assertEquals(dead, None)
+    }
+  }
 }

@@ -18,6 +18,8 @@ trait PushedRequestStore[F[_]] {
 
   def save(record: PushedRequest): F[Unit]
 
+  def peek(uri: RequestUri): F[Option[PushedRequest]]
+
   def consume(uri: RequestUri): F[Option[PushedRequest]]
 
   def sweep: F[Int]

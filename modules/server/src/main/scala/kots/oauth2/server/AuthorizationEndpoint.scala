@@ -33,7 +33,7 @@ final class AuthorizationEndpoint[F[_]: Monad](
       parameters: Map[String, String]
   ): F[Either[OAuth2Error, AuthorizationRedirect]] =
     parameters.get("request_uri") match {
-      case None      => handle(presented(session), parameters)
+      case None      => handle(presented(session), parameters, Monad[F].pure(true))
       case Some(raw) => resolve(presented(session), raw, parameters)
     }
 
@@ -59,9 +59,9 @@ final class AuthorizationEndpoint[F[_]: Monad](
         case (_, None)        =>
           invalid("request_uri is not supported")
         case (Right(uri), Some(store)) =>
-          store.consume(uri).flatMap {
+          store.peek(uri).flatMap {
             case Some(record) if parameters.get("client_id").contains(record.clientId.value) =>
-              handle(session, record.parameters)
+              handle(session, record.parameters, store.consume(uri).map(_.isDefined))
             case _ =>
               invalid("unknown request_uri")
           }
@@ -69,7 +69,8 @@ final class AuthorizationEndpoint[F[_]: Monad](
 
   private def handle(
       session: Option[SessionId],
-      parameters: Map[String, String]
+      parameters: Map[String, String],
+      spend: F[Boolean]
   ): F[Either[OAuth2Error, AuthorizationRedirect]] =
     AuthorizationRequest.from(parameters).toEither match {
       case Left(failures) => failures.head.asLeft.pure[F]
@@ -88,11 +89,15 @@ final class AuthorizationEndpoint[F[_]: Monad](
                       .asRight
                       .pure[F]
                   case Some(subject) =>
-                    service.issue(request, client, subject, AuthorizationDetails.empty).map {
-                      case Right(code) =>
-                        Right(AuthorizationEndpoint.granted(target, code, request.state, issuer))
-                      case Left(error) =>
-                        Right(AuthorizationEndpoint.refused(target, error, request.state, issuer))
+                    spend.flatMap {
+                      case false => invalid("unknown request_uri")
+                      case true  =>
+                        service.issue(request, client, subject, AuthorizationDetails.empty).map {
+                          case Right(code) =>
+                            Right(AuthorizationEndpoint.granted(target, code, request.state, issuer))
+                          case Left(error) =>
+                            Right(AuthorizationEndpoint.refused(target, error, request.state, issuer))
+                        }
                     }
                 }
             }

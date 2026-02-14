@@ -18,6 +18,9 @@ final class InMemoryPushedRequestStore[F[_]: Monad] private (
   def save(record: PushedRequest): F[Unit] =
     state.update(_.updated(record.uri, record))
 
+  def peek(uri: RequestUri): F[Option[PushedRequest]] =
+    clock.instant.flatMap(now => state.get.map(_.get(uri).filter(record => !record.isExpired(now))))
+
   def consume(uri: RequestUri): F[Option[PushedRequest]] =
     clock.instant.flatMap { now =>
       state.modify { pushed =>

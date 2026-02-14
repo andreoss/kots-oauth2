@@ -1586,4 +1586,54 @@ class InterpreterSpec extends CatsEffectSuite {
       }
     }
   }
+
+  test("a pushed request survives an arrival that decides nothing") {
+    val user = unsafe(Subject.from("user-1"))
+    def arrive(requestUri: String): Request[IO] =
+      Request[IO](
+        method = Method.GET,
+        uri = Uri.unsafeFromString(
+          s"http://localhost/authorize?client_id=${clientId.value}&request_uri=" +
+            java.net.URLEncoder.encode(requestUri, "UTF-8")
+        )
+      )
+    for {
+      tuple <- application
+      (served, _, login, consents) = tuple
+      _ <- consents.grant(ConsentRecord(clientId, user, unsafe(Scopes.parse("read"))))
+      _ <- login.login(session, user)
+      pushed <- served
+        .run(
+          postTo(
+            "/par",
+            Map(
+              "response_type" -> "code",
+              "client_id" -> clientId.value,
+              "redirect_uri" -> "https://client.example/cb",
+              "scope" -> "read",
+              "state" -> "xyz",
+              "code_challenge" -> challenge.value,
+              "code_challenge_method" -> "S256"
+            ),
+            Some("s3cret")
+          )
+        )
+        .value
+      pushedText <- body(pushed.get)
+      requestUri = field(pushedText, "request_uri")
+      anonymous <- served.run(arrive(requestUri)).value
+      anonymousLocation =
+        anonymous.get.headers.headers.find(_.name.toString == "Location").map(_.value).get
+      returned <- served.run(signed(arrive(requestUri))).value
+      location = returned.get.headers.headers.find(_.name.toString == "Location").map(_.value).get
+      query = Form.parse(location.dropWhile(_ != '?').drop(1)).toOption.get
+      spent <- served.run(signed(arrive(requestUri))).value
+    } yield {
+      assertEquals(anonymous.get.status, Status.Found)
+      assert(anonymousLocation.contains("error=access_denied"), anonymousLocation)
+      assertEquals(returned.get.status, Status.Found)
+      assert(query.get("code").exists(_.nonEmpty), location)
+      assertEquals(spent.get.status, Status.BadRequest)
+    }
+  }
 }

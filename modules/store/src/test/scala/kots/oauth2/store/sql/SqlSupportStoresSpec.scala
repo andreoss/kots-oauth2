@@ -111,6 +111,8 @@ class SqlSupportStoresSpec extends CatsEffectSuite {
       clock = new Clock[IO] { def instant: IO[Instant] = moment.get }
       store <- SqlPushedRequestStore.create[IO](connect, clock).toOption.get
       _ <- store.save(record)
+      read <- store.peek(uri)
+      unspent <- store.peek(uri)
       first <- store.consume(uri)
       second <- store.consume(uri)
       _ <- store.save(record)
@@ -119,6 +121,8 @@ class SqlSupportStoresSpec extends CatsEffectSuite {
       _ <- store.save(record)
       swept <- store.sweep
     } yield {
+      assertEquals(read, Some(record))
+      assertEquals(unspent, Some(record))
       assertEquals(first, Some(record))
       assertEquals(second, None)
       assertEquals(expired, None)

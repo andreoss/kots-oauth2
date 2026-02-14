@@ -171,6 +171,13 @@ final class SqlPushedRequestStore[F[_]: Sync] private (connect: F[Connection], c
     }
   }
 
+  def peek(uri: RequestUri): F[Option[PushedRequest]] =
+    clock.instant.flatMap { now =>
+      session { connection =>
+        selectOne(connection, uri).filter(record => !record.isExpired(now))
+      }
+    }
+
   def consume(uri: RequestUri): F[Option[PushedRequest]] =
     clock.instant.flatMap { now =>
       session { connection =>
