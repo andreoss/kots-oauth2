@@ -53,12 +53,14 @@ final class SqlDeviceStore[F[_]: Sync] private (connect: F[Connection], clock: C
     clock.instant.flatMap(now =>
       session { connection =>
         val select = connection.prepareStatement(
-          "SELECT * FROM devices WHERE user_code = ? AND subject IS NULL AND denied = FALSE"
+          "SELECT * FROM devices WHERE user_code = ? AND subject IS NULL AND denied = FALSE " +
+            "AND expires_at > ? ORDER BY expires_at DESC"
         )
         try {
           select.setString(1, userCode.value)
+          select.setTimestamp(2, Timestamp.from(now))
           val results = select.executeQuery()
-          if (results.next()) Some(row(results)).filter(!_.isExpired(now)) else None
+          if (results.next()) Some(row(results)) else None
         } finally select.close()
       }
     )

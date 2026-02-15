@@ -15,6 +15,7 @@ import kots.oauth2.core.Scopes
 import kots.oauth2.core.Subject
 import kots.oauth2.core.UserCode
 import kots.oauth2.store.DeviceRecord
+import kots.oauth2.store.memory.InMemoryDeviceStore
 import munit.CatsEffectSuite
 
 class SqlDeviceStoreSpec extends CatsEffectSuite {
@@ -141,6 +142,28 @@ class SqlDeviceStoreSpec extends CatsEffectSuite {
     } yield {
       assertEquals(swept, 1)
       assert(kept.isDefined)
+    }
+  }
+
+  test("an expired record beside a live one leaves both stores naming the live one") {
+    val expired = record.copy(
+      deviceCode = unsafe(DeviceCode.from("device-0")),
+      expiresAt = Start.plusSeconds(1L)
+    )
+    for {
+      pair <- setup
+      (store, moment) = pair
+      memory <- InMemoryDeviceStore.create[IO](new Clock[IO] { def instant: IO[Instant] = moment.get })
+      _ <- store.save(expired)
+      _ <- memory.save(expired)
+      _ <- store.save(record)
+      _ <- memory.save(record)
+      _ <- moment.set(Start.plusSeconds(2L))
+      relational <- store.pending(user)
+      inMemory <- memory.pending(user)
+    } yield {
+      assertEquals(inMemory.map(_.deviceCode), Some(device))
+      assertEquals(relational, inMemory)
     }
   }
 }
