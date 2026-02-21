@@ -104,7 +104,7 @@ object DeviceVerificationEndpoint {
   val Approval: String = "yes"
 
   def approves(parameters: Map[String, String]): Boolean =
-    parameters.get(DecisionParameter).forall(_ == Approval)
+    parameters.get(DecisionParameter).contains(Approval)
 
   private val Head: String = "<!doctype html><title>Device</title>"
 

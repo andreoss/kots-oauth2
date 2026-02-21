@@ -1636,4 +1636,39 @@ class InterpreterSpec extends CatsEffectSuite {
       assertEquals(spent.get.status, Status.BadRequest)
     }
   }
+
+  test("a confirmation that names no decision is not consent") {
+    val user = unsafe(Subject.from("user-1"))
+    for {
+      pair <- application
+      (served, _, login, _) = pair
+      _ <- login.login(session, user)
+      issued <- served
+        .run(postTo("/device_authorization", Map("scope" -> "read"), Some("s3cret")))
+        .value
+      text <- body(issued.get)
+      code = field(text, "device_code")
+      entered = field(text, "user_code")
+      confirm <- served.run(signed(postTo("/device", Map("user_code" -> entered), None))).value
+      confirmText <- body(confirm.get)
+      token = formToken(confirmText)
+      silent <- served
+        .run(signed(postTo("/device", Map("user_code" -> entered, "request_token" -> token), None)))
+        .value
+      silentText <- body(silent.get)
+      polled <- served
+        .run(
+          postTo(
+            "/token",
+            Map("grant_type" -> "urn:ietf:params:oauth:grant-type:device_code", "device_code" -> code),
+            Some("s3cret")
+          )
+        )
+        .value
+      answered <- body(polled.get)
+    } yield {
+      assert(!silentText.contains("<p>approved"), silentText)
+      assertEquals(field(answered, "error"), "access_denied")
+    }
+  }
 }
