@@ -4,6 +4,7 @@ import cats.syntax.all._
 import cats.Monad
 
 import kots.oauth2.core.OAuth2Error
+import kots.oauth2.core.Subject
 import kots.oauth2.http.DeviceAuthorizationLogic
 import kots.oauth2.http.IntrospectionLogic
 import kots.oauth2.http.TokenLogic
@@ -58,9 +59,9 @@ object Throttle {
 
       def decide(session: Option[String], parameters: Map[String, String]) =
         login.subject(session.flatMap(raw => SessionId.from(raw).toOption)).flatMap {
-          case None    => inner.decide(session, parameters)
-          case Some(_) =>
-            limiter.acquire(entry(session)).flatMap {
+          case None          => inner.decide(session, parameters)
+          case Some(subject) =>
+            limiter.acquire(entry(subject)).flatMap {
               case Some(retryAfter) =>
                 (OAuth2Error.RateLimited(retryAfter): OAuth2Error).asLeft[String].pure[F]
               case None => inner.decide(session, parameters)
@@ -68,8 +69,8 @@ object Throttle {
         }
     }
 
-  private def entry(session: Option[String]): String =
-    VerificationKey + " " + session.getOrElse(AnonymousKey)
+  private def entry(subject: Subject): String =
+    VerificationKey + " " + subject.value
 
   private def limited[F[_]: Monad, A](limiter: RateLimiter[F], parameters: Map[String, String])(
       inner: => F[Either[OAuth2Error, A]]

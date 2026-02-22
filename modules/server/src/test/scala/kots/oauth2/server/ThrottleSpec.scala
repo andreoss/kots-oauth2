@@ -96,18 +96,16 @@ class ThrottleSpec extends CatsEffectSuite {
     def decide(session: Option[String], parameters: Map[String, String]) = IO.pure(Right("entry"))
   }
 
-  private def sessions(known: String*): Login[IO] = new Login[IO] {
+  private def sessions(known: (String, String)*): Login[IO] = new Login[IO] {
     def subject(session: Option[SessionId]): IO[Option[Subject]] =
-      IO.pure(
-        session
-          .filter(id => known.contains(id.value))
-          .flatMap(id => Subject.from("subject-" + id.value).toOption)
-      )
+      IO.pure(session.flatMap(id => known.toMap.get(id.value)).flatMap(Subject.from(_).toOption))
   }
 
   test("entry is limited for the session that entered and not for another") {
     for {
-      limited <- limiter(1).map(Throttle.verification[IO](_, sessions("s-1", "s-2"), entered))
+      limited <- limiter(1).map(
+        Throttle.verification[IO](_, sessions("s-1" -> "person-1", "s-2" -> "person-2"), entered)
+      )
       first <- limited.decide(Some("s-1"), Map.empty)
       second <- limited.decide(Some("s-1"), Map.empty)
       other <- limited.decide(Some("s-2"), Map.empty)
@@ -120,7 +118,7 @@ class ThrottleSpec extends CatsEffectSuite {
 
   test("an entry by a caller who is not signed in is answered and not counted") {
     for {
-      limited <- limiter(1).map(Throttle.verification[IO](_, sessions("s-1"), entered))
+      limited <- limiter(1).map(Throttle.verification[IO](_, sessions("s-1" -> "person-1"), entered))
       _ <- limited.decide(Some("stranger"), Map.empty)
       _ <- limited.decide(None, Map.empty)
       owner <- limited.decide(Some("s-1"), Map.empty)
@@ -128,6 +126,19 @@ class ThrottleSpec extends CatsEffectSuite {
     } yield {
       assertEquals(owner, Right("entry"))
       assertEquals(refused, Left(OAuth2Error.RateLimited(60L)))
+    }
+  }
+
+  test("two sessions of one person draw on one entry budget") {
+    for {
+      limited <- limiter(1).map(
+        Throttle.verification[IO](_, sessions("s-1" -> "person", "s-2" -> "person"), entered)
+      )
+      first <- limited.decide(Some("s-1"), Map.empty)
+      second <- limited.decide(Some("s-2"), Map.empty)
+    } yield {
+      assertEquals(first, Right("entry"))
+      assertEquals(second, Left(OAuth2Error.RateLimited(60L)))
     }
   }
 }
